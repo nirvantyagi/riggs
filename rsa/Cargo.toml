@@ -1,0 +1,23 @@
+[package]
+name = "rsa"
+version = "0.1.0"
+authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
+edition = "2021"
+
+
+[dependencies]
+ark-ff = { version = "0.3", default-features = false }
+ark-std = { version = "0.3", default-features = false }
+
+num-bigint = { version = "0.4", features = ["rand"] }
+num-traits = { version = "0.2" }
+rand = { version = "0.8" }
+
+tracing = { version = "0.1", default-features = false, features = [ "attributes" ], optional = true }
+rayon = { version = "1", optional = true }
+
+[features]
+default = ["std", "parallel" ]
+std = [ "ark-ff/std", "ark-std/std" ]
+parallel = [ "rayon" ]
+print-trace = [ "ark-std/print-trace" ]
