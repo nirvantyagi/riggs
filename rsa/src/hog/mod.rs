@@ -11,8 +11,8 @@ use std::{
     marker::PhantomData,
     cmp::min,
     fmt::{self, Debug},
+    ops::Deref,
 };
-use std::ops::Deref;
 
 use crate::Error;
 

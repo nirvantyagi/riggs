@@ -13,6 +13,7 @@ num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = { version = "0.1" }
 num-traits = { version = "0.2" }
 rand = { version = "0.8" }
+digest = { version = "0.10" }
 once_cell = { version = "1.9" }
 
 tracing = { version = "0.1", default-features = false, features = [ "attributes" ] }
@@ -20,6 +21,7 @@ rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 ark-ed-on-bls12-381 = { version = "0.3", default-features = false, features = ["r1cs"] }
+sha3 = { version = "0.10" }
 
 [features]
 default = ["std", "parallel" ]
