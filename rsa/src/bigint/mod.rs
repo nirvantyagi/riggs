@@ -1,6 +1,4 @@
-use ark_ff::{
-    fields::{FpParameters, PrimeField},
-};
+use ark_ff::fields::{FpParameters, PrimeField};
 use num_bigint::BigInt as NumBigInt;
 use num_integer::{ExtendedGcd, Integer};
 
@@ -79,17 +77,12 @@ pub fn nat_to_limbs<'a, F: PrimeField>(
 }
 
 // Fits a natural number to the minimum number limbs of given width
-pub fn fit_nat_to_limbs<F: PrimeField>(
-    n: &BigInt,
-    limb_width: usize,
-) -> Result<Vec<F>, Error> {
+pub fn fit_nat_to_limbs<F: PrimeField>(n: &BigInt, limb_width: usize) -> Result<Vec<F>, Error> {
     nat_to_limbs(n, limb_width, n.bits() as usize / limb_width + 1)
 }
 
 // Fits a natural number to the minimum number limbs
-pub fn fit_nat_to_limb_capacity<F: PrimeField>(
-    n: &BigInt,
-) -> Result<Vec<F>, Error> {
+pub fn fit_nat_to_limb_capacity<F: PrimeField>(n: &BigInt) -> Result<Vec<F>, Error> {
     let bit_capacity = <F::Params as FpParameters>::CAPACITY as usize;
     nat_to_limbs(n, bit_capacity, n.bits() as usize / bit_capacity + 1)
 }
@@ -129,10 +122,10 @@ impl fmt::Display for BigIntError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ark_ed_on_bls12_381::Fq;
     use ark_ff::UniformRand;
-    use ark_ed_on_bls12_381::{Fq};
-    use std::str::FromStr;
     use rand::{rngs::StdRng, SeedableRng};
+    use std::str::FromStr;
 
     const RSA_MODULO: &str = "2519590847565789349402718324004839857142928212620403202777713783604366202070\
                           7595556264018525880784406918290641249515082189298559149176184502808489120072\
@@ -144,7 +137,6 @@ mod tests {
                           6373289912154831438167899885040445364023527381951378636564391212010397122822\
                           120720357";
 
-
     #[test]
     fn convert_to_field_test() {
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -154,7 +146,10 @@ mod tests {
 
         let m = BigInt::from_str(RSA_MODULO).unwrap();
         let bit_capacity = <<Fq as PrimeField>::Params as FpParameters>::CAPACITY as usize;
-        let m2 = limbs_to_nat::<Fq>(&nat_to_limbs::<Fq>(&m, bit_capacity, m.bits() as usize / bit_capacity + 1).unwrap(), bit_capacity);
+        let m2 = limbs_to_nat::<Fq>(
+            &nat_to_limbs::<Fq>(&m, bit_capacity, m.bits() as usize / bit_capacity + 1).unwrap(),
+            bit_capacity,
+        );
         assert_eq!(m, m2);
     }
 }

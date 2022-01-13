@@ -1,15 +1,12 @@
-use crate::{
-    bigint::{BigInt},
-    Error,
-};
+use crate::{bigint::BigInt, Error};
+use digest::Digest;
 use num_bigint::Sign;
 use num_integer::Integer;
-use num_traits::{One};
-use digest::Digest;
+use num_traits::One;
 use std::{
     cmp::min,
-    fmt::{self, Debug},
     error::Error as ErrorTrait,
+    fmt::{self, Debug},
     marker::PhantomData,
 };
 use tracing::debug;
@@ -105,12 +102,10 @@ impl PocklingtonPlan {
             // High bit is fixed to 1
             let max_random_bits = max_extension_bits - max_nonce_bits_needed - 1;
             let random_bits = min(entropy - plan.entropy(), max_random_bits);
-            plan.extensions.push(
-                PlannedExtension {
-                    nonce_bits: max_nonce_bits_needed,
-                    random_bits: random_bits,
-                }
-            )
+            plan.extensions.push(PlannedExtension {
+                nonce_bits: max_nonce_bits_needed,
+                random_bits: random_bits,
+            })
         }
         plan
     }
@@ -158,18 +153,16 @@ pub fn attempt_pocklington_base<D: Digest>(
             let mut base = BigInt::one() << (plan.base_nonce_bits + plan.base_random_bits) as u32;
             base |= (random_bits.clone() << plan.base_nonce_bits as u32) + nonce;
             if miller_rabin_32b(&base) {
-                return Ok(
-                    PocklingtonCertificate {
-                        base_plan: PlannedExtension{
-                            nonce_bits: plan.base_nonce_bits,
-                            random_bits: plan.base_random_bits,
-                        },
-                        base_prime: base,
-                        base_nonce: nonce as usize,
-                        extensions: Vec::new(),
-                        _hash: PhantomData,
-                    }
-                );
+                return Ok(PocklingtonCertificate {
+                    base_plan: PlannedExtension {
+                        nonce_bits: plan.base_nonce_bits,
+                        random_bits: plan.base_random_bits,
+                    },
+                    base_prime: base,
+                    base_nonce: nonce as usize,
+                    extensions: Vec::new(),
+                    _hash: PhantomData,
+                });
             }
         }
     }
@@ -192,14 +185,12 @@ pub fn attempt_pocklington_extension<D: Digest>(
                 break;
             }
             if (&part - BigInt::one()).gcd(&candidate) == BigInt::one() {
-                p.extensions.push(
-                    ExtensionCertificate {
-                        plan: plan.clone(),
-                        checking_base: base,
-                        result: candidate,
-                        nonce,
-                    }
-                );
+                p.extensions.push(ExtensionCertificate {
+                    plan: plan.clone(),
+                    checking_base: base,
+                    result: candidate,
+                    nonce,
+                });
                 return Ok(p);
             }
             base += 1;
@@ -216,16 +207,21 @@ pub fn hash_to_pocklington_prime<D: Digest>(
     debug_assert_eq!(plan.entropy(), entropy);
 
     // Compute needed randomness
-    let mut random_bits = BigInt::from_bytes_le(Sign::Plus, &hash_to_variable_output_length::<D>(inputs, entropy));
+    let mut random_bits = BigInt::from_bytes_le(
+        Sign::Plus,
+        &hash_to_variable_output_length::<D>(inputs, entropy),
+    );
 
     // Construct Pocklington base
-    let base_random_bits = random_bits.clone() & ((BigInt::from(1) << plan.base_random_bits as u32) - BigInt::from(1));
+    let base_random_bits =
+        random_bits.clone() & ((BigInt::from(1) << plan.base_random_bits as u32) - BigInt::from(1));
     let mut cert = attempt_pocklington_base(&plan, &base_random_bits)?;
     random_bits >>= plan.base_random_bits as u32;
 
     // Perform each extension
     for extension in &plan.extensions {
-        let ext_random_bits = random_bits.clone() & ((BigInt::from(1) << extension.random_bits as u32) - BigInt::from(1));
+        let ext_random_bits = random_bits.clone()
+            & ((BigInt::from(1) << extension.random_bits as u32) - BigInt::from(1));
         cert = attempt_pocklington_extension(cert, extension, &ext_random_bits)?;
         random_bits >>= extension.random_bits as u32;
     }
@@ -238,15 +234,20 @@ pub fn check_pocklington_certificate<D: Digest>(
     entropy: usize,
     cert: &PocklingtonCertificate<D>,
 ) -> Result<bool, Error> {
-
     // Compute needed randomness
-    let mut random_bits = BigInt::from_bytes_le(Sign::Plus, &hash_to_variable_output_length::<D>(inputs, entropy));
+    let mut random_bits = BigInt::from_bytes_le(
+        Sign::Plus,
+        &hash_to_variable_output_length::<D>(inputs, entropy),
+    );
 
     // Construct Pocklington base
-    let base_random_bits = random_bits.clone() & ((BigInt::from(1) << cert.base_plan.random_bits as u32) - BigInt::from(1));
+    let base_random_bits = random_bits.clone()
+        & ((BigInt::from(1) << cert.base_plan.random_bits as u32) - BigInt::from(1));
     random_bits >>= cert.base_plan.random_bits as u32;
-    let mut base = BigInt::from(1) << (cert.base_plan.nonce_bits + cert.base_plan.random_bits) as u32;
-    base |= (base_random_bits.clone() << cert.base_plan.nonce_bits as u32) + BigInt::from(cert.base_nonce as u32);
+    let mut base =
+        BigInt::from(1) << (cert.base_plan.nonce_bits + cert.base_plan.random_bits) as u32;
+    base |= (base_random_bits.clone() << cert.base_plan.nonce_bits as u32)
+        + BigInt::from(cert.base_nonce as u32);
     debug_assert_eq!(cert.base_plan.nonce_bits + cert.base_plan.random_bits, 31);
     debug!(base = base.to_str_radix(10).as_str());
     if !miller_rabin_32b(&base) {
@@ -257,7 +258,8 @@ pub fn check_pocklington_certificate<D: Digest>(
     // Check each extension
     let mut prime = cert.base_prime.clone();
     for (i, extension) in cert.extensions.iter().enumerate() {
-        let ext_random_bits = random_bits.clone() & ((BigInt::from(1) << extension.plan.random_bits as u32) - BigInt::from(1));
+        let ext_random_bits = random_bits.clone()
+            & ((BigInt::from(1) << extension.plan.random_bits as u32) - BigInt::from(1));
         random_bits >>= extension.plan.random_bits as u32;
         let extension_term = extension.plan.evaluate(&ext_random_bits, extension.nonce);
 
@@ -275,14 +277,20 @@ pub fn check_pocklington_certificate<D: Digest>(
         // Enforce coprimality
         let gcd = part_less_one.gcd(&n);
         if gcd != BigInt::one() {
-            debug!(gcd = gcd.to_str_radix(10).as_str(), "failed coprimality test");
+            debug!(
+                gcd = gcd.to_str_radix(10).as_str(),
+                "failed coprimality test"
+            );
             return Ok(false);
         }
 
         // Check Fermat's little theorem
         let power = part.modpow(&prime, &n);
         if power != BigInt::one() {
-            debug!(power = power.to_str_radix(10).as_str(), "failed Fermat's primality test");
+            debug!(
+                power = power.to_str_radix(10).as_str(),
+                "failed Fermat's primality test"
+            );
             return Ok(false);
         }
 
@@ -290,8 +298,6 @@ pub fn check_pocklington_certificate<D: Digest>(
     }
     Ok(prime == cert.result().clone())
 }
-
-
 
 /// Returns whether `n` passes Miller-Rabin checks with the first `rounds` primes as bases
 pub fn miller_rabin(n: &BigInt, rounds: usize) -> bool {
@@ -342,12 +348,8 @@ pub fn miller_rabin_32b(n: &BigInt) -> bool {
         && miller_rabin_round(n, &BigInt::from(61usize))
 }
 
-
 /// Returns `(result, nonce)` for first nonce that passes Miller-Rabin primality check
-pub fn hash_to_prime<D: Digest>(
-    inputs: &[u8],
-    n_bits: usize,
-) -> Result<(BigInt, u32), Error> {
+pub fn hash_to_prime<D: Digest>(inputs: &[u8], n_bits: usize) -> Result<(BigInt, u32), Error> {
     let n_rounds = -128f64 * 2f64.ln() / (1f64 - 2f64 / n_bits as f64).ln();
     let nonce_bits = (n_rounds.log2().ceil() + 0.1) as usize;
     let mut nonce = 0u32;
@@ -366,7 +368,10 @@ pub fn hash_to_prime<D: Digest>(
 }
 
 pub fn hash_to_integer<D: Digest>(inputs: &[u8], n_bits: usize) -> BigInt {
-    let mut n = BigInt::from_bytes_le(Sign::Plus, &hash_to_variable_output_length::<D>(inputs, n_bits - 1));
+    let mut n = BigInt::from_bytes_le(
+        Sign::Plus,
+        &hash_to_variable_output_length::<D>(inputs, n_bits - 1),
+    );
     n.set_bit(n_bits as u64 - 1, true);
     n
 }
@@ -393,7 +398,7 @@ pub enum HashToPrimeError {
     NoValidNonce,
 }
 
-impl ErrorTrait for HashToPrimeError{
+impl ErrorTrait for HashToPrimeError {
     fn source(self: &Self) -> Option<&(dyn ErrorTrait + 'static)> {
         None
     }
@@ -408,17 +413,14 @@ impl fmt::Display for HashToPrimeError {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use sha3::Sha3_256;
-
 
     #[test]
     fn pocklington_prime_test() {
         let h = hash_to_pocklington_prime::<Sha3_256>(&vec![0], 128).unwrap();
         check_pocklington_certificate(&vec![0], 128, &h).unwrap();
     }
-
 }

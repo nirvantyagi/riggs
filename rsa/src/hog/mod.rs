@@ -1,16 +1,13 @@
-use crate::bigint::{
-    BigInt,
-    extended_euclidean_gcd,
-};
+use crate::bigint::{extended_euclidean_gcd, BigInt};
 
-use once_cell::sync::Lazy;
 use num_traits::{One, Signed, Zero};
+use once_cell::sync::Lazy;
 use std::{
-    hash::{Hash, Hasher},
-    error::Error as ErrorTrait,
-    marker::PhantomData,
     cmp::min,
+    error::Error as ErrorTrait,
     fmt::{self, Debug},
+    hash::{Hash, Hasher},
+    marker::PhantomData,
     ops::Deref,
 };
 
@@ -49,7 +46,10 @@ impl<P: RsaGroupParams> RsaHiddenOrderGroup<P> {
         a %= P::M.deref();
         let mut ma = P::M.deref().clone();
         ma -= &a;
-        RsaHiddenOrderGroup{ n: min(a, ma), _params: PhantomData }
+        RsaHiddenOrderGroup {
+            n: min(a, ma),
+            _params: PhantomData,
+        }
     }
 
     pub fn op(&self, other: &Self) -> Self {
@@ -58,29 +58,41 @@ impl<P: RsaGroupParams> RsaHiddenOrderGroup<P> {
         a %= P::M.deref();
         let mut ma = P::M.deref().clone();
         ma -= &a;
-        RsaHiddenOrderGroup{ n: min(a, ma), _params: PhantomData }
+        RsaHiddenOrderGroup {
+            n: min(a, ma),
+            _params: PhantomData,
+        }
     }
 
     pub fn identity() -> Self {
-        RsaHiddenOrderGroup{ n: BigInt::one(), _params: PhantomData }
+        RsaHiddenOrderGroup {
+            n: BigInt::one(),
+            _params: PhantomData,
+        }
     }
 
     pub fn generator() -> Self {
-        RsaHiddenOrderGroup{ n: P::G.deref().clone(), _params: PhantomData }
+        RsaHiddenOrderGroup {
+            n: P::G.deref().clone(),
+            _params: PhantomData,
+        }
     }
 
     pub fn power(&self, e: &BigInt) -> Self {
         let r = self.n.modpow(e, P::M.deref());
         let mut mr = P::M.deref().clone();
         mr -= &r;
-        RsaHiddenOrderGroup{ n: min(r, mr), _params: PhantomData }
+        RsaHiddenOrderGroup {
+            n: min(r, mr),
+            _params: PhantomData,
+        }
     }
 
     //TODO: Optimization for only calculating needed Bezout coefficient
     pub fn inverse(&self) -> Result<Self, Error> {
         let ((mut inv, _), gcd) = extended_euclidean_gcd(&self.n, P::M.deref());
         if gcd.abs() > BigInt::one() {
-            return Err(Box::new(RsaHOGError::NotInvertible))
+            return Err(Box::new(RsaHOGError::NotInvertible));
         }
         if inv < BigInt::zero() {
             inv += P::M.deref();
@@ -108,7 +120,6 @@ impl fmt::Display for RsaHOGError {
         write!(f, "{}", msg)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -145,5 +156,4 @@ mod tests {
         let inv_a = a.inverse().unwrap();
         assert_eq!(a.op(&inv_a).n, BigInt::from(1));
     }
-
 }

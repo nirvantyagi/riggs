@@ -1,35 +1,25 @@
 //! Implements Wesolowski's Proof of Exponentiation
 
 use crate::{
-    bigint::{BigInt},
-    hog::{RsaHiddenOrderGroup, RsaGroupParams},
-    poe::{
-        hash_to_prime::{
-            PocklingtonCertificate,
-            hash_to_pocklington_prime,
-            check_pocklington_certificate,
-        },
+    bigint::BigInt,
+    hog::{RsaGroupParams, RsaHiddenOrderGroup},
+    poe::hash_to_prime::{
+        check_pocklington_certificate, hash_to_pocklington_prime, PocklingtonCertificate,
     },
     Error,
 };
 use digest::Digest;
 
-use std::{
-    marker::PhantomData,
-    fmt::Debug,
-};
 use num_integer::Integer;
+use std::{fmt::Debug, marker::PhantomData};
 
 pub mod hash_to_prime;
 
-
 pub type Hog<P> = RsaHiddenOrderGroup<P>;
-
 
 pub trait PoEParams: Clone {
     const HASH_TO_PRIME_ENTROPY: usize;
 }
-
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PoE<P: PoEParams, RsaP: RsaGroupParams, D: Digest> {
@@ -52,25 +42,31 @@ impl<P: PoEParams, RsaP: RsaGroupParams, D: Digest> PoE<P, RsaP, D> {
         hash_input.append(&mut u.n.to_bytes_le().1);
         hash_input.append(&mut v.n.to_bytes_le().1);
         hash_input.extend_from_slice(&t.to_le_bytes());
-        let cert = hash_to_pocklington_prime::<D>(
-            &hash_input,
-            P::HASH_TO_PRIME_ENTROPY,
-        )?;
+        let cert = hash_to_pocklington_prime::<D>(&hash_input, P::HASH_TO_PRIME_ENTROPY)?;
         let l = cert.result();
 
         // Compute quotient of exponent with challenge prime
         let q = BigInt::from(2).pow(t).div_floor(l);
 
         // Compute proof elements
-        Ok(Proof{ q: u.power(&q), cert })
+        Ok(Proof {
+            q: u.power(&q),
+            cert,
+        })
     }
 
-    pub fn verify(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u32, proof: &Proof<RsaP, D>) -> Result<bool, Error> {
+    pub fn verify(
+        u: &Hog<RsaP>,
+        v: &Hog<RsaP>,
+        t: u32,
+        proof: &Proof<RsaP, D>,
+    ) -> Result<bool, Error> {
         let mut hash_input = vec![];
         hash_input.append(&mut u.n.to_bytes_le().1);
         hash_input.append(&mut v.n.to_bytes_le().1);
         hash_input.extend_from_slice(&t.to_le_bytes());
-        let b = check_pocklington_certificate::<D>(&hash_input, P::HASH_TO_PRIME_ENTROPY, &proof.cert)?;
+        let b =
+            check_pocklington_certificate::<D>(&hash_input, P::HASH_TO_PRIME_ENTROPY, &proof.cert)?;
         let l = proof.cert.result();
         let r = BigInt::from(2).modpow(&BigInt::from(t), l);
 
@@ -78,7 +74,6 @@ impl<P: PoEParams, RsaP: RsaGroupParams, D: Digest> PoE<P, RsaP, D> {
         Ok(b && v == &proof.q.power(l).op(&u.power(&r)))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -105,7 +100,6 @@ mod tests {
         });
     }
 
-
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestPoEParams;
     impl PoEParams for TestPoEParams {
@@ -128,5 +122,4 @@ mod tests {
         let is_valid = TestWesolowski::verify(&u, &v, 30, &proof).unwrap();
         assert!(!is_valid);
     }
-
 }
