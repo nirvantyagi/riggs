@@ -3,4 +3,5 @@
 members = [
   "rsa",
   "timed_commitment",
+  "tc_pedersen",
 ]

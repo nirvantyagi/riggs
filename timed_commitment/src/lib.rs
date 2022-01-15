@@ -25,8 +25,8 @@ pub struct TimeParams<RsaP: RsaGroupParams, D: Digest> {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Comm<RsaP: RsaGroupParams> {
-    x: Hog<RsaP>,
-    ct: Vec<u8>,
+    pub x: Hog<RsaP>,
+    pub ct: Vec<u8>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -36,13 +36,13 @@ pub enum Opening<RsaP: RsaGroupParams, D: Digest> {
 }
 
 /// Non-malleable timed commitment using key-committing authenticated encryption
-pub struct KCTimeComm<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> {
+pub struct BasicTC<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> {
     _poe_params: PhantomData<PoEP>,
     _rsa_params: PhantomData<RsaP>,
     _hash: PhantomData<D>,
 }
 
-impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> KCTimeComm<PoEP, RsaP, D> {
+impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
     pub fn gen_time_params(t: u32) -> Result<TimeParams<RsaP, D>, Error> {
         let g = Hog::<RsaP>::generator();
         let y = g.power(&BigInt::from(2).pow(t));
@@ -173,7 +173,7 @@ mod tests {
         const HASH_TO_PRIME_ENTROPY: usize = 128;
     }
 
-    pub type TC = KCTimeComm<TestPoEParams, TestRsaParams, Sha3_256>;
+    pub type TC = BasicTC<TestPoEParams, TestRsaParams, Sha3_256>;
 
     #[test]
     fn key_committing_tc_test() {
@@ -191,6 +191,7 @@ mod tests {
 
         let (force_m, force_opening) = TC::force_open(&pp, &comm, &ad).unwrap();
         assert!(TC::ver_open(&pp, &comm, &ad, &force_m, &force_opening).unwrap());
+        assert_eq!(force_m, Some(m.to_vec()));
 
         let mut ad_bad = ad.to_vec();
         ad_bad[0] = ad_bad[0] + 1u8;
