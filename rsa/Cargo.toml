@@ -8,6 +8,9 @@ edition = "2021"
 [dependencies]
 ark-ff = { version = "0.3", default-features = false }
 ark-std = { version = "0.3", default-features = false }
+ark-relations = { version = "0.3", default-features = false }
+ark-r1cs-std = { version = "0.3", default-features = false }
+
 
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = { version = "0.1" }
@@ -22,9 +25,10 @@ rayon = { version = "1", optional = true }
 [dev-dependencies]
 ark-ed-on-bls12-381 = { version = "0.3", default-features = false, features = ["r1cs"] }
 sha3 = { version = "0.10" }
+tracing-subscriber = { version = "0.2" }
 
 [features]
 default = ["std", "parallel" ]
-std = [ "ark-ff/std", "ark-std/std" ]
-parallel = [ "rayon" ]
+std = [ "ark-ff/std", "ark-std/std", "ark-relations/std" ]
+parallel = [ "std", "rayon", "ark-std/parallel", "ark-ff/parallel" ]
 print-trace = [ "ark-std/print-trace" ]

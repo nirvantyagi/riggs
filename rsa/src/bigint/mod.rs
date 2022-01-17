@@ -8,11 +8,12 @@ use std::{
     error::Error as ErrorTrait,
     fmt::{self, Debug},
 };
+use num_traits::Signed;
 use tracing::debug;
 
 use crate::Error;
 
-//pub mod constraints;
+pub mod constraints;
 pub type BigInt = NumBigInt;
 
 pub fn extended_euclidean_gcd(a: &BigInt, b: &BigInt) -> ((BigInt, BigInt), BigInt) {
@@ -54,6 +55,7 @@ pub fn nat_to_limbs<'a, F: PrimeField>(
     limb_width: usize,
     n_limbs: usize,
 ) -> Result<Vec<F>, Error> {
+    assert!(!nat.is_negative());
     assert!(limb_width <= <F::Params as FpParameters>::CAPACITY as usize);
     let mask = int_with_n_ones(limb_width);
     let mut nat = nat.clone();
