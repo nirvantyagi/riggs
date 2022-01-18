@@ -1,23 +1,19 @@
 use ark_ec::ProjectiveCurve;
-use ark_ff::{biginteger::BigInteger, PrimeField, UniformRand};
+use ark_ff::{biginteger::BigInteger, PrimeField};
 
-use crate::Error;
+use crate::{
+    basic_tc::{BasicTC, Comm as TCComm, Opening as TCOpening, TimeParams},
+    Error, PedersenComm, PedersenParams,
+};
 use digest::Digest;
 use num_bigint::Sign;
 use rand::{CryptoRng, Rng};
 use rsa::{
     bigint::{nat_to_f, BigInt},
     hog::RsaGroupParams,
-    poe::PoEParams,
+    poe::{PoEParams, Proof as PoEProof},
 };
 use std::marker::PhantomData;
-use timed_commitment::{BasicTC, Comm as TCComm, Opening as TCOpening, TimeParams};
-
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct PedersenParams<G: ProjectiveCurve> {
-    g: G,
-    h: G,
-}
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Comm<G: ProjectiveCurve, RsaP: RsaGroupParams> {
@@ -30,45 +26,6 @@ pub struct Opening<RsaP: RsaGroupParams, D: Digest> {
     tc_opening: TCOpening<RsaP, D>,
     tc_m: Option<Vec<u8>>,
 }
-
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct PedersenComm<G: ProjectiveCurve> {
-    _g: PhantomData<G>,
-}
-
-impl<G: ProjectiveCurve> PedersenComm<G> {
-    pub fn gen_pedersen_params<R: CryptoRng + Rng>(rng: &mut R) -> PedersenParams<G> {
-        PedersenParams {
-            g: G::rand(rng).into(),
-            h: G::rand(rng).into(),
-        }
-    }
-
-    pub fn commit<R: CryptoRng + Rng>(
-        rng: &mut R,
-        pp: &PedersenParams<G>,
-        m: &[u8],
-    ) -> Result<(G, G::ScalarField), Error> {
-        let r = G::ScalarField::rand(rng);
-        let m_f = nat_to_f::<G::ScalarField>(&BigInt::from_bytes_le(Sign::Plus, m))?;
-        let comm = pp.g.mul(&m_f.into_repr()) + &pp.h.mul(&r.into_repr());
-        Ok((comm, r))
-    }
-
-    pub fn ver_open(
-        pp: &PedersenParams<G>,
-        comm: &G,
-        m: &[u8],
-        opening: &G::ScalarField,
-    ) -> Result<bool, Error> {
-        let m_f = nat_to_f::<G::ScalarField>(&BigInt::from_bytes_le(Sign::Plus, m));
-        match m_f {
-            Ok(m_f) => Ok(pp.g.mul(&m_f.into_repr()) + &pp.h.mul(opening.into_repr()) == *comm),
-            Err(_) => Ok(false),
-        }
-    }
-}
-
 pub struct LazyTC<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> {
     _pedersen_g: PhantomData<G>,
     _tc: PhantomData<BasicTC<PoEP, RsaP, D>>,
@@ -81,17 +38,17 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest>
         PedersenComm::<G>::gen_pedersen_params(rng)
     }
 
-    pub fn gen_time_params(t: u32) -> Result<TimeParams<RsaP, D>, Error> {
+    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, D>), Error> {
         BasicTC::<PoEP, RsaP, D>::gen_time_params(t)
     }
 
-    pub fn ver_time_params(pp: &TimeParams<RsaP, D>) -> Result<bool, Error> {
-        BasicTC::<PoEP, RsaP, D>::ver_time_params(pp)
+    pub fn ver_time_params(pp: &TimeParams<RsaP>, proof: &PoEProof<RsaP, D>) -> Result<bool, Error> {
+        BasicTC::<PoEP, RsaP, D>::ver_time_params(pp, proof)
     }
 
     pub fn commit<R: CryptoRng + Rng>(
         rng: &mut R,
-        time_pp: &TimeParams<RsaP, D>,
+        time_pp: &TimeParams<RsaP>,
         ped_pp: &PedersenParams<G>,
         m: &[u8],
         ad: &[u8],
@@ -110,7 +67,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest>
     }
 
     pub fn force_open(
-        time_pp: &TimeParams<RsaP, D>,
+        time_pp: &TimeParams<RsaP>,
         ped_pp: &PedersenParams<G>,
         comm: &Comm<G, RsaP>,
         ad: &[u8],
@@ -137,7 +94,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest>
     }
 
     pub fn ver_open(
-        time_pp: &TimeParams<RsaP, D>,
+        time_pp: &TimeParams<RsaP>,
         ped_pp: &PedersenParams<G>,
         comm: &Comm<G, RsaP>,
         ad: &[u8],
@@ -217,8 +174,7 @@ mod tests {
         let mut ad = [0u8; 32];
         rng.fill(&mut ad);
 
-        let time_pp = TC::gen_time_params(40).unwrap();
-        assert!(TC::ver_time_params(&time_pp).unwrap());
+        let (time_pp, _) = TC::gen_time_params(40).unwrap();
 
         let ped_pp = TC::gen_pedersen_params(&mut rng);
 

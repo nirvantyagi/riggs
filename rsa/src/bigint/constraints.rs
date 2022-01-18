@@ -250,7 +250,6 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         Ok(rem)
     }
 
-
     /// Constrains `result` to be equal to `self ** exp % modulus`.
     #[tracing::instrument(target = "r1cs", skip(self, exp, modulus))]
     pub fn pow_mod(
@@ -262,8 +261,19 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         if exp.word_size >= (BigInt::one() << P::LIMB_WIDTH as u32) {
             return self.pow_mod(&exp.reduce()?, modulus, num_exp_bits)
         }
-        let cs = self.cs().or(exp.cs());
         let exp_bits = exp.enforce_fits_in_bits(num_exp_bits)?;
+        self.pow_mod_bits(&exp_bits, modulus)
+    }
+
+    /// Constrains `result` to be equal to `self ** exp % modulus`.
+    #[tracing::instrument(target = "r1cs", skip(self, exp_bits, modulus))]
+    pub fn pow_mod_bits(
+        &self,
+        exp_bits: &Vec<Boolean<ConstraintF>>,
+        modulus: &Self,
+    ) -> Result<Self, SynthesisError> {
+        let cs = self.cs().or(exp_bits.cs());
+        let num_exp_bits = exp_bits.len();
 
         // Perform a windowed Bauer exponentiation
         // Compute the optimal window size

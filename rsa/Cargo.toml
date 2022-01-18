@@ -11,7 +11,6 @@ ark-std = { version = "0.3", default-features = false }
 ark-relations = { version = "0.3", default-features = false }
 ark-r1cs-std = { version = "0.3", default-features = false }
 
-
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = { version = "0.1" }
 num-traits = { version = "0.2" }

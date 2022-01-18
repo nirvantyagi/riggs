@@ -1,5 +1,5 @@
 [package]
-name = "tc_pedersen"
+name = "timed_commitments"
 version = "0.1.0"
 authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
 edition = "2021"
@@ -9,27 +9,34 @@ edition = "2021"
 ark-ff = { version = "0.3", default-features = false }
 ark-ec = { version = "0.3", default-features = false }
 ark-std = { version = "0.3", default-features = false }
+ark-snark = { version = "0.3", default-features = false }
+ark-sponge = { version = "0.3", default-features = false, features = ["r1cs"] }
+ark-r1cs-std = { version = "0.3", default-features = false }
+ark-relations = { version = "0.3", default-features = false }
 
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = { version = "0.1" }
 num-traits = { version = "0.2" }
 rand = { version = "0.8" }
 digest = { version = "0.10" }
+aes-gcm = { version = "0.9" }
+once_cell = { version = "1.9" }
 
 tracing = { version = "0.1", default-features = false, features = [ "attributes" ] }
 rayon = { version = "1", optional = true }
 
 rsa = { path = "../rsa" }
-timed_commitment = { path = "../timed_commitment" }
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.3", features = [ "curve" ] }
+ark-ed-on-bls12-381 = { version = "0.3", default-features = false, features = ["r1cs"] }
+ark-groth16 = { version = "0.3", default-features = false }
 
 once_cell = { version = "1.9" }
 sha3 = { version = "0.10" }
 
 [features]
 default = ["std", "parallel" ]
-std = [ "ark-ff/std", "ark-ec/std", "ark-std/std" ]
-parallel = [ "rayon" ]
+std = [ "ark-ff/std", "ark-ec/std", "ark-std/std", "ark-groth16/std" ]
+parallel = [ "rayon", "ark-std/parallel", "ark-groth16/parallel" ]
 print-trace = [ "ark-std/print-trace" ]

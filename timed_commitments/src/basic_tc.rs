@@ -1,26 +1,27 @@
-use crate::committing_ae::KeyCommittingAE;
+use crate::Error;
 use rsa::{
     bigint::BigInt,
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
     poe::{PoE, PoEParams, Proof as PoEProof},
 };
-use std::{error::Error as ErrorTrait, marker::PhantomData};
+use std::{
+    error::Error as ErrorTrait,
+    fmt::{self, Debug},
+    marker::PhantomData,
+};
 
+use aes_gcm::{AeadInPlace, Aes128Gcm, NewAead, Nonce};
 use digest::Digest;
 use num_bigint::RandBigInt;
 use rand::{CryptoRng, Rng};
 
-pub mod committing_ae;
-
-pub type Error = Box<dyn ErrorTrait>;
 pub type Hog<P> = RsaHiddenOrderGroup<P>;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct TimeParams<RsaP: RsaGroupParams, D: Digest> {
-    t: u32,
-    x: Hog<RsaP>,
-    y: Hog<RsaP>,
-    proof: PoEProof<RsaP, D>,
+pub struct TimeParams<RsaP: RsaGroupParams> {
+    pub t: u32,
+    pub x: Hog<RsaP>,
+    pub y: Hog<RsaP>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -43,25 +44,25 @@ pub struct BasicTC<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> {
 }
 
 impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
-    pub fn gen_time_params(t: u32) -> Result<TimeParams<RsaP, D>, Error> {
+    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, D>), Error> {
         let g = Hog::<RsaP>::generator();
         let y = g.power(&BigInt::from(2).pow(t));
         let proof = PoE::<PoEP, RsaP, D>::prove(&g, &y, t)?;
-        Ok(TimeParams { t, x: g, y, proof })
+        Ok((TimeParams { t, x: g, y }, proof))
     }
 
-    pub fn ver_time_params(pp: &TimeParams<RsaP, D>) -> Result<bool, Error> {
-        PoE::<PoEP, RsaP, D>::verify(&pp.x, &pp.y, pp.t, &pp.proof)
+    pub fn ver_time_params(pp: &TimeParams<RsaP>, proof: &PoEProof<RsaP, D>) -> Result<bool, Error> {
+        PoE::<PoEP, RsaP, D>::verify(&pp.x, &pp.y, pp.t, proof)
     }
 
     pub fn commit<R: CryptoRng + Rng>(
         rng: &mut R,
-        pp: &TimeParams<RsaP, D>,
+        pp: &TimeParams<RsaP>,
         m: &[u8],
         ad: &[u8],
     ) -> Result<(Comm<RsaP>, Opening<RsaP, D>), Error> {
         // Sample randomizing factor
-        let r = BigInt::from(rng.gen_biguint(256));
+        let r = BigInt::from(rng.gen_biguint(128));
         let x = pp.x.power(&r);
         let y = pp.y.power(&r);
 
@@ -77,7 +78,7 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
     }
 
     pub fn force_open(
-        pp: &TimeParams<RsaP, D>,
+        pp: &TimeParams<RsaP>,
         comm: &Comm<RsaP>,
         ad: &[u8],
     ) -> Result<(Option<Vec<u8>>, Opening<RsaP, D>), Error> {
@@ -102,7 +103,7 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
     }
 
     pub fn ver_open(
-        pp: &TimeParams<RsaP, D>,
+        pp: &TimeParams<RsaP>,
         comm: &Comm<RsaP>,
         ad: &[u8],
         m: &Option<Vec<u8>>,
@@ -137,6 +138,79 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
                 }
             }
         }
+    }
+}
+
+pub struct KeyCommittingAE;
+
+impl KeyCommittingAE {
+    pub fn encrypt<R: CryptoRng + Rng>(
+        rng: &mut R,
+        key: &[u8],
+        ad: &[u8],
+        pt: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        let ae = Aes128Gcm::new_from_slice(key)
+            .or(Err(Box::new(KeyCommittingAEError::InvalidKeyFormat)))?;
+        let mut nonce = [0u8; 12]; // 96-bit nonce
+        rng.fill(&mut nonce);
+
+        // Build up plaintext to encrypt in place
+        let mut ct = Vec::new();
+        // Prepend 128-bit zero block for key committing
+        // - https://eprint.iacr.org/2020/1491.pdf
+        // - https://www.usenix.org/system/files/sec22summer_albertini.pdf
+        ct.extend_from_slice(&[0u8; 16]);
+        ct.extend_from_slice(pt);
+        ae.encrypt_in_place(&nonce.into(), ad, &mut ct)
+            .map_err(|_| Box::new(KeyCommittingAEError::EncryptionFailed))?;
+
+        // Append nonce to end
+        ct.extend_from_slice(&nonce);
+        Ok(ct)
+    }
+
+    // TODO: Fix timing side channel of decryption error
+    pub fn decrypt(key: &[u8], ad: &[u8], ct: &[u8]) -> Result<Vec<u8>, Error> {
+        let ae = Aes128Gcm::new_from_slice(key)
+            .or(Err(Box::new(KeyCommittingAEError::InvalidKeyFormat)))?;
+        let mut pt_zero_preprend = ct.to_vec();
+        // Parse nonce from end
+        let nonce = pt_zero_preprend.split_off(pt_zero_preprend.len() - 12);
+        ae.decrypt_in_place(Nonce::from_slice(&nonce), ad, &mut pt_zero_preprend)
+            .map_err(|_| Box::new(KeyCommittingAEError::DecryptionFailed))?;
+
+        // Verify key-committing 0-block
+        let pt = pt_zero_preprend.split_off(16);
+        if (pt_zero_preprend.len() != 16) || (pt_zero_preprend.iter().any(|b| *b != 0)) {
+            Err(Box::new(KeyCommittingAEError::DecryptionFailed))
+        } else {
+            Ok(pt)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum KeyCommittingAEError {
+    InvalidKeyFormat,
+    EncryptionFailed,
+    DecryptionFailed,
+}
+
+impl ErrorTrait for KeyCommittingAEError {
+    fn source(self: &Self) -> Option<&(dyn ErrorTrait + 'static)> {
+        None
+    }
+}
+
+impl fmt::Display for KeyCommittingAEError {
+    fn fmt(self: &Self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let msg = match self {
+            KeyCommittingAEError::InvalidKeyFormat => format!("invalid key format"),
+            KeyCommittingAEError::EncryptionFailed => format!("encryption failed"),
+            KeyCommittingAEError::DecryptionFailed => format!("decryption failed"),
+        };
+        write!(f, "{}", msg)
     }
 }
 
@@ -176,6 +250,34 @@ mod tests {
     pub type TC = BasicTC<TestPoEParams, TestRsaParams, Sha3_256>;
 
     #[test]
+    fn key_committing_ae_test() {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut pt = [1u8; 32];
+        rng.fill(&mut pt);
+        let mut key = [0u8; 16];
+        rng.fill(&mut key);
+        let mut ad = [0u8; 32];
+        rng.fill(&mut ad);
+
+        let ct = KeyCommittingAE::encrypt(&mut rng, &key, &ad, &pt).unwrap();
+        let dec_ct = KeyCommittingAE::decrypt(&key, &ad, &ct).unwrap();
+        assert!(pt.iter().eq(dec_ct.iter()));
+
+        let mut key_bad = key.to_vec();
+        key_bad[0] = key_bad[0] + 1u8;
+        assert!(KeyCommittingAE::decrypt(&key_bad, &ad, &ct).is_err());
+
+        let mut ad_bad = ad.to_vec();
+        ad_bad[0] = ad_bad[0] + 1u8;
+        assert!(KeyCommittingAE::decrypt(&key, &ad_bad, &ct).is_err());
+
+        let mut nonce_bad = ct.to_vec();
+        let l = nonce_bad.len();
+        nonce_bad[l - 1] = nonce_bad[l - 1] + 1u8;
+        assert!(KeyCommittingAE::decrypt(&key, &ad, &nonce_bad).is_err());
+    }
+
+    #[test]
     fn key_committing_tc_test() {
         let mut rng = StdRng::seed_from_u64(0u64);
         let mut m = [1u8; 32];
@@ -183,8 +285,8 @@ mod tests {
         let mut ad = [0u8; 32];
         rng.fill(&mut ad);
 
-        let pp = TC::gen_time_params(40).unwrap();
-        assert!(TC::ver_time_params(&pp).unwrap());
+        let (pp, pp_proof) = TC::gen_time_params(40).unwrap();
+        assert!(TC::ver_time_params(&pp, &pp_proof).unwrap());
 
         let (comm, self_opening) = TC::commit(&mut rng, &pp, &m, &ad).unwrap();
         assert!(TC::ver_open(&pp, &comm, &ad, &Some(m.to_vec()), &self_opening).unwrap());
