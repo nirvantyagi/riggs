@@ -13,7 +13,7 @@ use std::{
 
 use crate::Error;
 
-//pub mod constraints;
+pub mod constraints;
 
 //TODO: https://github.com/rust-num/num-bigint/issues/181
 pub trait RsaGroupParams: Clone + Eq + Debug + Send + Sync {
