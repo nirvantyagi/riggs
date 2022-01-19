@@ -24,7 +24,7 @@ rayon = { version = "1", optional = true }
 [dev-dependencies]
 ark-ed-on-bls12-381 = { version = "0.3", default-features = false, features = ["r1cs"] }
 sha3 = { version = "0.10" }
-tracing-subscriber = { version = "0.2" }
+tracing-subscriber = { version = "0.3" }
 
 [features]
 default = ["std", "parallel" ]

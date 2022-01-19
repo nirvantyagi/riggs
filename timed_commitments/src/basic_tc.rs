@@ -51,7 +51,10 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
         Ok((TimeParams { t, x: g, y }, proof))
     }
 
-    pub fn ver_time_params(pp: &TimeParams<RsaP>, proof: &PoEProof<RsaP, D>) -> Result<bool, Error> {
+    pub fn ver_time_params(
+        pp: &TimeParams<RsaP>,
+        proof: &PoEProof<RsaP, D>,
+    ) -> Result<bool, Error> {
         PoE::<PoEP, RsaP, D>::verify(&pp.x, &pp.y, pp.t, proof)
     }
 

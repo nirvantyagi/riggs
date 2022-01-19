@@ -34,6 +34,7 @@ ark-groth16 = { version = "0.3", default-features = false }
 
 once_cell = { version = "1.9" }
 sha3 = { version = "0.10" }
+tracing-subscriber = { version = "0.3" }
 
 [features]
 default = ["std", "parallel" ]

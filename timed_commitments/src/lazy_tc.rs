@@ -42,7 +42,10 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest>
         BasicTC::<PoEP, RsaP, D>::gen_time_params(t)
     }
 
-    pub fn ver_time_params(pp: &TimeParams<RsaP>, proof: &PoEProof<RsaP, D>) -> Result<bool, Error> {
+    pub fn ver_time_params(
+        pp: &TimeParams<RsaP>,
+        proof: &PoEProof<RsaP, D>,
+    ) -> Result<bool, Error> {
         BasicTC::<PoEP, RsaP, D>::ver_time_params(pp, proof)
     }
 
