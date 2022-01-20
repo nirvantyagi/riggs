@@ -368,17 +368,21 @@ pub fn hash_to_prime<D: Digest>(inputs: &[u8], n_bits: usize) -> Result<(BigInt,
 }
 
 pub fn hash_to_integer<D: Digest>(inputs: &[u8], n_bits: usize) -> BigInt {
+    assert!(n_bits > 0);
     let mut n = BigInt::from_bytes_le(
         Sign::Plus,
-        &hash_to_variable_output_length::<D>(inputs, n_bits - 1),
+        &hash_to_variable_output_length::<D>(inputs, ((n_bits - 1) / 8) + 1),
     );
+    // Clear high order bits
+    let mask = (BigInt::one() << n_bits) - BigInt::one();
+    n &= mask;
     n.set_bit(n_bits as u64 - 1, true);
     n
 }
 
-fn hash_to_variable_output_length<D: Digest>(inputs: &[u8], n_bits: usize) -> Vec<u8> {
-    let bits_per_hash = D::output_size();
-    let n_hashes = (n_bits - 1) / bits_per_hash + 1;
+fn hash_to_variable_output_length<D: Digest>(inputs: &[u8], n_bytes: usize) -> Vec<u8> {
+    let bytes_per_hash = D::output_size();
+    let n_hashes = (n_bytes - 1) / bytes_per_hash + 1;
 
     // Hash the inputs with a different counter for each output
     let mut out = Vec::new();
@@ -389,7 +393,7 @@ fn hash_to_variable_output_length<D: Digest>(inputs: &[u8], n_bits: usize) -> Ve
         inputs.truncate(inputs.len() - 4);
     }
 
-    out.truncate(n_bits);
+    out.truncate(n_bytes);
     out
 }
 
@@ -417,6 +421,17 @@ impl fmt::Display for HashToPrimeError {
 mod tests {
     use super::*;
     use sha3::Sha3_256;
+
+    #[test]
+    fn hash_to_integer_test() {
+        let h = hash_to_integer::<Sha3_256>(&vec![0], 24);
+        assert!(h >= BigInt::one() << 23);
+        assert!(h < BigInt::one() << 24);
+
+        let h = hash_to_integer::<Sha3_256>(&vec![0], 13);
+        assert!(h >= BigInt::one() << 12);
+        assert!(h < BigInt::one() << 13);
+    }
 
     #[test]
     fn pocklington_prime_test() {
