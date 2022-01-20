@@ -18,7 +18,7 @@ use rand::{CryptoRng, Rng};
 use rsa::{
     bigint::{
         constraints::{BigIntCircuitParams, BigIntVar},
-        nat_to_f, BigInt,
+        BigInt,
     },
     hog::{constraints::RsaHogVar, RsaGroupParams, RsaHiddenOrderGroup},
     poe::{PoE, PoEParams, Proof as PoEProof},
@@ -36,6 +36,7 @@ pub type Hog<P> = RsaHiddenOrderGroup<P>;
 pub trait SnarkTCParams<F: PrimeField>: Clone + Eq + Debug + Send + Sync {
     const M_LEN: usize; // Length of message in bytes
     const POSEIDON_PARAMS: Lazy<PoseidonParameters<F>>;
+    const TC_RANDOMIZER_BIT_LEN: usize; // Length of randomizer in bits (for 64-bit testing)
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -112,7 +113,7 @@ where
         let mut m = m.to_vec();
         m.resize(P::M_LEN, 0u8);
         let (ped_comm, ped_opening) = PedersenComm::<G>::commit(rng, ped_pp, &m)?;
-        let r = BigInt::from(rng.gen_biguint(128));
+        let r = BigInt::from(rng.gen_biguint(P::TC_RANDOMIZER_BIT_LEN as u64));
         let x = time_pp.x.power(&r);
         let y = time_pp.y.power(&r);
 
@@ -166,6 +167,62 @@ where
             proof,
         )
         .unwrap())
+    }
+
+    pub fn force_open(
+        time_pp: &TimeParams<RsaP>,
+        _ped_pp: &PedersenParams<G>,
+        comm: &Comm<G, RsaP>,
+    ) -> Result<(Vec<u8>, Opening<G, RsaP, D>), Error> {
+        // Compute and prove repeated square
+        let y = comm.x.power(&BigInt::from(2).pow(time_pp.t));
+        let proof = PoE::<PoEP, RsaP, D>::prove(&comm.x, &y, time_pp.t)?;
+
+        // Hash y to get blinding pad
+        let mut hasher = PoseidonSponge::<F>::new(&P::POSEIDON_PARAMS);
+        hasher.absorb(&y.n.to_bytes_le().1);
+        let pad = hasher.squeeze_bytes(P::M_LEN);
+
+        // XOR ciphertext with blinding pad
+        assert_eq!(comm.ct.len(), P::M_LEN);
+        let m = pad
+            .iter()
+            .zip(comm.ct.iter())
+            .map(|(x1, x2)| x1 ^ x2)
+            .collect::<Vec<u8>>();
+
+        let opening = Opening::FORCE(y, proof);
+        Ok((m, opening))
+    }
+
+    pub fn ver_open(
+        time_pp: &TimeParams<RsaP>,
+        ped_pp: &PedersenParams<G>,
+        comm: &Comm<G, RsaP>,
+        m: &[u8],
+        opening: &Opening<G, RsaP, D>,
+    ) -> Result<bool, Error> {
+        match opening {
+            Opening::SELF(r) => PedersenComm::ver_open(ped_pp, &comm.ped_comm, m, r),
+            Opening::FORCE(y, proof) => {
+                let proof_valid = PoE::<PoEP, RsaP, D>::verify(&comm.x, y, time_pp.t, proof)?;
+
+                // Hash y to get blinding pad
+                let mut hasher = PoseidonSponge::<F>::new(&P::POSEIDON_PARAMS);
+                hasher.absorb(&y.n.to_bytes_le().1);
+                let pad = hasher.squeeze_bytes(P::M_LEN);
+
+                // XOR ciphertext with blinding pad
+                assert_eq!(comm.ct.len(), P::M_LEN);
+                let dec_m = pad
+                    .iter()
+                    .zip(comm.ct.iter())
+                    .map(|(x1, x2)| x1 ^ x2)
+                    .collect::<Vec<u8>>();
+
+                Ok(proof_valid && m == &dec_m)
+            },
+        }
     }
 }
 
@@ -268,10 +325,10 @@ where
             g.scalar_mul_le(m.to_bits_le()?.iter())? + h.scalar_mul_le(ped_opening.iter())?;
         comm_ped.enforce_equal(&computed_ped_comm)?;
 
-        let computed_tc_x = x.power(&tc_r, &modulus, 128)?;
+        let computed_tc_x = x.power(&tc_r, &modulus, P::TC_RANDOMIZER_BIT_LEN)?;
         comm_x.enforce_equal(&computed_tc_x)?;
 
-        let tc_y = y.power(&tc_r, &modulus, 128)?;
+        let tc_y = y.power(&tc_r, &modulus, P::TC_RANDOMIZER_BIT_LEN)?;
         hasher.absorb(&tc_y.to_bytes()?)?;
         let pad = hasher.squeeze_bytes(P::M_LEN)?;
         let computed_ct = pad
@@ -293,7 +350,7 @@ where
     G: ProjectiveCurve,
     GV: CurveVar<G, F>,
 {
-    fn default(time_pp: &TimeParams<RsaP>, ped_pp: &PedersenParams<G>) -> Self {
+    pub fn default(time_pp: &TimeParams<RsaP>, ped_pp: &PedersenParams<G>) -> Self {
         let mut default_m = Vec::new();
         default_m.resize(P::M_LEN, 0u8);
 
@@ -359,8 +416,6 @@ mod tests {
     use rand::{rngs::StdRng, SeedableRng};
     use sha3::Sha3_256;
     use std::str::FromStr;
-
-    use rsa::hog::RsaHiddenOrderGroup;
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
@@ -440,10 +495,22 @@ mod tests {
     pub struct TestSnarkTCParams;
 
     impl SnarkTCParams<F> for TestSnarkTCParams {
+        const M_LEN: usize = 16;
+        const POSEIDON_PARAMS: Lazy<PoseidonParameters<F>> =
+            Lazy::new(|| poseidon_parameters_for_test());
+        const TC_RANDOMIZER_BIT_LEN: usize = 128;
+    }
+
+    #[derive(Clone, PartialEq, Eq, Debug)]
+    pub struct TestSnarkTC64Params;
+
+    impl SnarkTCParams<F> for TestSnarkTC64Params {
         const M_LEN: usize = 8;
         const POSEIDON_PARAMS: Lazy<PoseidonParameters<F>> =
             Lazy::new(|| poseidon_parameters_for_test());
+        const TC_RANDOMIZER_BIT_LEN: usize = 32;
     }
+
 
     pub type Circuit = TCCircuit<F, TestSnarkTCParams, TestRsaParams, BigNatTestParams, G, GV>;
     pub type TC = SnarkTC<
@@ -473,11 +540,11 @@ mod tests {
     >;
 
     pub type Circuit64 =
-        TCCircuit<F, TestSnarkTCParams, TestRsa64Params, BigNat64TestParams, G, GV>;
+        TCCircuit<F, TestSnarkTC64Params, TestRsa64Params, BigNat64TestParams, G, GV>;
     pub type TC64 = SnarkTC<
         F,
         Groth16<Bls12_381>,
-        TestSnarkTCParams,
+        TestSnarkTC64Params,
         TestPoEParams,
         TestRsa64Params,
         BigNat64TestParams,
@@ -503,6 +570,11 @@ mod tests {
         let (comm, self_opening, proof) =
             TC64::commit(&mut rng, &time_pp, &ped_pp, &pk, &m).unwrap();
         assert!(TC64::ver_comm(&time_pp, &vk, &comm, &proof,).unwrap());
+        assert!(TC64::ver_open(&time_pp, &ped_pp, &comm, &m, &self_opening).unwrap());
+
+        let (force_m, force_opening) = TC64::force_open(&time_pp, &ped_pp, &comm).unwrap();
+        assert_eq!(force_m, m.to_vec());
+        assert!(TC64::ver_open(&time_pp, &ped_pp, &comm, &m, &force_opening).unwrap());
     }
 
     #[test]
@@ -525,6 +597,11 @@ mod tests {
             TC512::commit(&mut rng, &time_pp, &ped_pp, &pk, &m).unwrap();
         end_timer!(proof_gen);
         assert!(TC512::ver_comm(&time_pp, &vk, &comm, &proof,).unwrap());
+        assert!(TC512::ver_open(&time_pp, &ped_pp, &comm, &m, &self_opening).unwrap());
+
+        let (force_m, force_opening) = TC512::force_open(&time_pp, &ped_pp, &comm).unwrap();
+        assert_eq!(force_m, m.to_vec());
+        assert!(TC512::ver_open(&time_pp, &ped_pp, &comm, &m, &force_opening).unwrap());
     }
 
     #[test]
@@ -546,6 +623,11 @@ mod tests {
         let (comm, self_opening, proof) = TC::commit(&mut rng, &time_pp, &ped_pp, &pk, &m).unwrap();
         end_timer!(proof_gen);
         assert!(TC::ver_comm(&time_pp, &vk, &comm, &proof,).unwrap());
+        assert!(TC::ver_open(&time_pp, &ped_pp, &comm, &m, &self_opening).unwrap());
+
+        let (force_m, force_opening) = TC::force_open(&time_pp, &ped_pp, &comm).unwrap();
+        assert_eq!(force_m, m.to_vec());
+        assert!(TC::ver_open(&time_pp, &ped_pp, &comm, &m, &force_opening).unwrap());
     }
 
     fn poseidon_parameters_for_test<F: PrimeField>() -> PoseidonParameters<F> {
