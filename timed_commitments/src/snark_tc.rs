@@ -9,7 +9,6 @@ use ark_sponge::{
     CryptographicSponge,
 };
 
-use digest::Digest;
 use num_bigint::RandBigInt;
 use num_traits::One;
 use once_cell::sync::Lazy;
@@ -21,11 +20,11 @@ use rsa::{
         BigInt,
     },
     hog::{constraints::RsaHogVar, RsaGroupParams, RsaHiddenOrderGroup},
-    poe::{PoE, PoEParams, Proof as PoEProof},
+    poe::{PoE, PoEParams, Proof as PoEProof, hash_to_prime::HashToPrime},
 };
 
 use crate::{
-    basic_tc::{BasicTC, TimeParams},
+    basic_tc::{TimeParams},
     Error, PedersenComm, PedersenParams,
 };
 use rsa::bigint::nat_to_limbs;
@@ -47,9 +46,9 @@ pub struct Comm<G: ProjectiveCurve, RsaP: RsaGroupParams> {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Opening<G: ProjectiveCurve, RsaP: RsaGroupParams, D: Digest> {
+pub enum Opening<G: ProjectiveCurve, RsaP: RsaGroupParams, H2P: HashToPrime> {
     SELF(G::ScalarField),
-    FORCE(Hog<RsaP>, PoEProof<RsaP, D>),
+    FORCE(Hog<RsaP>, PoEProof<RsaP, H2P>),
 }
 
 /// Non-malleable timed commitment using key-committing authenticated encryption
@@ -61,7 +60,7 @@ pub struct SnarkTC<
     PoEP: PoEParams,
     RsaP: RsaGroupParams,
     IntP: BigIntCircuitParams,
-    D: Digest,
+    H2P: HashToPrime,
     G: ProjectiveCurve,
     GV: CurveVar<G, F>,
 > {
@@ -71,12 +70,12 @@ pub struct SnarkTC<
     _poe_params: PhantomData<PoEP>,
     _rsa_params: PhantomData<RsaP>,
     _int_params: PhantomData<IntP>,
-    _hash: PhantomData<D>,
+    _hash: PhantomData<H2P>,
     _pedersen_g: PhantomData<G>,
     _pedersen_g_var: PhantomData<GV>,
 }
 
-impl<F, PS, P, PoEP, RsaP, IntP, D, G, GV> SnarkTC<F, PS, P, PoEP, RsaP, IntP, D, G, GV>
+impl<F, PS, P, PoEP, RsaP, IntP, H2P, G, GV> SnarkTC<F, PS, P, PoEP, RsaP, IntP, H2P, G, GV>
 where
     F: PrimeField,
     PS: SNARK<F>,
@@ -84,7 +83,7 @@ where
     PoEP: PoEParams,
     RsaP: RsaGroupParams,
     IntP: BigIntCircuitParams,
-    D: Digest,
+    H2P: HashToPrime,
     G: ProjectiveCurve + ToConstraintField<F>,
     GV: CurveVar<G, F>,
 {
@@ -92,15 +91,18 @@ where
         PedersenComm::<G>::gen_pedersen_params(rng)
     }
 
-    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, D>), Error> {
-        BasicTC::<PoEP, RsaP, D>::gen_time_params(t)
+    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
+        let g = Hog::<RsaP>::generator();
+        let y = g.power(&BigInt::from(2).pow(t));
+        let proof = PoE::<PoEP, RsaP, H2P>::prove(&g, &y, t)?;
+        Ok((TimeParams { t, x: g, y }, proof))
     }
 
     pub fn ver_time_params(
         pp: &TimeParams<RsaP>,
-        proof: &PoEProof<RsaP, D>,
+        proof: &PoEProof<RsaP, H2P>,
     ) -> Result<bool, Error> {
-        BasicTC::<PoEP, RsaP, D>::ver_time_params(pp, proof)
+        PoE::<PoEP, RsaP, H2P>::verify(&pp.x, &pp.y, pp.t, proof)
     }
 
     pub fn commit<R: CryptoRng + Rng>(
@@ -109,7 +111,7 @@ where
         ped_pp: &PedersenParams<G>,
         snark_pp: &PS::ProvingKey,
         m: &[u8],
-    ) -> Result<(Comm<G, RsaP>, Opening<G, RsaP, D>, PS::Proof), Error> {
+    ) -> Result<(Comm<G, RsaP>, Opening<G, RsaP, H2P>, PS::Proof), Error> {
         let mut m = m.to_vec();
         m.resize(P::M_LEN, 0u8);
         let (ped_comm, ped_opening) = PedersenComm::<G>::commit(rng, ped_pp, &m)?;
@@ -173,10 +175,10 @@ where
         time_pp: &TimeParams<RsaP>,
         _ped_pp: &PedersenParams<G>,
         comm: &Comm<G, RsaP>,
-    ) -> Result<(Vec<u8>, Opening<G, RsaP, D>), Error> {
+    ) -> Result<(Vec<u8>, Opening<G, RsaP, H2P>), Error> {
         // Compute and prove repeated square
         let y = comm.x.power(&BigInt::from(2).pow(time_pp.t));
-        let proof = PoE::<PoEP, RsaP, D>::prove(&comm.x, &y, time_pp.t)?;
+        let proof = PoE::<PoEP, RsaP, H2P>::prove(&comm.x, &y, time_pp.t)?;
 
         // Hash y to get blinding pad
         let mut hasher = PoseidonSponge::<F>::new(&P::POSEIDON_PARAMS);
@@ -200,12 +202,12 @@ where
         ped_pp: &PedersenParams<G>,
         comm: &Comm<G, RsaP>,
         m: &[u8],
-        opening: &Opening<G, RsaP, D>,
+        opening: &Opening<G, RsaP, H2P>,
     ) -> Result<bool, Error> {
         match opening {
             Opening::SELF(r) => PedersenComm::ver_open(ped_pp, &comm.ped_comm, m, r),
             Opening::FORCE(y, proof) => {
-                let proof_valid = PoE::<PoEP, RsaP, D>::verify(&comm.x, y, time_pp.t, proof)?;
+                let proof_valid = PoE::<PoEP, RsaP, H2P>::verify(&comm.x, y, time_pp.t, proof)?;
 
                 // Hash y to get blinding pad
                 let mut hasher = PoseidonSponge::<F>::new(&P::POSEIDON_PARAMS);
@@ -417,6 +419,8 @@ mod tests {
     use sha3::Sha3_256;
     use std::str::FromStr;
 
+    use rsa::poe::hash_to_prime::PlannedPocklingtonHash;
+
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
 
@@ -520,7 +524,7 @@ mod tests {
         TestPoEParams,
         TestRsaParams,
         BigNatTestParams,
-        Sha3_256,
+        PlannedPocklingtonHash<Sha3_256>,
         G,
         GV,
     >;
@@ -534,7 +538,7 @@ mod tests {
         TestPoEParams,
         TestRsa512Params,
         BigNat512TestParams,
-        Sha3_256,
+        PlannedPocklingtonHash<Sha3_256>,
         G,
         GV,
     >;
@@ -548,7 +552,7 @@ mod tests {
         TestPoEParams,
         TestRsa64Params,
         BigNat64TestParams,
-        Sha3_256,
+        PlannedPocklingtonHash<Sha3_256>,
         G,
         GV,
     >;

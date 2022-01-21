@@ -2,7 +2,7 @@ use crate::Error;
 use rsa::{
     bigint::BigInt,
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
-    poe::{PoE, PoEParams, Proof as PoEProof},
+    poe::{PoE, PoEParams, Proof as PoEProof, hash_to_prime::HashToPrime},
 };
 use std::{
     error::Error as ErrorTrait,
@@ -31,31 +31,32 @@ pub struct Comm<RsaP: RsaGroupParams> {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Opening<RsaP: RsaGroupParams, D: Digest> {
+pub enum Opening<RsaP: RsaGroupParams, H2P: HashToPrime> {
     SELF(BigInt),
-    FORCE(Hog<RsaP>, PoEProof<RsaP, D>),
+    FORCE(Hog<RsaP>, PoEProof<RsaP, H2P>),
 }
 
 /// Non-malleable timed commitment using key-committing authenticated encryption
-pub struct BasicTC<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> {
+pub struct BasicTC<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> {
     _poe_params: PhantomData<PoEP>,
     _rsa_params: PhantomData<RsaP>,
-    _hash: PhantomData<D>,
+    _hash: PhantomData<H>,
+    _hash_to_prime: PhantomData<H2P>,
 }
 
-impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
-    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, D>), Error> {
+impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> BasicTC<PoEP, RsaP, H, H2P> {
+    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
         let g = Hog::<RsaP>::generator();
         let y = g.power(&BigInt::from(2).pow(t));
-        let proof = PoE::<PoEP, RsaP, D>::prove(&g, &y, t)?;
+        let proof = PoE::<PoEP, RsaP, H2P>::prove(&g, &y, t)?;
         Ok((TimeParams { t, x: g, y }, proof))
     }
 
     pub fn ver_time_params(
         pp: &TimeParams<RsaP>,
-        proof: &PoEProof<RsaP, D>,
+        proof: &PoEProof<RsaP, H2P>,
     ) -> Result<bool, Error> {
-        PoE::<PoEP, RsaP, D>::verify(&pp.x, &pp.y, pp.t, proof)
+        PoE::<PoEP, RsaP, H2P>::verify(&pp.x, &pp.y, pp.t, proof)
     }
 
     pub fn commit<R: CryptoRng + Rng>(
@@ -63,15 +64,15 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
         pp: &TimeParams<RsaP>,
         m: &[u8],
         ad: &[u8],
-    ) -> Result<(Comm<RsaP>, Opening<RsaP, D>), Error> {
+    ) -> Result<(Comm<RsaP>, Opening<RsaP, H2P>), Error> {
         // Sample randomizing factor
         let r = BigInt::from(rng.gen_biguint(128));
         let x = pp.x.power(&r);
         let y = pp.y.power(&r);
 
         // Derive key from repeated square
-        assert!(D::output_size() >= 16);
-        let mut key = D::digest(&y.n.to_bytes_le().1).to_vec();
+        assert!(H::output_size() >= 16);
+        let mut key = H::digest(&y.n.to_bytes_le().1).to_vec();
         key.truncate(16);
 
         let mut ad = ad.to_vec();
@@ -84,14 +85,14 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
         pp: &TimeParams<RsaP>,
         comm: &Comm<RsaP>,
         ad: &[u8],
-    ) -> Result<(Option<Vec<u8>>, Opening<RsaP, D>), Error> {
+    ) -> Result<(Option<Vec<u8>>, Opening<RsaP, H2P>), Error> {
         // Compute and prove repeated square
         let y = comm.x.power(&BigInt::from(2).pow(pp.t));
-        let proof = PoE::<PoEP, RsaP, D>::prove(&comm.x, &y, pp.t)?;
+        let proof = PoE::<PoEP, RsaP, H2P>::prove(&comm.x, &y, pp.t)?;
 
         // Derive key from repeated square
-        assert!(D::output_size() >= 16);
-        let mut key = D::digest(&y.n.to_bytes_le().1).to_vec();
+        assert!(H::output_size() >= 16);
+        let mut key = H::digest(&y.n.to_bytes_le().1).to_vec();
         key.truncate(16);
 
         let mut ad = ad.to_vec();
@@ -110,13 +111,13 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
         comm: &Comm<RsaP>,
         ad: &[u8],
         m: &Option<Vec<u8>>,
-        opening: &Opening<RsaP, D>,
+        opening: &Opening<RsaP, H2P>,
     ) -> Result<bool, Error> {
         match opening {
             Opening::SELF(r) => {
                 let x_valid = pp.x.power(r) == comm.x;
                 let y = pp.y.power(r);
-                let mut key = D::digest(&y.n.to_bytes_le().1).to_vec();
+                let mut key = H::digest(&y.n.to_bytes_le().1).to_vec();
                 key.truncate(16);
                 let mut ad = ad.to_vec();
                 ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
@@ -128,8 +129,8 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> BasicTC<PoEP, RsaP, D> {
                 }
             }
             Opening::FORCE(y, proof) => {
-                let proof_valid = PoE::<PoEP, RsaP, D>::verify(&comm.x, y, pp.t, proof)?;
-                let mut key = D::digest(&y.n.to_bytes_le().1).to_vec();
+                let proof_valid = PoE::<PoEP, RsaP, H2P>::verify(&comm.x, y, pp.t, proof)?;
+                let mut key = H::digest(&y.n.to_bytes_le().1).to_vec();
                 key.truncate(16);
                 let mut ad = ad.to_vec();
                 ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
@@ -224,6 +225,7 @@ mod tests {
     use rand::{rngs::StdRng, SeedableRng};
     use sha3::Sha3_256;
     use std::str::FromStr;
+    use rsa::poe::hash_to_prime::PlannedPocklingtonHash;
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
@@ -250,7 +252,7 @@ mod tests {
         const HASH_TO_PRIME_ENTROPY: usize = 128;
     }
 
-    pub type TC = BasicTC<TestPoEParams, TestRsaParams, Sha3_256>;
+    pub type TC = BasicTC<TestPoEParams, TestRsaParams, Sha3_256, PlannedPocklingtonHash<Sha3_256>>;
 
     #[test]
     fn key_committing_ae_test() {

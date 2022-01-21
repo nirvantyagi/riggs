@@ -11,7 +11,7 @@ use rand::{CryptoRng, Rng};
 use rsa::{
     bigint::{nat_to_f, BigInt},
     hog::RsaGroupParams,
-    poe::{PoEParams, Proof as PoEProof},
+    poe::{PoEParams, Proof as PoEProof, hash_to_prime::HashToPrime},
 };
 use std::marker::PhantomData;
 
@@ -22,31 +22,31 @@ pub struct Comm<G: ProjectiveCurve, RsaP: RsaGroupParams> {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Opening<RsaP: RsaGroupParams, D: Digest> {
-    tc_opening: TCOpening<RsaP, D>,
+pub struct Opening<RsaP: RsaGroupParams, H2P: HashToPrime> {
+    tc_opening: TCOpening<RsaP, H2P>,
     tc_m: Option<Vec<u8>>,
 }
-pub struct LazyTC<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest> {
+pub struct LazyTC<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> {
     _pedersen_g: PhantomData<G>,
-    _tc: PhantomData<BasicTC<PoEP, RsaP, D>>,
+    _tc: PhantomData<BasicTC<PoEP, RsaP, H, H2P>>,
 }
 
-impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest>
-    LazyTC<G, PoEP, RsaP, D>
+impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
+    LazyTC<G, PoEP, RsaP, H, H2P>
 {
     pub fn gen_pedersen_params<R: CryptoRng + Rng>(rng: &mut R) -> PedersenParams<G> {
         PedersenComm::<G>::gen_pedersen_params(rng)
     }
 
-    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, D>), Error> {
-        BasicTC::<PoEP, RsaP, D>::gen_time_params(t)
+    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
+        BasicTC::<PoEP, RsaP, H, H2P>::gen_time_params(t)
     }
 
     pub fn ver_time_params(
         pp: &TimeParams<RsaP>,
-        proof: &PoEProof<RsaP, D>,
+        proof: &PoEProof<RsaP, H2P>,
     ) -> Result<bool, Error> {
-        BasicTC::<PoEP, RsaP, D>::ver_time_params(pp, proof)
+        BasicTC::<PoEP, RsaP, H, H2P>::ver_time_params(pp, proof)
     }
 
     pub fn commit<R: CryptoRng + Rng>(
@@ -55,11 +55,11 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest>
         ped_pp: &PedersenParams<G>,
         m: &[u8],
         ad: &[u8],
-    ) -> Result<(Comm<G, RsaP>, Opening<RsaP, D>), Error> {
+    ) -> Result<(Comm<G, RsaP>, Opening<RsaP, H2P>), Error> {
         let (ped_comm, ped_opening) = PedersenComm::<G>::commit(rng, ped_pp, m)?;
         let mut tc_m = m.to_vec();
         tc_m.append(&mut ped_opening.into_repr().to_bytes_le());
-        let (tc_comm, tc_opening) = BasicTC::<PoEP, RsaP, D>::commit(rng, time_pp, &tc_m, ad)?;
+        let (tc_comm, tc_opening) = BasicTC::<PoEP, RsaP, H, H2P>::commit(rng, time_pp, &tc_m, ad)?;
         Ok((
             Comm { ped_comm, tc_comm },
             Opening {
@@ -74,8 +74,8 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest>
         ped_pp: &PedersenParams<G>,
         comm: &Comm<G, RsaP>,
         ad: &[u8],
-    ) -> Result<(Option<Vec<u8>>, Opening<RsaP, D>), Error> {
-        let (tc_m, tc_opening) = BasicTC::<PoEP, RsaP, D>::force_open(time_pp, &comm.tc_comm, ad)?;
+    ) -> Result<(Option<Vec<u8>>, Opening<RsaP, H2P>), Error> {
+        let (tc_m, tc_opening) = BasicTC::<PoEP, RsaP, H, H2P>::force_open(time_pp, &comm.tc_comm, ad)?;
         match &tc_m {
             Some(tc_m_inner) => {
                 let mut m = tc_m_inner.to_vec();
@@ -102,9 +102,9 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, D: Digest>
         comm: &Comm<G, RsaP>,
         ad: &[u8],
         m: &Option<Vec<u8>>,
-        opening: &Opening<RsaP, D>,
+        opening: &Opening<RsaP, H2P>,
     ) -> Result<bool, Error> {
-        let tc_valid = BasicTC::<PoEP, RsaP, D>::ver_open(
+        let tc_valid = BasicTC::<PoEP, RsaP, H, H2P>::ver_open(
             time_pp,
             &comm.tc_comm,
             ad,
@@ -139,6 +139,7 @@ mod tests {
     use rand::{rngs::StdRng, SeedableRng};
     use sha3::Sha3_256;
     use std::str::FromStr;
+    use rsa::poe::hash_to_prime::PlannedPocklingtonHash;
 
     use rsa::hog::RsaHiddenOrderGroup;
 
@@ -167,7 +168,7 @@ mod tests {
         const HASH_TO_PRIME_ENTROPY: usize = 128;
     }
 
-    pub type TC = LazyTC<G, TestPoEParams, TestRsaParams, Sha3_256>;
+    pub type TC = LazyTC<G, TestPoEParams, TestRsaParams, Sha3_256, PlannedPocklingtonHash<Sha3_256>>;
 
     #[test]
     fn lazy_tc_test() {

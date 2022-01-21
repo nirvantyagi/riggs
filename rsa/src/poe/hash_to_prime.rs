@@ -11,6 +11,65 @@ use std::{
 };
 use tracing::debug;
 
+pub trait HashToPrime {
+    type Certificate: Clone + Eq + Debug;
+
+    fn hash_to_prime(entropy: usize, input: &[u8]) -> Result<(BigInt, Self::Certificate), Error>;
+
+    fn verify_hash_to_prime(entropy: usize, input: &[u8], p: &BigInt, cert: &Self::Certificate) -> Result<bool, Error>;
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct PlannedPocklingtonHash<D: Digest>{
+    _hash: PhantomData<D>,
+}
+
+impl<D: Digest> HashToPrime for PlannedPocklingtonHash<D> {
+    type Certificate = PocklingtonCertificate;
+
+    fn hash_to_prime(entropy: usize, input: &[u8]) -> Result<(BigInt, Self::Certificate), Error> {
+        let cert = hash_to_pocklington_prime::<D>(input, entropy)?;
+        Ok((cert.result().clone(), cert))
+    }
+
+    fn verify_hash_to_prime(entropy: usize, input: &[u8], p: &BigInt, cert: &Self::Certificate) -> Result<bool, Error> {
+        let cert_valid = check_pocklington_certificate::<D>(input, entropy, cert)?;
+        Ok(p == cert.result() && cert_valid)
+    }
+}
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct MillerRabinRejectionSample<D: Digest>{
+    _hash: PhantomData<D>,
+}
+
+impl<D: Digest> HashToPrime for MillerRabinRejectionSample<D> {
+    type Certificate = u32;
+
+    fn hash_to_prime(entropy: usize, input: &[u8]) -> Result<(BigInt, Self::Certificate), Error> {
+        hash_to_prime::<D>(input, Self::prime_bits(entropy))
+    }
+
+    fn verify_hash_to_prime(entropy: usize, input: &[u8], p: &BigInt, cert: &Self::Certificate) -> Result<bool, Error> {
+        let mut input = input.to_vec();
+        input.extend_from_slice(&cert.to_le_bytes());
+        let p_comp = hash_to_integer::<D>(&input, Self::prime_bits(entropy));
+        Ok(p == &p_comp && miller_rabin(p, 30))
+    }
+}
+
+impl<D: Digest> MillerRabinRejectionSample<D> {
+    fn prime_bits(entropy: usize) -> usize {
+        // Size of prime needed if nonce is chosen deterministically from nonce space
+        let n_bits = ((entropy as f64) + (entropy as f64).ln()) as usize;
+        let n_rounds = -128f64 * 2f64.ln() / (1f64 - 2f64 / n_bits as f64).ln();
+        let nonce_bits = (n_rounds.log2().ceil() + 0.1) as usize;
+
+        // Size of prime needed if any nonce of valid length is allowed
+        n_bits + nonce_bits
+    }
+
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PocklingtonPlan {
     /// Number of nonce bits in the base prime
@@ -36,12 +95,11 @@ pub struct ExtensionCertificate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PocklingtonCertificate<D: Digest> {
+pub struct PocklingtonCertificate {
     pub base_plan: PlannedExtension,
     pub base_prime: BigInt,
     pub base_nonce: usize,
     pub extensions: Vec<ExtensionCertificate>,
-    _hash: PhantomData<D>,
 }
 
 impl PlannedExtension {
@@ -133,7 +191,7 @@ impl PocklingtonPlan {
     }
 }
 
-impl<D: Digest> PocklingtonCertificate<D> {
+impl PocklingtonCertificate {
     pub fn result(&self) -> &BigInt {
         if let Some(l) = self.extensions.last() {
             &l.result
@@ -143,10 +201,10 @@ impl<D: Digest> PocklingtonCertificate<D> {
     }
 }
 
-pub fn attempt_pocklington_base<D: Digest>(
+pub fn attempt_pocklington_base(
     plan: &PocklingtonPlan,
     random_bits: &BigInt,
-) -> Result<PocklingtonCertificate<D>, Error> {
+) -> Result<PocklingtonCertificate, Error> {
     debug_assert!(random_bits.bits() <= plan.base_random_bits as u64);
     for nonce in 0..(1u64 << plan.base_nonce_bits) {
         if (nonce & 0b11) == 0b11 {
@@ -161,7 +219,6 @@ pub fn attempt_pocklington_base<D: Digest>(
                     base_prime: base,
                     base_nonce: nonce as usize,
                     extensions: Vec::new(),
-                    _hash: PhantomData,
                 });
             }
         }
@@ -169,11 +226,11 @@ pub fn attempt_pocklington_base<D: Digest>(
     Err(Box::new(HashToPrimeError::NoValidNonce))
 }
 
-pub fn attempt_pocklington_extension<D: Digest>(
-    mut p: PocklingtonCertificate<D>,
+pub fn attempt_pocklington_extension(
+    mut p: PocklingtonCertificate,
     plan: &PlannedExtension,
     random_bits: &BigInt,
-) -> Result<PocklingtonCertificate<D>, Error> {
+) -> Result<PocklingtonCertificate, Error> {
     debug_assert!(random_bits.bits() <= plan.random_bits as u64);
     for nonce in 0..(1u64 << plan.nonce_bits) {
         let extension = plan.evaluate(random_bits, nonce); // Sets high bit
@@ -202,7 +259,7 @@ pub fn attempt_pocklington_extension<D: Digest>(
 pub fn hash_to_pocklington_prime<D: Digest>(
     inputs: &[u8],
     entropy: usize,
-) -> Result<PocklingtonCertificate<D>, Error> {
+) -> Result<PocklingtonCertificate, Error> {
     let plan = PocklingtonPlan::new(entropy);
     debug_assert_eq!(plan.entropy(), entropy);
 
@@ -232,7 +289,7 @@ pub fn hash_to_pocklington_prime<D: Digest>(
 pub fn check_pocklington_certificate<D: Digest>(
     inputs: &[u8],
     entropy: usize,
-    cert: &PocklingtonCertificate<D>,
+    cert: &PocklingtonCertificate,
 ) -> Result<bool, Error> {
     // Compute needed randomness
     let mut random_bits = BigInt::from_bytes_le(
@@ -435,7 +492,15 @@ mod tests {
 
     #[test]
     fn pocklington_prime_test() {
-        let h = hash_to_pocklington_prime::<Sha3_256>(&vec![0], 128).unwrap();
-        check_pocklington_certificate(&vec![0], 128, &h).unwrap();
+        let (h, cert) = PlannedPocklingtonHash::<Sha3_256>::hash_to_prime(128, &vec![0]).unwrap();
+        assert!(PlannedPocklingtonHash::<Sha3_256>::verify_hash_to_prime(128, &vec![0], &h, &cert).unwrap());
+    }
+
+    #[test]
+    fn miller_rabin_rejection_sample_prime_test() {
+        let (h, cert) = MillerRabinRejectionSample::<Sha3_256>::hash_to_prime(128, &vec![0]).unwrap();
+        println!("mr: {}", h);
+        println!("nonce: {}", cert);
+        assert!(MillerRabinRejectionSample::<Sha3_256>::verify_hash_to_prime(128, &vec![0], &h, &cert).unwrap());
     }
 }

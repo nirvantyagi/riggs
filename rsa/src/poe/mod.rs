@@ -4,11 +4,10 @@ use crate::{
     bigint::BigInt,
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
     poe::hash_to_prime::{
-        check_pocklington_certificate, hash_to_pocklington_prime, PocklingtonCertificate,
+        HashToPrime,
     },
     Error,
 };
-use digest::Digest;
 
 use num_integer::Integer;
 use std::{fmt::Debug, marker::PhantomData};
@@ -17,40 +16,41 @@ pub mod hash_to_prime;
 
 pub type Hog<P> = RsaHiddenOrderGroup<P>;
 
-pub trait PoEParams: Clone {
+pub trait PoEParams: Clone + Eq + Debug {
     const HASH_TO_PRIME_ENTROPY: usize;
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct PoE<P: PoEParams, RsaP: RsaGroupParams, D: Digest> {
+pub struct PoE<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime > {
     _params: PhantomData<P>,
     _rsa_params: PhantomData<RsaP>,
-    _hash: PhantomData<D>,
+    _hash: PhantomData<H>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Proof<P: RsaGroupParams, D: Digest> {
+pub struct Proof<P: RsaGroupParams, H: HashToPrime> {
     pub q: Hog<P>,
-    pub cert: PocklingtonCertificate<D>,
+    pub l: BigInt,
+    pub cert: H::Certificate,
 }
 
 // v = u^{2^t}
-impl<P: PoEParams, RsaP: RsaGroupParams, D: Digest> PoE<P, RsaP, D> {
-    pub fn prove(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u32) -> Result<Proof<RsaP, D>, Error> {
+impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
+    pub fn prove(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u32) -> Result<Proof<RsaP, H>, Error> {
         // Hash to challenge
         let mut hash_input = vec![];
         hash_input.append(&mut u.n.to_bytes_le().1);
         hash_input.append(&mut v.n.to_bytes_le().1);
         hash_input.extend_from_slice(&t.to_le_bytes());
-        let cert = hash_to_pocklington_prime::<D>(&hash_input, P::HASH_TO_PRIME_ENTROPY)?;
-        let l = cert.result();
+        let (l, cert) = H::hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input)?;
 
         // Compute quotient of exponent with challenge prime
-        let q = BigInt::from(2).pow(t).div_floor(l);
+        let q = BigInt::from(2).pow(t).div_floor(&l);
 
         // Compute proof elements
         Ok(Proof {
             q: u.power(&q),
+            l,
             cert,
         })
     }
@@ -59,19 +59,17 @@ impl<P: PoEParams, RsaP: RsaGroupParams, D: Digest> PoE<P, RsaP, D> {
         u: &Hog<RsaP>,
         v: &Hog<RsaP>,
         t: u32,
-        proof: &Proof<RsaP, D>,
+        proof: &Proof<RsaP, H>,
     ) -> Result<bool, Error> {
         let mut hash_input = vec![];
         hash_input.append(&mut u.n.to_bytes_le().1);
         hash_input.append(&mut v.n.to_bytes_le().1);
         hash_input.extend_from_slice(&t.to_le_bytes());
-        let b =
-            check_pocklington_certificate::<D>(&hash_input, P::HASH_TO_PRIME_ENTROPY, &proof.cert)?;
-        let l = proof.cert.result();
-        let r = BigInt::from(2).modpow(&BigInt::from(t), l);
+        let b = H::verify_hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input, &proof.l, &proof.cert)?;
+        let r = BigInt::from(2).modpow(&BigInt::from(t), &proof.l);
 
         // Verify proof
-        Ok(b && v == &proof.q.power(l).op(&u.power(&r)))
+        Ok(b && v == &proof.q.power(&proof.l).op(&u.power(&r)))
     }
 }
 
@@ -81,6 +79,8 @@ mod tests {
     use once_cell::sync::Lazy;
     use sha3::Sha3_256;
     use std::str::FromStr;
+
+    use crate::poe::hash_to_prime::PlannedPocklingtonHash;
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
@@ -107,7 +107,7 @@ mod tests {
     }
 
     pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
-    pub type TestWesolowski = PoE<TestPoEParams, TestRsaParams, Sha3_256>;
+    pub type TestWesolowski = PoE<TestPoEParams, TestRsaParams, PlannedPocklingtonHash<Sha3_256>>;
 
     #[test]
     fn proof_of_exponentiation_test() {
