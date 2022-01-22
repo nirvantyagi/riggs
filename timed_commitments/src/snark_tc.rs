@@ -339,6 +339,11 @@ where
             .map(|(x1, x2)| x1.xor(x2))
             .collect::<Result<Vec<UInt8<F>>, SynthesisError>>()?;
         comm_ct.enforce_equal(&computed_ct)?;
+        if !cs.is_in_setup_mode() {
+            println!("num_constraints: {}", cs.num_constraints());
+            println!("num_variable: {}", cs.num_witness_variables());
+            println!("num_input_variable: {}", cs.num_instance_variables());
+        }
         Ok(())
     }
 }
@@ -412,6 +417,7 @@ mod tests {
     use ark_bls12_381::{Bls12_381, Fr as F};
     use ark_ed_on_bls12_381::{constraints::EdwardsVar as GV, EdwardsProjective as G};
     use ark_groth16::Groth16;
+    use ark_poly::univariate::DensePolynomial;
     use ark_std::{end_timer, start_timer};
 
     use once_cell::sync::Lazy;
@@ -420,6 +426,9 @@ mod tests {
     use std::str::FromStr;
 
     use rsa::poe::hash_to_prime::PlannedPocklingtonHash;
+    use marlin::{MarlinWrapper, MarlinPCWrapper};
+
+    type MarlinInstantiation = MarlinWrapper<F, MarlinPCWrapper<Bls12_381, DensePolynomial<F>>, Sha3_256>;
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
@@ -528,6 +537,17 @@ mod tests {
         G,
         GV,
     >;
+    pub type MarlinTC = SnarkTC<
+        F,
+        MarlinInstantiation,
+        TestSnarkTCParams,
+        TestPoEParams,
+        TestRsaParams,
+        BigNatTestParams,
+        PlannedPocklingtonHash<Sha3_256>,
+        G,
+        GV,
+    >;
 
     pub type Circuit512 =
         TCCircuit<F, TestSnarkTCParams, TestRsa512Params, BigNat512TestParams, G, GV>;
@@ -548,6 +568,18 @@ mod tests {
     pub type TC64 = SnarkTC<
         F,
         Groth16<Bls12_381>,
+        TestSnarkTC64Params,
+        TestPoEParams,
+        TestRsa64Params,
+        BigNat64TestParams,
+        PlannedPocklingtonHash<Sha3_256>,
+        G,
+        GV,
+    >;
+
+    pub type TCMarlin64 = SnarkTC<
+        F,
+        MarlinInstantiation,
         TestSnarkTC64Params,
         TestPoEParams,
         TestRsa64Params,
@@ -580,6 +612,32 @@ mod tests {
         assert_eq!(force_m, m.to_vec());
         assert!(TC64::ver_open(&time_pp, &ped_pp, &comm, &m, &force_opening).unwrap());
     }
+
+    #[test]
+    #[ignore] // Expensive test, run with ``cargo test snark_tc_64_marlin_test --release -- --ignored --nocapture``
+    fn snark_tc_64_marlin_test() {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut m = [1u8; 8];
+        rng.fill(&mut m);
+
+        let (time_pp, _) = TCMarlin64::gen_time_params(40).unwrap();
+        let ped_pp = TCMarlin64::gen_pedersen_params(&mut rng);
+        let (pk, vk) = MarlinInstantiation::circuit_specific_setup(
+            Circuit64::default(&time_pp, &ped_pp),
+            &mut rng,
+        )
+            .unwrap();
+
+        let (comm, self_opening, proof) =
+            TCMarlin64::commit(&mut rng, &time_pp, &ped_pp, &pk, &m).unwrap();
+        assert!(TCMarlin64::ver_comm(&time_pp, &vk, &comm, &proof,).unwrap());
+        assert!(TCMarlin64::ver_open(&time_pp, &ped_pp, &comm, &m, &self_opening).unwrap());
+
+        let (force_m, force_opening) = TC64::force_open(&time_pp, &ped_pp, &comm).unwrap();
+        assert_eq!(force_m, m.to_vec());
+        assert!(TCMarlin64::ver_open(&time_pp, &ped_pp, &comm, &m, &force_opening).unwrap());
+    }
+
 
     #[test]
     #[ignore] // Expensive test, run with ``cargo test snark_tc_512_test --release -- --ignored --nocapture``
@@ -632,6 +690,32 @@ mod tests {
         let (force_m, force_opening) = TC::force_open(&time_pp, &ped_pp, &comm).unwrap();
         assert_eq!(force_m, m.to_vec());
         assert!(TC::ver_open(&time_pp, &ped_pp, &comm, &m, &force_opening).unwrap());
+    }
+
+    #[test]
+    #[ignore] // Expensive test, run with ``cargo test snark_tc_2048_marlin_test --release -- --ignored --nocapture``
+    fn snark_tc_2048_marlin_test() {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut m = [1u8; 16];
+        rng.fill(&mut m);
+
+        let (time_pp, _) = MarlinTC::gen_time_params(40).unwrap();
+        let ped_pp = MarlinTC::gen_pedersen_params(&mut rng);
+        let (pk, vk) = MarlinInstantiation::circuit_specific_setup(
+            Circuit::default(&time_pp, &ped_pp),
+            &mut rng,
+        )
+            .unwrap();
+
+        let proof_gen = start_timer!(|| "Compute proof");
+        let (comm, self_opening, proof) = MarlinTC::commit(&mut rng, &time_pp, &ped_pp, &pk, &m).unwrap();
+        end_timer!(proof_gen);
+        assert!(MarlinTC::ver_comm(&time_pp, &vk, &comm, &proof,).unwrap());
+        assert!(MarlinTC::ver_open(&time_pp, &ped_pp, &comm, &m, &self_opening).unwrap());
+
+        let (force_m, force_opening) = MarlinTC::force_open(&time_pp, &ped_pp, &comm).unwrap();
+        assert_eq!(force_m, m.to_vec());
+        assert!(MarlinTC::ver_open(&time_pp, &ped_pp, &comm, &m, &force_opening).unwrap());
     }
 
     fn poseidon_parameters_for_test<F: PrimeField>() -> PoseidonParameters<F> {
@@ -1324,5 +1408,133 @@ mod tests {
         let total_rounds = 37;
         let partial_rounds = total_rounds - full_rounds;
         PoseidonParameters::new(full_rounds, partial_rounds, alpha, mds, ark)
+    }
+
+    mod marlin {
+        use ark_ec::PairingEngine;
+        use super::*;
+        use ark_marlin::{Marlin, Proof, IndexProverKey, IndexVerifierKey};
+        use ark_poly::{univariate::DensePolynomial, UVPolynomial};
+        use ark_poly_commit::{PolynomialCommitment, marlin::marlin_pc::MarlinKZG10, LabeledPolynomial, LabeledCommitment, QuerySet, Evaluations, LinearCombination, BatchLCProof};
+        use ark_std::ops::Div;
+        use digest::Digest;
+        use rand::RngCore;
+
+        pub struct MarlinPCWrapper<E: PairingEngine, P: UVPolynomial<E::Fr>> {
+            _pc: PhantomData<MarlinKZG10<E, P>>,
+        }
+
+        impl<E: PairingEngine, P: UVPolynomial<E::Fr>> Clone for MarlinPCWrapper<E, P> {
+            fn clone(&self) -> Self {
+                Self { _pc: PhantomData }
+            }
+        }
+
+        impl<E, P> PolynomialCommitment<E::Fr, P> for MarlinPCWrapper<E, P>
+        where
+        E: PairingEngine,
+        P: UVPolynomial<E::Fr, Point = E::Fr>,
+        for<'a, 'b> &'a P: Div<&'b P, Output = P>,
+        {
+            type UniversalParams = <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::UniversalParams;
+            type CommitterKey = <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::CommitterKey;
+            type VerifierKey = <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::VerifierKey;
+            type PreparedVerifierKey = <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::PreparedVerifierKey;
+            type Commitment = <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::Commitment;
+            type PreparedCommitment = <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::PreparedCommitment;
+            type Randomness = <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::Randomness;
+            type Proof = <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::Proof;
+            type BatchProof = <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::BatchProof;
+            type Error = <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::Error;
+
+            fn setup<R: RngCore>(max_degree: usize, num_vars: Option<usize>, rng: &mut R) -> Result<Self::UniversalParams, Self::Error> {
+                <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::setup(max_degree, num_vars, rng)
+            }
+
+            fn trim(pp: &Self::UniversalParams, supported_degree: usize, supported_hiding_bound: usize, enforced_degree_bounds: Option<&[usize]>) -> Result<(Self::CommitterKey, Self::VerifierKey), Self::Error> {
+                <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::trim(pp, supported_degree, supported_hiding_bound, enforced_degree_bounds)
+            }
+
+            fn commit<'a>(ck: &Self::CommitterKey, polynomials: impl IntoIterator<Item=&'a LabeledPolynomial<E::Fr, P>>, rng: Option<&mut dyn RngCore>) -> Result<(Vec<LabeledCommitment<Self::Commitment>>, Vec<Self::Randomness>), Self::Error> where P: 'a {
+                <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::commit(ck, polynomials, rng)
+            }
+
+            fn open_individual_opening_challenges<'a>(ck: &Self::CommitterKey, labeled_polynomials: impl IntoIterator<Item=&'a LabeledPolynomial<E::Fr, P>>, commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>, point: &'a P::Point, opening_challenges: &dyn Fn(u64) -> E::Fr, rands: impl IntoIterator<Item=&'a Self::Randomness>, rng: Option<&mut dyn RngCore>) -> Result<Self::Proof, Self::Error> where P: 'a, Self::Randomness: 'a, Self::Commitment: 'a {
+                <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::open_individual_opening_challenges(ck, labeled_polynomials, commitments, point, opening_challenges, rands, rng)
+            }
+
+            fn check_individual_opening_challenges<'a>(vk: &Self::VerifierKey, commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>, point: &'a P::Point, values: impl IntoIterator<Item=E::Fr>, proof: &Self::Proof, opening_challenges: &dyn Fn(u64) -> E::Fr, rng: Option<&mut dyn RngCore>) -> Result<bool, Self::Error> where Self::Commitment: 'a {
+                <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::check_individual_opening_challenges(vk, commitments, point, values, proof, opening_challenges, rng)
+            }
+
+            fn batch_check_individual_opening_challenges<'a, R: RngCore>(vk: &Self::VerifierKey, commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>, query_set: &QuerySet<P::Point>, evaluations: &Evaluations<P::Point, E::Fr>, proof: &Self::BatchProof, opening_challenges: &dyn Fn(u64) -> E::Fr, rng: &mut R) -> Result<bool, Self::Error> where Self::Commitment: 'a {
+                <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::batch_check_individual_opening_challenges(vk, commitments, query_set, evaluations, proof, opening_challenges, rng)
+            }
+
+            fn open_combinations_individual_opening_challenges<'a>(ck: &Self::CommitterKey, linear_combinations: impl IntoIterator<Item=&'a LinearCombination<E::Fr>>, polynomials: impl IntoIterator<Item=&'a LabeledPolynomial<E::Fr, P>>, commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>, query_set: &QuerySet<P::Point>, opening_challenges: &dyn Fn(u64) -> E::Fr, rands: impl IntoIterator<Item=&'a Self::Randomness>, rng: Option<&mut dyn RngCore>) -> Result<BatchLCProof<E::Fr, P, Self>, Self::Error> where Self::Randomness: 'a, Self::Commitment: 'a, P: 'a {
+                match <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::open_combinations_individual_opening_challenges(ck, linear_combinations, polynomials, commitments, query_set, opening_challenges, rands, rng) {
+                    Ok(batch_proof) => Ok(BatchLCProof{ proof: batch_proof.proof.clone(), evals: batch_proof.evals.clone() }),
+                    Err(e) => Err(e),
+                }
+            }
+
+            fn check_combinations_individual_opening_challenges<'a, R: RngCore>(vk: &Self::VerifierKey, linear_combinations: impl IntoIterator<Item=&'a LinearCombination<E::Fr>>, commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>, eqn_query_set: &QuerySet<P::Point>, eqn_evaluations: &Evaluations<P::Point, E::Fr>, proof: &BatchLCProof<E::Fr, P, Self>, opening_challenges: &dyn Fn(u64) -> E::Fr, rng: &mut R) -> Result<bool, Self::Error> where Self::Commitment: 'a {
+                let batch_proof = BatchLCProof { proof: proof.proof.clone(), evals: proof.evals.clone() };
+                <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::check_combinations_individual_opening_challenges(vk, linear_combinations, commitments, eqn_query_set, eqn_evaluations, &batch_proof, opening_challenges, rng)
+            }
+
+            fn batch_open_individual_opening_challenges<'a>(ck: &Self::CommitterKey, labeled_polynomials: impl IntoIterator<Item=&'a LabeledPolynomial<E::Fr, P>>, commitments: impl IntoIterator<Item=&'a LabeledCommitment<Self::Commitment>>, query_set: &QuerySet<P::Point>, opening_challenges: &dyn Fn(u64) -> E::Fr, rands: impl IntoIterator<Item=&'a Self::Randomness>, rng: Option<&mut dyn RngCore>) -> Result<Self::BatchProof, Self::Error> where P: 'a, Self::Randomness: 'a, Self::Commitment: 'a {
+                <MarlinKZG10<E, P> as PolynomialCommitment<E::Fr, P>>::batch_open_individual_opening_challenges(ck, labeled_polynomials, commitments, query_set, opening_challenges, rands, rng)
+            }
+        }
+
+        pub struct MarlinWrapper<F: PrimeField, PC: PolynomialCommitment<F, DensePolynomial<F>> + Clone, D: Digest> {
+            _f: PhantomData<F>,
+            _pc: PhantomData<PC>,
+            _h: PhantomData<D>,
+        }
+
+        pub struct MarlinProofWrapper<F: PrimeField, PC: PolynomialCommitment<F, DensePolynomial<F>> + Clone> {
+            proof: Proof<F, PC>,
+        }
+
+        impl<F: PrimeField, PC: PolynomialCommitment<F, DensePolynomial<F>> + Clone> Clone for MarlinProofWrapper<F, PC> {
+            fn clone(&self) -> Self {
+                MarlinProofWrapper { proof: Proof::new(
+                    self.proof.commitments.clone(),
+                    self.proof.evaluations.clone(),
+                    self.proof.prover_messages.clone(),
+                    self.proof.pc_proof.clone(),
+                )}
+            }
+        }
+
+        impl<F: PrimeField, PC: PolynomialCommitment<F, DensePolynomial<F>> + Clone, D: Digest> SNARK<F> for MarlinWrapper<F, PC, D> {
+            type ProvingKey = IndexProverKey<F, PC>;
+            type VerifyingKey = IndexVerifierKey<F, PC>;
+            type Proof = MarlinProofWrapper<F, PC>;
+            type ProcessedVerifyingKey = IndexVerifierKey<F, PC>;
+            type Error = SynthesisError;
+
+            fn circuit_specific_setup<C: ConstraintSynthesizer<F>, R: RngCore + CryptoRng>(circuit: C, rng: &mut R) -> Result<(Self::ProvingKey, Self::VerifyingKey), Self::Error> {
+                //let srs = Marlin::<F, PC, D>::universal_setup(2_500_000, 2_500_000, 2_500_000, rng).unwrap();
+                let srs = Marlin::<F, PC, D>::universal_setup(250000, 250000, 250000, rng).unwrap();
+                Ok(Marlin::<F, PC, D>::index(&srs, circuit).unwrap())
+            }
+
+            fn prove<C: ConstraintSynthesizer<F>, R: RngCore + CryptoRng>(circuit_pk: &Self::ProvingKey, circuit: C, rng: &mut R) -> Result<Self::Proof, Self::Error> {
+                Ok(MarlinProofWrapper { proof: Marlin::<F, PC, D>::prove(circuit_pk, circuit, rng).unwrap() })
+            }
+
+            fn process_vk(circuit_vk: &Self::VerifyingKey) -> Result<Self::ProcessedVerifyingKey, Self::Error> {
+                Ok(circuit_vk.clone())
+            }
+
+            fn verify_with_processed_vk(circuit_pvk: &Self::ProcessedVerifyingKey, public_input: &[F], proof: &Self::Proof) -> Result<bool, Self::Error> {
+                let mut rng = StdRng::seed_from_u64(0);
+                Ok(Marlin::<F, PC, D>::verify(circuit_pvk, public_input, &proof.proof, &mut rng).unwrap())
+            }
+        }
+
     }
 }
