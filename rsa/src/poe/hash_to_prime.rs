@@ -437,7 +437,7 @@ pub fn hash_to_integer<D: Digest>(inputs: &[u8], n_bits: usize) -> BigInt {
     n
 }
 
-fn hash_to_variable_output_length<D: Digest>(inputs: &[u8], n_bytes: usize) -> Vec<u8> {
+pub fn hash_to_variable_output_length<D: Digest>(inputs: &[u8], n_bytes: usize) -> Vec<u8> {
     let bytes_per_hash = D::output_size();
     let n_hashes = (n_bytes - 1) / bytes_per_hash + 1;
 

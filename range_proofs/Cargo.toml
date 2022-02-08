@@ -1,0 +1,32 @@
+[package]
+name = "range_proofs"
+version = "0.1.0"
+authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
+edition = "2021"
+
+
+[dependencies]
+ark-ff = { version = "0.3" }
+ark-ec = { version = "0.3" }
+ark-std = { version = "0.3" }
+ark-serialize = { version = "0.3" }
+
+num-bigint = { version = "0.4", features = ["rand"] }
+num-integer = { version = "0.1" }
+num-traits = { version = "0.2" }
+rand = { version = "0.8" }
+digest = { version = "0.9" }
+
+rayon = { version = "1", optional = true }
+
+rsa = { path = "../rsa" }
+timed_commitments = { path = "../timed_commitments" }
+
+[dev-dependencies]
+ark-bls12-381 = { version = "0.3", features = [ "curve" ] }
+sha3 = { version = "0.9" }
+
+[features]
+default = ["std", "parallel" ]
+std = [ "ark-ff/std", "ark-ec/std", "ark-std/std", "ark-serialize/std" ]
+parallel = [ "rayon", "ark-std/parallel", "ark-ec/parallel", "ark-std/parallel" ]

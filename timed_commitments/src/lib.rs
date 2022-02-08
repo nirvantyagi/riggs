@@ -13,8 +13,8 @@ pub type Error = Box<dyn ErrorTrait>;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PedersenParams<G: ProjectiveCurve> {
-    g: G,
-    h: G,
+    pub g: G,
+    pub h: G,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
