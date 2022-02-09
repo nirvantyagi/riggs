@@ -1,4 +1,4 @@
-use ark_ec::ProjectiveCurve;
+use ark_ec::{ProjectiveCurve, msm::VariableBaseMSM};
 use ark_ff::{Field, PrimeField, UniformRand, BitIteratorLE};
 use ark_serialize::CanonicalSerialize;
 
@@ -41,7 +41,8 @@ pub struct Proof<G: ProjectiveCurve> {
     r_ab: G::ScalarField,
     comm_ab: G,
     comm_ipa: Vec<(G, G)>,
-    chal_ipa: Vec<G::ScalarField>,
+    base_a: G::ScalarField,
+    base_b: G::ScalarField,
 }
 
 impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
@@ -180,7 +181,6 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         let mut g = pp.g.clone();
         let mut h = h_shift;
         let mut recurse_commitments = Vec::<(G, G)>::new();
-        let mut recurse_challenges = Vec::<G::ScalarField>::new();
         let mut fs_aux = {
             let mut fs_aux = fs_aux;
             t_x.serialize(&mut fs_aux)?;
@@ -233,7 +233,6 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
                     .map(|(h_1, h_2)| h_1.clone().mul(&chal_x.into_repr()) + h_2)
                     .collect::<Vec<G>>();
 
-                recurse_challenges.push(chal_x);
                 recurse_commitments.push((comm_1, comm_2));
             }
         }
@@ -248,7 +247,8 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             r_ab: r_comm_bits,
             comm_ab,
             comm_ipa: recurse_commitments,
-            chal_ipa: recurse_challenges,
+            base_a: a[0],
+            base_b: b[0],
         })
     }
 
@@ -306,14 +306,60 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         debug_assert_eq!(ver1_left, ver1_right);
 
         // Check 2
-        let ver2_left = proof.comm_bits + proof.comm_blind.mul(&chal_x.into_repr())
+        let mut comm_ab = proof.comm_bits + proof.comm_blind.mul(&chal_x.into_repr())
             + &pp.g.iter().map(|g| g.clone().mul(&chal_z.neg().into_repr())).sum()
             + &h_shift.iter().zip(chal_y_powers.iter().zip(two_powers.iter())).map(|(h, (y_power, two_power))| h.clone().mul(&(chal_z.clone() * y_power + chal_z.clone() * &chal_z * two_power).into_repr())).sum()
             - pp.u.mul(&proof.r_ab.into_repr());
         // TODO: Remove comm_ab from proof
-        debug_assert_eq!(ver2_left, proof.comm_ab);
+        debug_assert_eq!(comm_ab, proof.comm_ab);
 
         // Verify inner product argument
+        let mut fs_aux = {
+            let mut fs_aux = fs_aux;
+            proof.t_x.serialize(&mut fs_aux)?;
+            proof.r_t_x.serialize(&mut fs_aux)?;
+            proof.r_ab.serialize(&mut fs_aux)?;
+            comm_ab.serialize(&mut fs_aux)?;
+            fs_aux
+        };
+        let mut recursive_challenges = Vec::new();
+        for (comm_1, comm_2) in proof.comm_ipa.iter() {
+            let chal_x = {
+                let mut hash_input = Vec::<u8>::new();
+                fs_aux.serialize(&mut hash_input)?;
+                comm_1.serialize(&mut hash_input)?;
+                comm_2.serialize(&mut hash_input)?;
+                let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
+                let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+                fs_aux = chal;
+                chal_x
+            };
+            comm_ab = comm_1.mul(&chal_x.into_repr()) + comm_ab + comm_2.mul(&chal_x.inverse().unwrap().into_repr());
+            recursive_challenges.push(chal_x);
+        }
+
+        let mut g_agg_chal_exponents = vec![G::ScalarField::one()];
+        let mut h_agg_chal_exponents = vec![G::ScalarField::one()];
+        for (i, chal_x) in recursive_challenges.iter().rev().enumerate() {
+            let chal_x_inv = chal_x.inverse().unwrap();
+            for j in 0..(2_usize).pow(i as u32) {
+                g_agg_chal_exponents.push(g_agg_chal_exponents[j] * &chal_x_inv);
+                h_agg_chal_exponents.push(h_agg_chal_exponents[j] * chal_x);
+            }
+        }
+        debug_assert_eq!(g_agg_chal_exponents.len(), pp.g.len());
+
+        let g_base = VariableBaseMSM::multi_scalar_mul(
+            &G::batch_normalization_into_affine(&pp.g),
+            &g_agg_chal_exponents.iter().map(|s| s.into_repr()).collect::<Vec<_>>(),
+        );
+        let h_base = VariableBaseMSM::multi_scalar_mul(
+            &G::batch_normalization_into_affine(&h_shift),
+            &h_agg_chal_exponents.iter().map(|s| s.into_repr()).collect::<Vec<_>>(),
+        );
+
+        let ver2_left = g_base.mul(&proof.base_a.into_repr()) + &h_base.mul(&proof.base_b.into_repr());
+        debug_assert_eq!(ver2_left, comm_ab);
 
         Ok(true)
     }
