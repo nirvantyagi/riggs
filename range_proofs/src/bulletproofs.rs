@@ -223,12 +223,14 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         let mut g = pp.g.clone();
         let mut h = h_shift;
         let mut recurse_commitments = Vec::<(G, G)>::new();
-        let mut fs_aux = {
-            let mut fs_aux = fs_aux;
-            t_x.serialize(&mut fs_aux)?;
-            r_t_x.serialize(&mut fs_aux)?;
-            r_comm_bits.serialize(&mut fs_aux)?;
-            fs_aux
+        let (mut fs_aux, chal_u) = {
+            let mut hash_input = fs_aux;
+            t_x.serialize(&mut hash_input)?;
+            r_t_x.serialize(&mut hash_input)?;
+            r_comm_bits.serialize(&mut hash_input)?;
+            let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
+            let chal_u = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+            (chal, chal_u)
         };
 
         'recurse: loop {
@@ -259,8 +261,9 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
                             .iter()
                             .zip(b_1.iter())
                             .map(|(a, b)| a.clone() * b)
-                            .sum::<G::ScalarField>())
-                        .into_repr(),
+                            .sum::<G::ScalarField>()
+                            * &chal_u)
+                            .into_repr(),
                     );
                 let comm_2: G = g_2
                     .iter()
@@ -277,8 +280,9 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
                             .iter()
                             .zip(b_2.iter())
                             .map(|(a, b)| a.clone() * b)
-                            .sum::<G::ScalarField>())
-                        .into_repr(),
+                            .sum::<G::ScalarField>()
+                            * &chal_u)
+                            .into_repr(),
                     );
 
                 let chal_x = {
@@ -392,7 +396,16 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             + proof.comm_lc2.mul(&(chal_x.clone() * &chal_x).into_repr());
         debug_assert_eq!(ver1_left, ver1_right);
 
-        // Check 2
+        // Verify inner product argument
+        let (mut fs_aux, chal_u) = {
+            let mut hash_input = fs_aux;
+            proof.t_x.serialize(&mut hash_input)?;
+            proof.r_t_x.serialize(&mut hash_input)?;
+            proof.r_ab.serialize(&mut hash_input)?;
+            let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
+            let chal_u = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+            (chal, chal_u)
+        };
         let mut comm_ab = proof.comm_bits
             + proof.comm_blind.mul(&chal_x.into_repr())
             + &pp
@@ -410,16 +423,8 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
                     )
                 })
                 .sum()
-            + pp.u.mul((proof.t_x.clone() - &proof.r_ab).into_repr());
-
-        // Verify inner product argument
-        let mut fs_aux = {
-            let mut fs_aux = fs_aux;
-            proof.t_x.serialize(&mut fs_aux)?;
-            proof.r_t_x.serialize(&mut fs_aux)?;
-            proof.r_ab.serialize(&mut fs_aux)?;
-            fs_aux
-        };
+            + pp.u
+                .mul((proof.t_x.clone() * &chal_u - &proof.r_ab).into_repr());
         let mut recursive_challenges = Vec::new();
         for (comm_1, comm_2) in proof.comm_ipa.iter() {
             let chal_x = {
@@ -468,7 +473,7 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             + &h_base.mul(&proof.base_b.into_repr())
             + &pp
                 .u
-                .mul(&(proof.base_a.clone() * &proof.base_b).into_repr());
+                .mul(&(proof.base_a.clone() * &proof.base_b * &chal_u).into_repr());
         debug_assert_eq!(ver2_left, comm_ab);
 
         Ok(true)
