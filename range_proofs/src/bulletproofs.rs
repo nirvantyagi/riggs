@@ -405,6 +405,14 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         let chal_y_powers = scalar_powers(n, &chal_y);
         let two_powers = scalar_powers(n, &G::ScalarField::from(2u128));
 
+        // Compute final challenge combination
+        let mut hash_input = Vec::<u8>::new();
+        fs_aux.serialize(&mut hash_input)?;
+        proof.base_a.serialize(&mut hash_input)?;
+        proof.base_b.serialize(&mut hash_input)?;
+        let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
+        let chal_c = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+
         // Linear combination check
         let delta = (chal_z.clone() - chal_z.clone() * &chal_z) * &chal_y_powers.iter().sum()
             - &(two_powers.iter().sum::<G::ScalarField>() * &chal_z * &chal_z * &chal_z);
@@ -425,16 +433,7 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             (chal_x.clone() * &chal_x).neg()
         ];
 
-        let lc_check = VariableBaseMSM::multi_scalar_mul(
-            &G::batch_normalization_into_affine(&lc_check_bases),
-            &lc_check_exps
-                .iter()
-                .map(|s| s.into_repr())
-                .collect::<Vec<_>>(),
-        );
-        debug_assert_eq!(lc_check, G::zero());
-
-
+        // Inner product argument check
         let (comm_1, comm_2): (Vec<G>, Vec<G>) = proof.comm_ipa.iter().cloned().unzip();
         let mut ipa_check_bases = pp.g.clone().into_iter()
             .chain(pp.h.clone().into_iter())
@@ -478,15 +477,14 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         ]);
         debug_assert_eq!(ipa_check_bases.len(), ipa_check_exps.len());
 
-        let ipa_check = VariableBaseMSM::multi_scalar_mul(
-            &G::batch_normalization_into_affine(&ipa_check_bases),
-            &ipa_check_exps
-                .iter()
-                .map(|s| s.into_repr())
-                .collect::<Vec<_>>(),
+        // Combined final check
+        let final_check = VariableBaseMSM::multi_scalar_mul(
+            &G::batch_normalization_into_affine(&lc_check_bases.into_iter().chain(ipa_check_bases.into_iter()).collect::<Vec::<G>>()),
+            &lc_check_exps.into_iter().map(|s| (s * &chal_c).into_repr())
+                .chain(ipa_check_exps.into_iter().map(|s| s.into_repr()))
+                .collect::<Vec<_>>()
         );
-        debug_assert_eq!(ipa_check, G::zero());
-        Ok(true)
+        Ok(final_check == G::zero())
     }
 }
 
