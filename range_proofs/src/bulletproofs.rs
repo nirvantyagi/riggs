@@ -33,14 +33,15 @@ pub struct Params<G: ProjectiveCurve> {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Proof<G: ProjectiveCurve> {
     comm_bits: G,
-    //comm_blind: G,
-    //comm_lc1: G,
-    //comm_lc2: G,
-    //a: Vec<G>,
-    //b: Vec<G>,
-    //t_x: G::ScalarField,
-    //r_t_x: G::ScalarField,
-    //r_ab: G::ScalarField,
+    comm_blind: G,
+    comm_lc1: G,
+    comm_lc2: G,
+    t_x: G::ScalarField,
+    r_t_x: G::ScalarField,
+    r_ab: G::ScalarField,
+    comm_ab: G,
+    comm_ipa: Vec<(G, G)>,
+    chal_ipa: Vec<G::ScalarField>,
 }
 
 impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
@@ -95,23 +96,24 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             })
             .fold(pp.u.mul(&r_blind.into_repr()), |acc, g| acc + g);
 
-        // Compute linear combination for single inner product challenges
-        let mut hash_input = Vec::<u8>::new();
-        comm.serialize(&mut hash_input)?;
-        v.to_bytes_be().1.serialize(&mut hash_input)?;
-        n.serialize(&mut hash_input)?;
-        ped_pp.g.serialize(&mut hash_input)?;
-        ped_pp.h.serialize(&mut hash_input)?;
-        pp.g.serialize(&mut hash_input)?;
-        pp.h.serialize(&mut hash_input)?;
-        pp.u.serialize(&mut hash_input)?;
-        comm_bits.serialize(&mut hash_input)?;
-        comm_blind.serialize(&mut hash_input)?;
-        // TODO: Solidity optimization: Pass in hash of input to variable output
-        let chal = hash_to_variable_output_length::<D>(&hash_input, 96);
-        let chal_y = G::ScalarField::from_random_bytes(&chal[..32]).unwrap();
-        let chal_z = G::ScalarField::from_random_bytes(&chal[32..64]).unwrap();
-        let mut fs_aux = chal[64..].to_vec();
+        let (chal_y, chal_z, fs_aux) = {
+            let mut hash_input = Vec::<u8>::new();
+            comm.serialize(&mut hash_input)?;
+            n.serialize(&mut hash_input)?;
+            ped_pp.g.serialize(&mut hash_input)?;
+            ped_pp.h.serialize(&mut hash_input)?;
+            pp.g.serialize(&mut hash_input)?;
+            pp.h.serialize(&mut hash_input)?;
+            pp.u.serialize(&mut hash_input)?;
+            comm_bits.serialize(&mut hash_input)?;
+            comm_blind.serialize(&mut hash_input)?;
+            // TODO: Solidity optimization: Pass in hash of input to variable output
+            let chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+            let chal_y = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
+            let chal_z = G::ScalarField::from_random_bytes(&chal[16..]).unwrap();
+            let fs_aux = chal[16..].to_vec();
+            (chal_y, chal_z, fs_aux)
+        };
 
         // Commit to linear combination coefficients
         let chal_y_powers = scalar_powers(n, &chal_y);
@@ -145,16 +147,17 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         let comm_lc1 = ped_pp.g.mul(&t_1.into_repr()) + ped_pp.h.mul(&r_lc1.into_repr());
         let comm_lc2 = ped_pp.g.mul(&t_2.into_repr()) + ped_pp.h.mul(&r_lc2.into_repr());
 
-        // Compute random challenge to test linear combination
-        let mut hash_input = Vec::<u8>::new();
-        fs_aux.serialize(&mut hash_input)?;
-        comm_lc1.serialize(&mut hash_input)?;
-        comm_lc2.serialize(&mut hash_input)?;
-        let chal = hash_to_variable_output_length::<D>(&hash_input, 64);
-        let chal_x = G::ScalarField::from_random_bytes(&chal[..32]).unwrap();
-        fs_aux = chal[32..].to_vec();
+        let (chal_x, fs_aux) = {
+            let mut hash_input = Vec::<u8>::new();
+            fs_aux.serialize(&mut hash_input)?;
+            comm_lc1.serialize(&mut hash_input)?;
+            comm_lc2.serialize(&mut hash_input)?;
+            let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
+            let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+            let fs_aux = chal;
+            (chal_x, fs_aux)
+        };
 
-        // Compute vectors for inner product argument
         let a_vec = a_0.iter().zip(a_1.iter())
             .map(|(a_0, a_1)| a_1.clone() * &chal_x + a_0)
             .collect::<Vec<G::ScalarField>>();
@@ -165,45 +168,154 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         let r_t_x = r_lc2 * &chal_x * &chal_x + r_lc1 * &chal_x + opening.clone() * &chal_z * &chal_z;
         let r_comm_bits = r_bits + r_blind * &chal_x;
 
+        // Perform inner product argument ( <a, b> = t  AND comm = g^a * h^b * u^t )
+        let inverse_y_powers = scalar_powers(n, &chal_y.inverse().unwrap());
+        let h_shift = pp.h.iter().zip(inverse_y_powers.iter())
+            .map(|(h, y_power)| h.mul(&y_power.into_repr()))
+            .collect::<Vec<G>>();
+        let comm_ab: G = pp.g.iter().zip(a_vec.iter()).map(|(g, a)| g.clone().mul(&a.into_repr())).sum::<G>()
+            + &h_shift.iter().zip(b_vec.iter()).map(|(h, b)| h.clone().mul(&b.into_repr())).sum();
+        let mut a = a_vec;
+        let mut b = b_vec;
+        let mut g = pp.g.clone();
+        let mut h = h_shift;
+        let mut recurse_commitments = Vec::<(G, G)>::new();
+        let mut recurse_challenges = Vec::<G::ScalarField>::new();
+        let mut fs_aux = {
+            let mut fs_aux = fs_aux;
+            t_x.serialize(&mut fs_aux)?;
+            r_t_x.serialize(&mut fs_aux)?;
+            r_comm_bits.serialize(&mut fs_aux)?;
+            comm_ab.serialize(&mut fs_aux)?;
+            fs_aux
+        };
+
+        'recurse: loop {
+            // TODO: Increase base case to avoid small recursions
+            if a.len() == 1 {  // base case
+                break 'recurse;
+            } else {  // recursive step
+                let s = a.len() / 2;
+                let (a_1, a_2) = (&a[s..], &a[..s]);
+                let (g_1, g_2) = (&g[..s], &g[s..]);
+                let (b_1, b_2) = (&b[..s], &b[s..]);
+                let (h_1, h_2) = (&h[s..], &h[..s]);
+
+                let comm_1: G = g_1.iter().zip(a_1.iter()).map(|(g, a)| g.clone().mul(&a.into_repr())).sum::<G>()
+                    + &h_1.iter().zip(b_1.iter()).map(|(h, b)| h.clone().mul(&b.into_repr())).sum()
+                    + pp.u.mul(&(a_1.iter().zip(b_1.iter()).map(|(a, b)| a.clone() * b).sum::<G::ScalarField>()).into_repr());
+                let comm_2: G = g_2.iter().zip(a_2.iter()).map(|(g, a)| g.clone().mul(&a.into_repr())).sum::<G>()
+                    + &h_2.iter().zip(b_2.iter()).map(|(h, b)| h.clone().mul(&b.into_repr())).sum()
+                    + pp.u.mul(&(a_2.iter().zip(b_2.iter()).map(|(a, b)| a.clone() * b).sum::<G::ScalarField>()).into_repr());
+
+                let chal_x = {
+                    let mut hash_input = Vec::<u8>::new();
+                    fs_aux.serialize(&mut hash_input)?;
+                    comm_1.serialize(&mut hash_input)?;
+                    comm_2.serialize(&mut hash_input)?;
+                    let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
+                    let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+                    fs_aux = chal;
+                    chal_x
+                };
+                let chal_x_inv = chal_x.inverse().unwrap();
+
+                a = a_1.iter().zip(a_2.iter())
+                    .map(|(a_1, a_2)| chal_x.clone() * a_1 + a_2)
+                    .collect::<Vec<G::ScalarField>>();
+                b = b_1.iter().zip(b_2.iter())
+                    .map(|(b_1, b_2)| chal_x_inv.clone() * b_2 + b_1)
+                    .collect::<Vec<G::ScalarField>>();
+                g = g_1.iter().zip(g_2.iter())
+                    .map(|(g_1, g_2)| g_2.clone().mul(&chal_x_inv.into_repr()) + g_1)
+                    .collect::<Vec<G>>();
+                h = h_1.iter().zip(h_2.iter())
+                    .map(|(h_1, h_2)| h_1.clone().mul(&chal_x.into_repr()) + h_2)
+                    .collect::<Vec<G>>();
+
+                recurse_challenges.push(chal_x);
+                recurse_commitments.push((comm_1, comm_2));
+            }
+        }
+
+        Ok(Proof{
+            comm_bits,
+            comm_blind,
+            comm_lc1,
+            comm_lc2,
+            t_x,
+            r_t_x,
+            r_ab: r_comm_bits,
+            comm_ab,
+            comm_ipa: recurse_commitments,
+            chal_ipa: recurse_challenges,
+        })
+    }
+
+    /// Verify comm = g^v * h^opening AND v \in [0, 2^n)
+    pub fn verify_range(
+        pp: &Params<G>,
+        ped_pp: &PedersenParams<G>,
+        comm: &G,
+        n: u64,
+        proof: &Proof<G>,
+    ) -> Result<bool, Error> {
+        // Verify range encoding to inner product argument
+        let (chal_y, chal_z, fs_aux) = {
+            let mut hash_input = Vec::<u8>::new();
+            comm.serialize(&mut hash_input)?;
+            n.serialize(&mut hash_input)?;
+            ped_pp.g.serialize(&mut hash_input)?;
+            ped_pp.h.serialize(&mut hash_input)?;
+            pp.g.serialize(&mut hash_input)?;
+            pp.h.serialize(&mut hash_input)?;
+            pp.u.serialize(&mut hash_input)?;
+            proof.comm_bits.serialize(&mut hash_input)?;
+            proof.comm_blind.serialize(&mut hash_input)?;
+            // TODO: Solidity optimization: Pass in hash of input to variable output
+            let chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+            let chal_y = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
+            let chal_z = G::ScalarField::from_random_bytes(&chal[16..]).unwrap();
+            let fs_aux = chal[16..].to_vec();
+            (chal_y, chal_z, fs_aux)
+        };
+
+        let (chal_x, fs_aux) = {
+            let mut hash_input = Vec::<u8>::new();
+            fs_aux.serialize(&mut hash_input)?;
+            proof.comm_lc1.serialize(&mut hash_input)?;
+            proof.comm_lc2.serialize(&mut hash_input)?;
+            let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
+            let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+            let fs_aux = chal;
+            (chal_x, fs_aux)
+        };
+
         // Tmp verification
         let inverse_y_powers = scalar_powers(n, &chal_y.inverse().unwrap());
+        let chal_y_powers = scalar_powers(n, &chal_y);
+        let two_powers = scalar_powers(n, &G::ScalarField::from(2u128));
         let h_shift = pp.h.iter().zip(inverse_y_powers.iter())
             .map(|(h, y_power)| h.mul(&y_power.into_repr()))
             .collect::<Vec<G>>();
 
         // Check 1
-        let v_reconstruct: G::ScalarField = f_bits.iter().zip(two_powers.iter()).map(|(f_bit, two_power)| f_bit.clone() * two_power).sum();
-        debug_assert_eq!(v_reconstruct, G::ScalarField::from(1000u128));
         let delta =  (chal_z.clone() - chal_z.clone() * &chal_z) * &chal_y_powers.iter().sum() - &(two_powers.iter().sum::<G::ScalarField>() * &chal_z * &chal_z * &chal_z);
-        debug_assert_eq!(t_0, G::ScalarField::from(1000u128) * &chal_z * &chal_z + &delta);
-        let ver1_left = ped_pp.g.mul(&t_x.into_repr()) + ped_pp.h.mul(&r_t_x.into_repr());
-        let ver1_right = comm.mul(&(chal_z.clone() * &chal_z).into_repr()) + ped_pp.g.mul(&delta.into_repr()) + comm_lc1.mul(&chal_x.into_repr()) + comm_lc2.mul(&(chal_x.clone() * &chal_x).into_repr());
+        let ver1_left = ped_pp.g.mul(&proof.t_x.into_repr()) + ped_pp.h.mul(&proof.r_t_x.into_repr());
+        let ver1_right = comm.mul(&(chal_z.clone() * &chal_z).into_repr()) + ped_pp.g.mul(&delta.into_repr()) + proof.comm_lc1.mul(&chal_x.into_repr()) + proof.comm_lc2.mul(&(chal_x.clone() * &chal_x).into_repr());
         debug_assert_eq!(ver1_left, ver1_right);
 
         // Check 2
-        let tmp_ver2_left = comm_bits + comm_blind.mul(&chal_x.into_repr());
-        let tmp_ver2_right = pp.u.mul(&r_comm_bits.into_repr())
-            + &pp.g.iter().zip(f_bits.iter()).map(|(g, a)| g.clone().mul(&a.into_repr())).sum()
-            + &h_shift.iter().zip(f_minus_bits.iter().zip(chal_y_powers.iter())).map(|(g, (a, y))| g.clone().mul(&(a.clone() * y).into_repr())).sum()
-            + &pp.g.iter().zip(blind_bits.iter()).map(|(g, a)| g.clone().mul(&(a.clone() * &chal_x).into_repr())).sum()
-            + &h_shift.iter().zip(blind_minus_bits.iter().zip(chal_y_powers.iter())).map(|(g, (a, y))| g.clone().mul(&(a.clone() * &chal_x * y).into_repr())).sum();
-        debug_assert_eq!(tmp_ver2_left, tmp_ver2_right);
-
-        let ver2_left = comm_bits + comm_blind.mul(&chal_x.into_repr())
+        let ver2_left = proof.comm_bits + proof.comm_blind.mul(&chal_x.into_repr())
             + &pp.g.iter().map(|g| g.clone().mul(&chal_z.neg().into_repr())).sum()
-            + &h_shift.iter().zip(chal_y_powers.iter().zip(two_powers.iter())).map(|(h, (y_power, two_power))| h.clone().mul(&(chal_z.clone() * y_power + chal_z.clone() * &chal_z * two_power).into_repr())).sum();
-        let ver2_right = pp.u.mul(&r_comm_bits.into_repr())
-            + &pp.g.iter().zip(a_vec.iter()).map(|(g, a)| g.clone().mul(&a.into_repr())).sum()
-            + &h_shift.iter().zip(b_vec.iter()).map(|(h, b)| h.clone().mul(&b.into_repr())).sum();
-        debug_assert_eq!(ver2_left.into_affine(), ver2_right.into_affine());
-        debug_assert_eq!(ver2_left, ver2_right);
+            + &h_shift.iter().zip(chal_y_powers.iter().zip(two_powers.iter())).map(|(h, (y_power, two_power))| h.clone().mul(&(chal_z.clone() * y_power + chal_z.clone() * &chal_z * two_power).into_repr())).sum()
+            - pp.u.mul(&proof.r_ab.into_repr());
+        // TODO: Remove comm_ab from proof
+        debug_assert_eq!(ver2_left, proof.comm_ab);
 
-        // Check 3
-        let ver3_left: G::ScalarField = a_vec.iter().zip(b_vec.iter()).map(|(a, b)| a.clone() * b).sum();
-        debug_assert_eq!(ver3_left, t_x);
+        // Verify inner product argument
 
-
-        Ok(Proof{comm_bits: ped_pp.g.clone()})
+        Ok(true)
     }
 }
 
@@ -237,6 +349,7 @@ mod tests {
         let pp = Bulletproofs::<G, Sha3_256>::gen_params(&mut rng, 32);
         let v = BigInt::from(1000);
         let (comm, opening) = PedersenComm::<G>::commit(&mut rng, &ped_pp, &v.to_bytes_le().1).unwrap();
-        Bulletproofs::<G, Sha3_256>::prove_range(&mut rng, &pp, &ped_pp, &comm, &v, &opening, 32).unwrap();
+        let proof = Bulletproofs::<G, Sha3_256>::prove_range(&mut rng, &pp, &ped_pp, &comm, &v, &opening, 32).unwrap();
+        assert!(Bulletproofs::<G, Sha3_256>::verify_range(&pp, &ped_pp, &comm, 32, &proof).unwrap());
     }
 }
