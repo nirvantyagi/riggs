@@ -1,21 +1,15 @@
-use ark_ec::{ProjectiveCurve, msm::VariableBaseMSM};
-use ark_ff::{Field, PrimeField, UniformRand, BitIteratorLE};
+use ark_ec::{msm::VariableBaseMSM, ProjectiveCurve};
+use ark_ff::{BitIteratorLE, Field, PrimeField, UniformRand};
 use ark_serialize::CanonicalSerialize;
 
 use digest::Digest;
-use rand::{CryptoRng, Rng};
 use num_traits::{One, Zero};
+use rand::{CryptoRng, Rng};
 
-use std::{
-    marker::PhantomData,
-    ops::Neg,
-};
 use crate::Error;
+use std::{marker::PhantomData, ops::Neg};
 
-use rsa::{
-    bigint::{BigInt},
-    poe::hash_to_prime::hash_to_variable_output_length,
-};
+use rsa::{bigint::BigInt, poe::hash_to_prime::hash_to_variable_output_length};
 use timed_commitments::{PedersenComm, PedersenParams};
 
 pub struct Bulletproofs<G: ProjectiveCurve, D: Digest> {
@@ -66,34 +60,53 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         // Check validity of statement
         // TODO: Support padding n to a power of 2
         debug_assert!(v.bits() <= n);
-        debug_assert!(PedersenComm::ver_open(ped_pp, comm, &v.to_bytes_le().1, opening)?);
+        debug_assert!(PedersenComm::ver_open(
+            ped_pp,
+            comm,
+            &v.to_bytes_le().1,
+            opening
+        )?);
 
         // Range proof encoding for inner product argument
         let mut v_bits = BitIteratorLE::new(&v.to_u64_digits().1).collect::<Vec<bool>>();
         v_bits.resize(n as usize, false);
         let r_bits = G::ScalarField::rand(rng);
-        let f_bits = v_bits.iter()
-            .map(|b| if *b { G::ScalarField::one() } else { G::ScalarField::zero() })
+        let f_bits = v_bits
+            .iter()
+            .map(|b| {
+                if *b {
+                    G::ScalarField::one()
+                } else {
+                    G::ScalarField::zero()
+                }
+            })
             .collect::<Vec<G::ScalarField>>();
-        let f_minus_bits = f_bits.iter()
+        let f_minus_bits = f_bits
+            .iter()
             .map(|f_bit| f_bit.clone() - G::ScalarField::one())
             .collect::<Vec<G::ScalarField>>();
-        let comm_bits = f_bits.iter().zip(f_minus_bits.iter())
+        let comm_bits = f_bits
+            .iter()
+            .zip(f_minus_bits.iter())
             .zip(pp.g.iter().zip(pp.h.iter()))
             .map(|((f_bit, f_minus_bit), (g, h))| {
                 g.mul(&f_bit.into_repr()) + h.mul(&f_minus_bit.into_repr())
-        })
+            })
             .fold(pp.u.mul(&r_bits.into_repr()), |acc, g| acc + g);
 
         // TODO: Optimization with logarithmic blinds (https://eprint.iacr.org/2019/944)
-        let blind_bits = (0..n).map(|_| G::ScalarField::rand(rng)).collect::<Vec<G::ScalarField>>();
-        let blind_minus_bits = (0..n).map(|_| G::ScalarField::rand(rng)).collect::<Vec<G::ScalarField>>();
+        let blind_bits = (0..n)
+            .map(|_| G::ScalarField::rand(rng))
+            .collect::<Vec<G::ScalarField>>();
+        let blind_minus_bits = (0..n)
+            .map(|_| G::ScalarField::rand(rng))
+            .collect::<Vec<G::ScalarField>>();
         let r_blind = G::ScalarField::rand(rng);
-        let comm_blind = blind_bits.iter().zip(blind_minus_bits.iter())
+        let comm_blind = blind_bits
+            .iter()
+            .zip(blind_minus_bits.iter())
             .zip(pp.g.iter().zip(pp.h.iter()))
-            .map(|((s, s_minus), (g, h))| {
-                g.mul(&s.into_repr()) + h.mul(&s_minus.into_repr())
-            })
+            .map(|((s, s_minus), (g, h))| g.mul(&s.into_repr()) + h.mul(&s_minus.into_repr()))
             .fold(pp.u.mul(&r_blind.into_repr()), |acc, g| acc + g);
 
         let (chal_y, chal_z, fs_aux) = {
@@ -118,30 +131,55 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         // Commit to linear combination coefficients
         let chal_y_powers = scalar_powers(n, &chal_y);
         let two_powers = scalar_powers(n, &G::ScalarField::from(2u128));
-        let a_0 = f_bits.iter()
+        let a_0 = f_bits
+            .iter()
             .map(|f_bit| f_bit.clone() - &chal_z)
             .collect::<Vec<G::ScalarField>>();
         let a_1 = blind_bits.clone();
-        let b_0 = f_minus_bits.iter().zip(chal_y_powers.iter().zip(two_powers.iter()))
-            .map(|(f_minus_bit, (y_power, two_power))| y_power.clone() * (f_minus_bit.clone() + &chal_z) + two_power.clone() * &(chal_z.clone() * &chal_z) )
+        let b_0 = f_minus_bits
+            .iter()
+            .zip(chal_y_powers.iter().zip(two_powers.iter()))
+            .map(|(f_minus_bit, (y_power, two_power))| {
+                y_power.clone() * (f_minus_bit.clone() + &chal_z)
+                    + two_power.clone() * &(chal_z.clone() * &chal_z)
+            })
             .collect::<Vec<G::ScalarField>>();
-        let b_1 = blind_minus_bits.iter().zip(chal_y_powers.iter())
+        let b_1 = blind_minus_bits
+            .iter()
+            .zip(chal_y_powers.iter())
             .map(|(blind_minus_bit, y_power)| blind_minus_bit.clone() * y_power)
             .collect::<Vec<G::ScalarField>>();
 
-        let t_0_vec = a_0.iter().zip(b_0.iter())
+        let t_0_vec = a_0
+            .iter()
+            .zip(b_0.iter())
             .map(|(a_0, b_0)| a_0.clone() * b_0)
             .collect::<Vec<G::ScalarField>>();
-        let t_2_vec = a_1.iter().zip(b_1.iter())
+        let t_2_vec = a_1
+            .iter()
+            .zip(b_1.iter())
             .map(|(a_1, b_1)| a_1.clone() * b_1)
             .collect::<Vec<G::ScalarField>>();
-        let t_1 = a_0.iter().zip(b_0.iter())
+        let t_1 = a_0
+            .iter()
+            .zip(b_0.iter())
             .zip(a_1.iter().zip(b_1.iter()))
             .zip(t_0_vec.iter().zip(t_2_vec.iter()))
-            .map(|(((a_0, b_0), (a_1, b_1)), (t_0, t_2))| (a_0.clone() + a_1) * (b_0.clone() + b_1) - t_0 - t_2)
-            .reduce(|acc, x| acc.clone() + x).unwrap();
-        let t_0 = t_0_vec.iter().cloned().reduce(|acc, x| acc.clone() + x).unwrap();
-        let t_2 = t_2_vec.iter().cloned().reduce(|acc, x| acc.clone() + x).unwrap();
+            .map(|(((a_0, b_0), (a_1, b_1)), (t_0, t_2))| {
+                (a_0.clone() + a_1) * (b_0.clone() + b_1) - t_0 - t_2
+            })
+            .reduce(|acc, x| acc.clone() + x)
+            .unwrap();
+        let t_0 = t_0_vec
+            .iter()
+            .cloned()
+            .reduce(|acc, x| acc.clone() + x)
+            .unwrap();
+        let t_2 = t_2_vec
+            .iter()
+            .cloned()
+            .reduce(|acc, x| acc.clone() + x)
+            .unwrap();
         let r_lc1 = G::ScalarField::rand(rng);
         let r_lc2 = G::ScalarField::rand(rng);
         let comm_lc1 = ped_pp.g.mul(&t_1.into_repr()) + ped_pp.h.mul(&r_lc1.into_repr());
@@ -158,21 +196,28 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             (chal_x, fs_aux)
         };
 
-        let a_vec = a_0.iter().zip(a_1.iter())
+        let a_vec = a_0
+            .iter()
+            .zip(a_1.iter())
             .map(|(a_0, a_1)| a_1.clone() * &chal_x + a_0)
             .collect::<Vec<G::ScalarField>>();
-        let b_vec = b_0.iter().zip(b_1.iter())
+        let b_vec = b_0
+            .iter()
+            .zip(b_1.iter())
             .map(|(b_0, b_1)| b_1.clone() * &chal_x + b_0)
             .collect::<Vec<G::ScalarField>>();
         let t_x = t_0.clone() + t_1.clone() * &chal_x + t_2.clone() * &chal_x * &chal_x;
-        let r_t_x = r_lc2 * &chal_x * &chal_x + r_lc1 * &chal_x + opening.clone() * &chal_z * &chal_z;
+        let r_t_x =
+            r_lc2 * &chal_x * &chal_x + r_lc1 * &chal_x + opening.clone() * &chal_z * &chal_z;
         let r_comm_bits = r_bits + r_blind * &chal_x;
 
         // Perform inner product argument ( <a, b> = t  AND comm = g^a * h^b * u^t )
         let inverse_y_powers = scalar_powers(n, &chal_y.inverse().unwrap());
-        let h_shift = pp.h.iter().zip(inverse_y_powers.iter())
-            .map(|(h, y_power)| h.mul(&y_power.into_repr()))
-            .collect::<Vec<G>>();
+        let h_shift =
+            pp.h.iter()
+                .zip(inverse_y_powers.iter())
+                .map(|(h, y_power)| h.mul(&y_power.into_repr()))
+                .collect::<Vec<G>>();
         let mut a = a_vec;
         let mut b = b_vec;
         let mut g = pp.g.clone();
@@ -188,21 +233,53 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
 
         'recurse: loop {
             // TODO: Increase base case to avoid small recursions
-            if a.len() == 1 {  // base case
+            if a.len() == 1 {
+                // base case
                 break 'recurse;
-            } else {  // recursive step
+            } else {
+                // recursive step
                 let s = a.len() / 2;
                 let (a_1, a_2) = (&a[s..], &a[..s]);
                 let (g_1, g_2) = (&g[..s], &g[s..]);
                 let (b_1, b_2) = (&b[..s], &b[s..]);
                 let (h_1, h_2) = (&h[s..], &h[..s]);
 
-                let comm_1: G = g_1.iter().zip(a_1.iter()).map(|(g, a)| g.clone().mul(&a.into_repr())).sum::<G>()
-                    + &h_1.iter().zip(b_1.iter()).map(|(h, b)| h.clone().mul(&b.into_repr())).sum()
-                    + pp.u.mul(&(a_1.iter().zip(b_1.iter()).map(|(a, b)| a.clone() * b).sum::<G::ScalarField>()).into_repr());
-                let comm_2: G = g_2.iter().zip(a_2.iter()).map(|(g, a)| g.clone().mul(&a.into_repr())).sum::<G>()
-                    + &h_2.iter().zip(b_2.iter()).map(|(h, b)| h.clone().mul(&b.into_repr())).sum()
-                    + pp.u.mul(&(a_2.iter().zip(b_2.iter()).map(|(a, b)| a.clone() * b).sum::<G::ScalarField>()).into_repr());
+                let comm_1: G = g_1
+                    .iter()
+                    .zip(a_1.iter())
+                    .map(|(g, a)| g.clone().mul(&a.into_repr()))
+                    .sum::<G>()
+                    + &h_1
+                        .iter()
+                        .zip(b_1.iter())
+                        .map(|(h, b)| h.clone().mul(&b.into_repr()))
+                        .sum()
+                    + pp.u.mul(
+                        &(a_1
+                            .iter()
+                            .zip(b_1.iter())
+                            .map(|(a, b)| a.clone() * b)
+                            .sum::<G::ScalarField>())
+                        .into_repr(),
+                    );
+                let comm_2: G = g_2
+                    .iter()
+                    .zip(a_2.iter())
+                    .map(|(g, a)| g.clone().mul(&a.into_repr()))
+                    .sum::<G>()
+                    + &h_2
+                        .iter()
+                        .zip(b_2.iter())
+                        .map(|(h, b)| h.clone().mul(&b.into_repr()))
+                        .sum()
+                    + pp.u.mul(
+                        &(a_2
+                            .iter()
+                            .zip(b_2.iter())
+                            .map(|(a, b)| a.clone() * b)
+                            .sum::<G::ScalarField>())
+                        .into_repr(),
+                    );
 
                 let chal_x = {
                     let mut hash_input = Vec::<u8>::new();
@@ -216,16 +293,24 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
                 };
                 let chal_x_inv = chal_x.inverse().unwrap();
 
-                a = a_1.iter().zip(a_2.iter())
+                a = a_1
+                    .iter()
+                    .zip(a_2.iter())
                     .map(|(a_1, a_2)| chal_x.clone() * a_1 + a_2)
                     .collect::<Vec<G::ScalarField>>();
-                b = b_1.iter().zip(b_2.iter())
+                b = b_1
+                    .iter()
+                    .zip(b_2.iter())
                     .map(|(b_1, b_2)| chal_x_inv.clone() * b_2 + b_1)
                     .collect::<Vec<G::ScalarField>>();
-                g = g_1.iter().zip(g_2.iter())
+                g = g_1
+                    .iter()
+                    .zip(g_2.iter())
                     .map(|(g_1, g_2)| g_2.clone().mul(&chal_x_inv.into_repr()) + g_1)
                     .collect::<Vec<G>>();
-                h = h_1.iter().zip(h_2.iter())
+                h = h_1
+                    .iter()
+                    .zip(h_2.iter())
                     .map(|(h_1, h_2)| h_1.clone().mul(&chal_x.into_repr()) + h_2)
                     .collect::<Vec<G>>();
 
@@ -233,7 +318,7 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             }
         }
 
-        Ok(Proof{
+        Ok(Proof {
             comm_bits,
             comm_blind,
             comm_lc1,
@@ -290,20 +375,41 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         let inverse_y_powers = scalar_powers(n, &chal_y.inverse().unwrap());
         let chal_y_powers = scalar_powers(n, &chal_y);
         let two_powers = scalar_powers(n, &G::ScalarField::from(2u128));
-        let h_shift = pp.h.iter().zip(inverse_y_powers.iter())
-            .map(|(h, y_power)| h.mul(&y_power.into_repr()))
-            .collect::<Vec<G>>();
+        let h_shift =
+            pp.h.iter()
+                .zip(inverse_y_powers.iter())
+                .map(|(h, y_power)| h.mul(&y_power.into_repr()))
+                .collect::<Vec<G>>();
 
         // Check 1
-        let delta =  (chal_z.clone() - chal_z.clone() * &chal_z) * &chal_y_powers.iter().sum() - &(two_powers.iter().sum::<G::ScalarField>() * &chal_z * &chal_z * &chal_z);
-        let ver1_left = ped_pp.g.mul(&proof.t_x.into_repr()) + ped_pp.h.mul(&proof.r_t_x.into_repr());
-        let ver1_right = comm.mul(&(chal_z.clone() * &chal_z).into_repr()) + ped_pp.g.mul(&delta.into_repr()) + proof.comm_lc1.mul(&chal_x.into_repr()) + proof.comm_lc2.mul(&(chal_x.clone() * &chal_x).into_repr());
+        let delta = (chal_z.clone() - chal_z.clone() * &chal_z) * &chal_y_powers.iter().sum()
+            - &(two_powers.iter().sum::<G::ScalarField>() * &chal_z * &chal_z * &chal_z);
+        let ver1_left =
+            ped_pp.g.mul(&proof.t_x.into_repr()) + ped_pp.h.mul(&proof.r_t_x.into_repr());
+        let ver1_right = comm.mul(&(chal_z.clone() * &chal_z).into_repr())
+            + ped_pp.g.mul(&delta.into_repr())
+            + proof.comm_lc1.mul(&chal_x.into_repr())
+            + proof.comm_lc2.mul(&(chal_x.clone() * &chal_x).into_repr());
         debug_assert_eq!(ver1_left, ver1_right);
 
         // Check 2
-        let mut comm_ab = proof.comm_bits + proof.comm_blind.mul(&chal_x.into_repr())
-            + &pp.g.iter().map(|g| g.clone().mul(&chal_z.neg().into_repr())).sum()
-            + &h_shift.iter().zip(chal_y_powers.iter().zip(two_powers.iter())).map(|(h, (y_power, two_power))| h.clone().mul(&(chal_z.clone() * y_power + chal_z.clone() * &chal_z * two_power).into_repr())).sum()
+        let mut comm_ab = proof.comm_bits
+            + proof.comm_blind.mul(&chal_x.into_repr())
+            + &pp
+                .g
+                .iter()
+                .map(|g| g.clone().mul(&chal_z.neg().into_repr()))
+                .sum()
+            + &h_shift
+                .iter()
+                .zip(chal_y_powers.iter().zip(two_powers.iter()))
+                .map(|(h, (y_power, two_power))| {
+                    h.clone().mul(
+                        &(chal_z.clone() * y_power + chal_z.clone() * &chal_z * two_power)
+                            .into_repr(),
+                    )
+                })
+                .sum()
             + pp.u.mul((proof.t_x.clone() - &proof.r_ab).into_repr());
 
         // Verify inner product argument
@@ -326,7 +432,9 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
                 fs_aux = chal;
                 chal_x
             };
-            comm_ab = comm_1.mul(&chal_x.into_repr()) + comm_ab + comm_2.mul(&chal_x.inverse().unwrap().into_repr());
+            comm_ab = comm_1.mul(&chal_x.into_repr())
+                + comm_ab
+                + comm_2.mul(&chal_x.inverse().unwrap().into_repr());
             recursive_challenges.push(chal_x);
         }
 
@@ -343,24 +451,31 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
 
         let g_base = VariableBaseMSM::multi_scalar_mul(
             &G::batch_normalization_into_affine(&pp.g),
-            &g_agg_chal_exponents.iter().map(|s| s.into_repr()).collect::<Vec<_>>(),
+            &g_agg_chal_exponents
+                .iter()
+                .map(|s| s.into_repr())
+                .collect::<Vec<_>>(),
         );
         let h_base = VariableBaseMSM::multi_scalar_mul(
             &G::batch_normalization_into_affine(&h_shift),
-            &h_agg_chal_exponents.iter().map(|s| s.into_repr()).collect::<Vec<_>>(),
+            &h_agg_chal_exponents
+                .iter()
+                .map(|s| s.into_repr())
+                .collect::<Vec<_>>(),
         );
 
-        let ver2_left = g_base.mul(&proof.base_a.into_repr()) + &h_base.mul(&proof.base_b.into_repr()) + &pp.u.mul(&(proof.base_a.clone() * &proof.base_b).into_repr());
+        let ver2_left = g_base.mul(&proof.base_a.into_repr())
+            + &h_base.mul(&proof.base_b.into_repr())
+            + &pp
+                .u
+                .mul(&(proof.base_a.clone() * &proof.base_b).into_repr());
         debug_assert_eq!(ver2_left, comm_ab);
 
         Ok(true)
     }
 }
 
-pub fn scalar_powers<F: PrimeField>(
-    num: u64,
-    s: &F,
-) -> Vec<F> {
+pub fn scalar_powers<F: PrimeField>(num: u64, s: &F) -> Vec<F> {
     debug_assert!(num > 0);
     let mut powers_of_scalar = vec![];
     let mut pow_s = F::one();
@@ -370,7 +485,6 @@ pub fn scalar_powers<F: PrimeField>(
     }
     powers_of_scalar
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -386,8 +500,14 @@ mod tests {
         let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
         let pp = Bulletproofs::<G, Sha3_256>::gen_params(&mut rng, 32);
         let v = BigInt::from(1000);
-        let (comm, opening) = PedersenComm::<G>::commit(&mut rng, &ped_pp, &v.to_bytes_le().1).unwrap();
-        let proof = Bulletproofs::<G, Sha3_256>::prove_range(&mut rng, &pp, &ped_pp, &comm, &v, &opening, 32).unwrap();
-        assert!(Bulletproofs::<G, Sha3_256>::verify_range(&pp, &ped_pp, &comm, 32, &proof).unwrap());
+        let (comm, opening) =
+            PedersenComm::<G>::commit(&mut rng, &ped_pp, &v.to_bytes_le().1).unwrap();
+        let proof = Bulletproofs::<G, Sha3_256>::prove_range(
+            &mut rng, &pp, &ped_pp, &comm, &v, &opening, 32,
+        )
+        .unwrap();
+        assert!(
+            Bulletproofs::<G, Sha3_256>::verify_range(&pp, &ped_pp, &comm, 32, &proof).unwrap()
+        );
     }
 }
