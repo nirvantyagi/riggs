@@ -39,7 +39,6 @@ pub struct Proof<G: ProjectiveCurve> {
     t_x: G::ScalarField,
     r_t_x: G::ScalarField,
     r_ab: G::ScalarField,
-    comm_ab: G,
     comm_ipa: Vec<(G, G)>,
     base_a: G::ScalarField,
     base_b: G::ScalarField,
@@ -174,8 +173,6 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         let h_shift = pp.h.iter().zip(inverse_y_powers.iter())
             .map(|(h, y_power)| h.mul(&y_power.into_repr()))
             .collect::<Vec<G>>();
-        let comm_ab: G = pp.g.iter().zip(a_vec.iter()).map(|(g, a)| g.clone().mul(&a.into_repr())).sum::<G>()
-            + &h_shift.iter().zip(b_vec.iter()).map(|(h, b)| h.clone().mul(&b.into_repr())).sum();
         let mut a = a_vec;
         let mut b = b_vec;
         let mut g = pp.g.clone();
@@ -186,7 +183,6 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             t_x.serialize(&mut fs_aux)?;
             r_t_x.serialize(&mut fs_aux)?;
             r_comm_bits.serialize(&mut fs_aux)?;
-            comm_ab.serialize(&mut fs_aux)?;
             fs_aux
         };
 
@@ -245,7 +241,6 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             t_x,
             r_t_x,
             r_ab: r_comm_bits,
-            comm_ab,
             comm_ipa: recurse_commitments,
             base_a: a[0],
             base_b: b[0],
@@ -309,9 +304,7 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         let mut comm_ab = proof.comm_bits + proof.comm_blind.mul(&chal_x.into_repr())
             + &pp.g.iter().map(|g| g.clone().mul(&chal_z.neg().into_repr())).sum()
             + &h_shift.iter().zip(chal_y_powers.iter().zip(two_powers.iter())).map(|(h, (y_power, two_power))| h.clone().mul(&(chal_z.clone() * y_power + chal_z.clone() * &chal_z * two_power).into_repr())).sum()
-            - pp.u.mul(&proof.r_ab.into_repr());
-        // TODO: Remove comm_ab from proof
-        debug_assert_eq!(comm_ab, proof.comm_ab);
+            + pp.u.mul((proof.t_x.clone() - &proof.r_ab).into_repr());
 
         // Verify inner product argument
         let mut fs_aux = {
@@ -319,7 +312,6 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             proof.t_x.serialize(&mut fs_aux)?;
             proof.r_t_x.serialize(&mut fs_aux)?;
             proof.r_ab.serialize(&mut fs_aux)?;
-            comm_ab.serialize(&mut fs_aux)?;
             fs_aux
         };
         let mut recursive_challenges = Vec::new();
@@ -358,7 +350,7 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             &h_agg_chal_exponents.iter().map(|s| s.into_repr()).collect::<Vec<_>>(),
         );
 
-        let ver2_left = g_base.mul(&proof.base_a.into_repr()) + &h_base.mul(&proof.base_b.into_repr());
+        let ver2_left = g_base.mul(&proof.base_a.into_repr()) + &h_base.mul(&proof.base_b.into_repr()) + &pp.u.mul(&(proof.base_a.clone() * &proof.base_b).into_repr());
         debug_assert_eq!(ver2_left, comm_ab);
 
         Ok(true)
