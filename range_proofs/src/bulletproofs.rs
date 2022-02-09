@@ -375,27 +375,6 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             (chal_x, fs_aux)
         };
 
-        // Tmp verification
-        let inverse_y_powers = scalar_powers(n, &chal_y.inverse().unwrap());
-        let chal_y_powers = scalar_powers(n, &chal_y);
-        let two_powers = scalar_powers(n, &G::ScalarField::from(2u128));
-        let h_shift =
-            pp.h.iter()
-                .zip(inverse_y_powers.iter())
-                .map(|(h, y_power)| h.mul(&y_power.into_repr()))
-                .collect::<Vec<G>>();
-
-        // Check 1
-        let delta = (chal_z.clone() - chal_z.clone() * &chal_z) * &chal_y_powers.iter().sum()
-            - &(two_powers.iter().sum::<G::ScalarField>() * &chal_z * &chal_z * &chal_z);
-        let ver1_left =
-            ped_pp.g.mul(&proof.t_x.into_repr()) + ped_pp.h.mul(&proof.r_t_x.into_repr());
-        let ver1_right = comm.mul(&(chal_z.clone() * &chal_z).into_repr())
-            + ped_pp.g.mul(&delta.into_repr())
-            + proof.comm_lc1.mul(&chal_x.into_repr())
-            + proof.comm_lc2.mul(&(chal_x.clone() * &chal_x).into_repr());
-        debug_assert_eq!(ver1_left, ver1_right);
-
         // Verify inner product argument
         let (mut fs_aux, chal_u) = {
             let mut hash_input = fs_aux;
@@ -406,25 +385,6 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             let chal_u = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
             (chal, chal_u)
         };
-        let mut comm_ab = proof.comm_bits
-            + proof.comm_blind.mul(&chal_x.into_repr())
-            + &pp
-                .g
-                .iter()
-                .map(|g| g.clone().mul(&chal_z.neg().into_repr()))
-                .sum()
-            + &h_shift
-                .iter()
-                .zip(chal_y_powers.iter().zip(two_powers.iter()))
-                .map(|(h, (y_power, two_power))| {
-                    h.clone().mul(
-                        &(chal_z.clone() * y_power + chal_z.clone() * &chal_z * two_power)
-                            .into_repr(),
-                    )
-                })
-                .sum()
-            + pp.u
-                .mul((proof.t_x.clone() * &chal_u - &proof.r_ab).into_repr());
         let mut recursive_challenges = Vec::new();
         for (comm_1, comm_2) in proof.comm_ipa.iter() {
             let chal_x = {
@@ -437,11 +397,51 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
                 fs_aux = chal;
                 chal_x
             };
-            comm_ab = comm_1.mul(&chal_x.into_repr())
-                + comm_ab
-                + comm_2.mul(&chal_x.inverse().unwrap().into_repr());
             recursive_challenges.push(chal_x);
         }
+
+        // Prepare single variable base multiexponentiation verification check
+        let inverse_y_powers = scalar_powers(n, &chal_y.inverse().unwrap());
+        let chal_y_powers = scalar_powers(n, &chal_y);
+        let two_powers = scalar_powers(n, &G::ScalarField::from(2u128));
+
+        // Linear combination check
+        let delta = (chal_z.clone() - chal_z.clone() * &chal_z) * &chal_y_powers.iter().sum()
+            - &(two_powers.iter().sum::<G::ScalarField>() * &chal_z * &chal_z * &chal_z);
+        let ver1_left =
+            ped_pp.g.mul(&proof.t_x.into_repr()) + ped_pp.h.mul(&proof.r_t_x.into_repr());
+        let ver1_right = comm.mul(&(chal_z.clone() * &chal_z).into_repr())
+            + ped_pp.g.mul(&delta.into_repr())
+            + proof.comm_lc1.mul(&chal_x.into_repr())
+            + proof.comm_lc2.mul(&(chal_x.clone() * &chal_x).into_repr());
+        debug_assert_eq!(ver1_left, ver1_right);
+
+        let lc_check_bases = vec![ped_pp.g.clone(), ped_pp.h.clone(), comm.clone(), proof.comm_lc1.clone(), proof.comm_lc2.clone()];
+        let lc_check_exps = vec![
+            proof.t_x.clone() - &delta,
+            proof.r_t_x.clone(),
+            (chal_z.clone() * &chal_z).neg(),
+            chal_x.clone().neg(),
+            (chal_x.clone() * &chal_x).neg()
+        ];
+
+        let lc_check = VariableBaseMSM::multi_scalar_mul(
+            &G::batch_normalization_into_affine(&lc_check_bases),
+            &lc_check_exps
+                .iter()
+                .map(|s| s.into_repr())
+                .collect::<Vec<_>>(),
+        );
+        debug_assert_eq!(lc_check, G::zero());
+
+
+        let (comm_1, comm_2): (Vec<G>, Vec<G>) = proof.comm_ipa.iter().cloned().unzip();
+        let mut ipa_check_bases = pp.g.clone().into_iter()
+            .chain(pp.h.clone().into_iter())
+            .chain(comm_1.into_iter())
+            .chain(comm_2.into_iter())
+            .collect::<Vec<G>>();
+        ipa_check_bases.append(&mut vec![pp.u.clone(), proof.comm_bits.clone(), proof.comm_blind.clone()]);
 
         let mut g_agg_chal_exponents = vec![G::ScalarField::one()];
         let mut h_agg_chal_exponents = vec![G::ScalarField::one()];
@@ -454,28 +454,38 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         }
         debug_assert_eq!(g_agg_chal_exponents.len(), pp.g.len());
 
-        let g_base = VariableBaseMSM::multi_scalar_mul(
-            &G::batch_normalization_into_affine(&pp.g),
-            &g_agg_chal_exponents
+        let g_comm_exps = (0..n).map(|_| chal_z.clone().neg()).collect::<Vec<G::ScalarField>>();
+        let h_comm_exps = chal_y_powers.iter().zip(two_powers.iter())
+            .map(|(y_power, two_power)| chal_z.clone() * y_power + chal_z.clone() * &chal_z * two_power)
+            .collect::<Vec<G::ScalarField>>();
+        let g_exps = g_agg_chal_exponents.into_iter().zip(g_comm_exps.into_iter())
+            .map(|(agg_exp, comm_exp)| agg_exp * &proof.base_a - comm_exp)
+            .collect::<Vec<G::ScalarField>>();
+        let h_exps = h_agg_chal_exponents.into_iter().zip(h_comm_exps.into_iter()).zip(inverse_y_powers.iter())
+            .map(|((agg_exp, comm_exp), y_inv_power)| (agg_exp * &proof.base_b - comm_exp) * y_inv_power)
+            .collect::<Vec<G::ScalarField>>();
+        let comm_1_exps = recursive_challenges.iter().map(|x| x.clone().neg()).collect::<Vec<G::ScalarField>>();
+        let comm_2_exps = recursive_challenges.iter().map(|x| x.clone().inverse().unwrap().neg()).collect::<Vec<G::ScalarField>>();
+        let mut ipa_check_exps = g_exps.into_iter()
+            .chain(h_exps.into_iter())
+            .chain(comm_1_exps.into_iter())
+            .chain(comm_2_exps.into_iter())
+            .collect::<Vec<G::ScalarField>>();
+        ipa_check_exps.append(&mut vec![
+            (proof.base_a.clone() * &proof.base_b * &chal_u) - (proof.t_x.clone() * &chal_u - &proof.r_ab),
+            G::ScalarField::one().neg(),
+            chal_x.clone().neg()
+        ]);
+        debug_assert_eq!(ipa_check_bases.len(), ipa_check_exps.len());
+
+        let ipa_check = VariableBaseMSM::multi_scalar_mul(
+            &G::batch_normalization_into_affine(&ipa_check_bases),
+            &ipa_check_exps
                 .iter()
                 .map(|s| s.into_repr())
                 .collect::<Vec<_>>(),
         );
-        let h_base = VariableBaseMSM::multi_scalar_mul(
-            &G::batch_normalization_into_affine(&h_shift),
-            &h_agg_chal_exponents
-                .iter()
-                .map(|s| s.into_repr())
-                .collect::<Vec<_>>(),
-        );
-
-        let ver2_left = g_base.mul(&proof.base_a.into_repr())
-            + &h_base.mul(&proof.base_b.into_repr())
-            + &pp
-                .u
-                .mul(&(proof.base_a.clone() * &proof.base_b * &chal_u).into_repr());
-        debug_assert_eq!(ver2_left, comm_ab);
-
+        debug_assert_eq!(ipa_check, G::zero());
         Ok(true)
     }
 }
