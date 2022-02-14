@@ -4,4 +4,5 @@ members = [
   "rsa",
   "timed_commitments",
   "range_proofs",
+  "ethereum_test_utils",
 ]
