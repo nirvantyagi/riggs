@@ -444,10 +444,14 @@ pub fn hash_to_variable_output_length<D: Digest>(inputs: &[u8], n_bytes: usize) 
     // Hash the inputs with a different counter for each output
     let mut out = Vec::new();
     let mut inputs: Vec<u8> = inputs.iter().copied().collect();
-    for i in 0..n_hashes {
-        inputs.extend_from_slice(&(i as u32).to_le_bytes());
+    if n_hashes == 1 {
         out.extend_from_slice(D::digest(&inputs).as_slice());
-        inputs.truncate(inputs.len() - 4);
+    } else {
+        for i in 0..n_hashes {
+            inputs.extend_from_slice(&(i as u32).to_le_bytes());
+            out.extend_from_slice(D::digest(&inputs).as_slice());
+            inputs.truncate(inputs.len() - 4);
+        }
     }
 
     out.truncate(n_bytes);

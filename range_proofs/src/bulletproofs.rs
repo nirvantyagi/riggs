@@ -1,5 +1,5 @@
 use ark_ec::{msm::VariableBaseMSM, ProjectiveCurve};
-use ark_ff::{BitIteratorLE, Field, PrimeField, UniformRand};
+use ark_ff::{BitIteratorLE, Field, PrimeField, UniformRand, ToBytes};
 use ark_serialize::CanonicalSerialize;
 
 use digest::Digest;
@@ -10,7 +10,9 @@ use crate::Error;
 use std::{marker::PhantomData, ops::Neg};
 
 use rsa::{bigint::BigInt, poe::hash_to_prime::hash_to_variable_output_length};
-use timed_commitments::{PedersenComm, PedersenParams};
+
+
+pub use timed_commitments::{PedersenComm, PedersenParams};
 
 pub struct Bulletproofs<G: ProjectiveCurve, D: Digest> {
     _g: PhantomData<G>,
@@ -19,23 +21,23 @@ pub struct Bulletproofs<G: ProjectiveCurve, D: Digest> {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Params<G: ProjectiveCurve> {
-    g: Vec<G>,
-    h: Vec<G>,
-    u: G,
+    pub g: Vec<G>,
+    pub h: Vec<G>,
+    pub u: G,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Proof<G: ProjectiveCurve> {
-    comm_bits: G,
-    comm_blind: G,
-    comm_lc1: G,
-    comm_lc2: G,
-    t_x: G::ScalarField,
-    r_t_x: G::ScalarField,
-    r_ab: G::ScalarField,
-    comm_ipa: Vec<(G, G)>,
-    base_a: G::ScalarField,
-    base_b: G::ScalarField,
+    pub comm_bits: G,
+    pub comm_blind: G,
+    pub comm_lc1: G,
+    pub comm_lc2: G,
+    pub t_x: G::ScalarField,
+    pub r_t_x: G::ScalarField,
+    pub r_ab: G::ScalarField,
+    pub comm_ipa: Vec<(G, G)>,
+    pub base_a: G::ScalarField,
+    pub base_b: G::ScalarField,
 }
 
 impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
@@ -109,19 +111,28 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             .map(|((s, s_minus), (g, h))| g.mul(&s.into_repr()) + h.mul(&s_minus.into_repr()))
             .fold(pp.u.mul(&r_blind.into_repr()), |acc, g| acc + g);
 
+        let pp_hash = {
+            let mut hash_input = Vec::<u8>::new();
+            hash_input.append(&mut serialize_group_elem(&ped_pp.g));
+            hash_input.append(&mut serialize_group_elem(&ped_pp.h));
+            for g in pp.g.iter() {
+                hash_input.append(&mut serialize_group_elem(g));
+            }
+            for h in pp.h.iter() {
+                hash_input.append(&mut serialize_group_elem(h));
+            }
+            hash_input.append(&mut serialize_group_elem(&pp.u));
+            hash_to_variable_output_length::<D>(&hash_input, 32)
+        };
         let (chal_y, chal_z, fs_aux) = {
             let mut hash_input = Vec::<u8>::new();
-            comm.serialize(&mut hash_input)?;
-            n.serialize(&mut hash_input)?;
-            ped_pp.g.serialize(&mut hash_input)?;
-            ped_pp.h.serialize(&mut hash_input)?;
-            pp.g.serialize(&mut hash_input)?;
-            pp.h.serialize(&mut hash_input)?;
-            pp.u.serialize(&mut hash_input)?;
-            comm_bits.serialize(&mut hash_input)?;
-            comm_blind.serialize(&mut hash_input)?;
-            // TODO: Solidity optimization: Pass in hash of input to variable output
+            hash_input.extend_from_slice(&pp_hash);
+            hash_input.append(&mut serialize_group_elem(comm));
+            hash_input.extend_from_slice(&n.to_be_bytes());
+            hash_input.append(&mut serialize_group_elem(&comm_bits));
+            hash_input.append(&mut serialize_group_elem(&comm_blind));
             let chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+            println!("rust chal: {:?}", chal);
             let chal_y = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
             let chal_z = G::ScalarField::from_random_bytes(&chal[16..]).unwrap();
             let fs_aux = chal[16..].to_vec();
@@ -187,9 +198,9 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
 
         let (chal_x, fs_aux) = {
             let mut hash_input = Vec::<u8>::new();
-            fs_aux.serialize(&mut hash_input)?;
-            comm_lc1.serialize(&mut hash_input)?;
-            comm_lc2.serialize(&mut hash_input)?;
+            hash_input.extend_from_slice(&fs_aux);
+            hash_input.append(&mut serialize_group_elem(&comm_lc1));
+            hash_input.append(&mut serialize_group_elem(&comm_lc2));
             let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
             let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
             let fs_aux = chal;
@@ -225,9 +236,9 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         let mut recurse_commitments = Vec::<(G, G)>::new();
         let (mut fs_aux, chal_u) = {
             let mut hash_input = fs_aux;
-            t_x.serialize(&mut hash_input)?;
-            r_t_x.serialize(&mut hash_input)?;
-            r_comm_bits.serialize(&mut hash_input)?;
+            hash_input.append(&mut serialize_field_elem(&t_x));
+            hash_input.append(&mut serialize_field_elem(&r_t_x));
+            hash_input.append(&mut serialize_field_elem(&r_comm_bits));
             let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
             let chal_u = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
             (chal, chal_u)
@@ -287,9 +298,9 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
 
                 let chal_x = {
                     let mut hash_input = Vec::<u8>::new();
-                    fs_aux.serialize(&mut hash_input)?;
-                    comm_1.serialize(&mut hash_input)?;
-                    comm_2.serialize(&mut hash_input)?;
+                    hash_input.extend_from_slice(&fs_aux);
+                    hash_input.append(&mut serialize_group_elem(&comm_1));
+                    hash_input.append(&mut serialize_group_elem(&comm_2));
                     let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
                     let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
                     fs_aux = chal;
@@ -345,18 +356,26 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         proof: &Proof<G>,
     ) -> Result<bool, Error> {
         // Verify range encoding to inner product argument
+        let pp_hash = {
+            let mut hash_input = Vec::<u8>::new();
+            hash_input.append(&mut serialize_group_elem(&ped_pp.g));
+            hash_input.append(&mut serialize_group_elem(&ped_pp.h));
+            for g in pp.g.iter() {
+                hash_input.append(&mut serialize_group_elem(g));
+            }
+            for h in pp.h.iter() {
+                hash_input.append(&mut serialize_group_elem(h));
+            }
+            hash_input.append(&mut serialize_group_elem(&pp.u));
+            hash_to_variable_output_length::<D>(&hash_input, 32)
+        };
         let (chal_y, chal_z, fs_aux) = {
             let mut hash_input = Vec::<u8>::new();
-            comm.serialize(&mut hash_input)?;
-            n.serialize(&mut hash_input)?;
-            ped_pp.g.serialize(&mut hash_input)?;
-            ped_pp.h.serialize(&mut hash_input)?;
-            pp.g.serialize(&mut hash_input)?;
-            pp.h.serialize(&mut hash_input)?;
-            pp.u.serialize(&mut hash_input)?;
-            proof.comm_bits.serialize(&mut hash_input)?;
-            proof.comm_blind.serialize(&mut hash_input)?;
-            // TODO: Solidity optimization: Pass in hash of input to variable output
+            hash_input.extend_from_slice(&pp_hash);
+            hash_input.append(&mut serialize_group_elem(comm));
+            hash_input.extend_from_slice(&n.to_be_bytes());
+            hash_input.append(&mut serialize_group_elem(&proof.comm_bits));
+            hash_input.append(&mut serialize_group_elem(&proof.comm_blind));
             let chal = hash_to_variable_output_length::<D>(&hash_input, 32);
             let chal_y = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
             let chal_z = G::ScalarField::from_random_bytes(&chal[16..]).unwrap();
@@ -366,9 +385,9 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
 
         let (chal_x, fs_aux) = {
             let mut hash_input = Vec::<u8>::new();
-            fs_aux.serialize(&mut hash_input)?;
-            proof.comm_lc1.serialize(&mut hash_input)?;
-            proof.comm_lc2.serialize(&mut hash_input)?;
+            hash_input.extend_from_slice(&fs_aux);
+            hash_input.append(&mut serialize_group_elem(&proof.comm_lc1));
+            hash_input.append(&mut serialize_group_elem(&proof.comm_lc2));
             let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
             let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
             let fs_aux = chal;
@@ -378,9 +397,9 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         // Verify inner product argument
         let (mut fs_aux, chal_u) = {
             let mut hash_input = fs_aux;
-            proof.t_x.serialize(&mut hash_input)?;
-            proof.r_t_x.serialize(&mut hash_input)?;
-            proof.r_ab.serialize(&mut hash_input)?;
+            hash_input.append(&mut serialize_field_elem(&proof.t_x));
+            hash_input.append(&mut serialize_field_elem(&proof.r_t_x));
+            hash_input.append(&mut serialize_field_elem(&proof.r_ab));
             let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
             let chal_u = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
             (chal, chal_u)
@@ -389,9 +408,9 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         for (comm_1, comm_2) in proof.comm_ipa.iter() {
             let chal_x = {
                 let mut hash_input = Vec::<u8>::new();
-                fs_aux.serialize(&mut hash_input)?;
-                comm_1.serialize(&mut hash_input)?;
-                comm_2.serialize(&mut hash_input)?;
+                hash_input.extend_from_slice(&fs_aux);
+                hash_input.append(&mut serialize_group_elem(comm_1));
+                hash_input.append(&mut serialize_group_elem(comm_2));
                 let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
                 let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
                 fs_aux = chal;
@@ -497,6 +516,28 @@ pub fn scalar_powers<F: PrimeField>(num: u64, s: &F) -> Vec<F> {
         pow_s *= s;
     }
     powers_of_scalar
+}
+
+///Helper methods for serializing group elements and field elements
+// TODO: Specialized to work with BN254 G1 (for solidity support)
+// https://github.com/Zokrates/ZoKrates/blob/develop/zokrates_core/src/proof_system/ark/mod.rs#L166
+pub fn serialize_group_elem<G: ProjectiveCurve>(g: &G) -> Vec<u8> {
+    let mut bytes: Vec<u8> = Vec::new();
+    g.into_affine().write(&mut bytes).unwrap();
+    let element_length = (bytes.len() - 1) / 2;  // [x, y, infinity] - infinity
+    let mut x = bytes[0..element_length].to_vec();
+    let mut y = bytes[element_length..2*element_length].to_vec();
+    x.reverse();
+    y.reverse();
+    x.append(&mut y);
+    x
+}
+
+pub fn serialize_field_elem<F: PrimeField>(f: &F) -> Vec<u8> {
+    let mut bytes: Vec<u8> = Vec::new();
+    f.write(&mut bytes).unwrap();
+    bytes.reverse();
+    bytes
 }
 
 #[cfg(test)]

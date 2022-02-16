@@ -31,6 +31,14 @@ impl Contract {
             .map_err(|_| Box::new(EvmTestError("src file read failed".to_string())))?;
         src = src.replace("\"", "\\\"");
 
+        Self::compile_from_src_string(&src, contract_name, opt)
+    }
+
+    pub fn compile_from_src_string(
+        src: &String,
+        contract_name: &str,
+        opt: bool,
+    ) -> Result<Self, Error> {
         // Compile source file using solc
         // Configuration: https://docs.soliditylang.org/en/v0.8.10/using-the-compiler.html
         // TODO: Change output selection to only compile 'input' file
@@ -113,6 +121,8 @@ impl Contract {
     pub fn encode_call_contract_bytes(&self, fn_name: &str, input: &[Token]) -> Result<Vec<u8>, Error> {
         match self.abi.functions.get(fn_name) {
             Some(f) => {
+                //let c = f[0].inputs.iter().map(|p| p.kind.clone()).collect::<Vec<_>>();
+                //println!("{:?}", c);
                 let call_binary = f[0].encode_input(input)
                     .map_err(|_| {
                         Box::new(EvmTestError(

@@ -1,3 +1,8 @@
+use ark_ff::ToBytes;
+use ark_ec::{PairingEngine};
+
+use primitive_types::U256;
+
 use std::{
     error::Error as ErrorTrait,
     fmt::{self, Debug},
@@ -24,8 +29,45 @@ impl fmt::Display for EvmTestError {
     }
 }
 
+/// Helper methods for parsing group structure
+/// https://github.com/Zokrates/ZoKrates/blob/develop/zokrates_core/src/proof_system/ark/mod.rs#L166
+pub fn parse_g1<E: PairingEngine>(
+    g1: &E::G1Affine,
+) -> (Vec<u8>, Vec<u8>) {
+    let mut bytes: Vec<u8> = Vec::new();
+    g1.write(&mut bytes).unwrap();
+    let element_length = (bytes.len() - 1) / 2;  // [x, y, infinity] - infinity
+    let mut x = bytes[0..element_length].to_vec();
+    let mut y = bytes[element_length..2*element_length].to_vec();
+    x.reverse();
+    y.reverse();
+    (x, y)
+}
+
+pub fn parse_g1_to_solidity_string<E: PairingEngine>(
+    g1: &E::G1Affine,
+) -> String {
+    let (x, y) = parse_g1::<E>(g1);
+    format!("0x{}, 0x{}", hex::encode(&x), hex::encode(&y))
+}
+
+pub fn parse_field<E: PairingEngine>(f: &E::Fr) -> Vec<u8> {
+    let mut bytes: Vec<u8> = Vec::new();
+    f.write(&mut bytes).unwrap();
+    bytes.reverse();
+    bytes
+}
+
+
+pub fn to_be_bytes(n: &U256) -> [u8; 32] {
+    let mut input_bytes: [u8; 32] = [0; 32];
+    n.to_big_endian(&mut input_bytes);
+    input_bytes
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{
         address::Address,
         contract::Contract,
@@ -33,13 +75,6 @@ mod tests {
     };
     use rand::{rngs::StdRng, SeedableRng};
     use ethabi::Token;
-    use primitive_types::U256;
-
-    fn to_be_bytes(n: &U256) -> [u8; 32] {
-        let mut input_bytes: [u8; 32] = [0; 32];
-        n.to_big_endian(&mut input_bytes);
-        input_bytes
-    }
 
     #[test]
     fn simple_storage_contract_test() {
