@@ -50,7 +50,7 @@ library BN254 {
         require (success);
     }
 
-    function submod(uint a, uint b) internal pure returns (uint){
+    function submod(uint256 a, uint256 b) internal pure returns (uint256){
         uint a_nn;
         if(a > b) {
             a_nn = a;
@@ -61,8 +61,8 @@ library BN254 {
     }
 
     // TODO: Inversion algorithm: https://github.com/arkworks-rs/algebra/blob/master/ff/src/fields/models/fp/montgomery_backend.rs#L211:w
-    function inverse(uint a) internal view returns (uint){
-        return expmod(a, P - 1, P);
+    function inverse(uint256 a) internal view returns (uint256){
+        return expmod(a, P - 2, P);
     }
 
     function expmod(uint256 _base, uint256 _exponent, uint256 _modulus) internal view returns (uint256 retval){
@@ -120,10 +120,29 @@ contract BulletproofsVerifier {
         <%ipa_pp_vecs%>
     }
 
-    function verify(BN254.G1Point memory comm, uint64 n, Proof memory proof) public view returns (bytes32) {
+    function verify(BN254.G1Point memory comm, Proof memory proof) public view returns (bytes memory) {
         Params memory pp = publicParams();
-        bytes32 digest = keccak256(abi.encodePacked(pp.hash, comm.X, comm.Y, n, proof.commBits.X, proof.commBits.Y, proof.commBlind.X, proof.commBlind.Y));
-        return digest;
+        bytes32 digest = keccak256(abi.encodePacked(pp.hash, comm.X, comm.Y, uint64(<%ipa_pp_len%>), proof.commBits.X, proof.commBits.Y, proof.commBlind.X, proof.commBlind.Y));
+        (uint256 ch_y, uint256 ch_z) = splitHashToScalarChallenges(digest);
+
+        digest = keccak256(abi.encodePacked(digest, proof.commLC1.X, proof.commLC1.Y, proof.commLC2.X, proof.commLC2.Y));
+        (uint256 ch_x, ) = splitHashToScalarChallenges(digest);
+
+        digest = keccak256(abi.encodePacked(digest, proof.tx, proof.rtx, proof.rAB));
+        (uint256 ch_u, ) = splitHashToScalarChallenges(digest);
+
+        uint256[<%ipa_log_len%>] memory ch_recurse;
+        for (uint i = 0; i < <%ipa_log_len%>; i++) {
+            digest = keccak256(abi.encodePacked(digest, proof.commIPAL[i].X, proof.commIPAL[i].Y, proof.commIPAR[i].X, proof.commIPAR[i].Y));
+            (uint256 ch_x_recurse, ) = splitHashToScalarChallenges(digest);
+            ch_recurse[i] = ch_x_recurse;
+        }
+        return abi.encodePacked(BN254.inverse(ch_recurse[4]));
+    }
+
+    function splitHashToScalarChallenges(bytes32 h) internal pure returns (uint256 ch1, uint256 ch2) {
+        ch1 += uint256(h) & ((1 << 128) - 1);
+        ch2 += (uint256(h) >> 128) & ((1 << 128) - 1);
     }
 
 }

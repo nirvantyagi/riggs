@@ -57,10 +57,13 @@ fn encode_proof<E: PairingEngine>(proof: &Proof<E::G1Projective>) -> Token {
 //    Token::Tuple(tokens)
 //}
 
+const NUM_BITS: u64 = 32;
+const LOG_NUM_BITS: u64 = 5;
+
 fn main() {
     let mut rng = StdRng::seed_from_u64(0u64);
     let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
-    let pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, 32);
+    let pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, NUM_BITS);
 
     let pp_hash = {
         let mut hash_input = Vec::<u8>::new();
@@ -81,7 +84,7 @@ fn main() {
     let (comm, opening) =
         PedersenComm::<G>::commit(&mut rng, &ped_pp, &v.to_bytes_le().1).unwrap();
     let proof = Bulletproofs::<G, sha3::Keccak256>::prove_range(
-        &mut rng, &pp, &ped_pp, &comm, &v, &opening, 32,
+        &mut rng, &pp, &ped_pp, &comm, &v, &opening, NUM_BITS,
     )
         .unwrap();
 
@@ -101,7 +104,8 @@ fn main() {
         .replace("<%ped_pp_g%>", &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()))
         .replace("<%ped_pp_h%>", &parse_g1_to_solidity_string::<Bn254>(&ped_pp.h.into_affine()))
         .replace("<%ipa_pp_u%>", &parse_g1_to_solidity_string::<Bn254>(&pp.u.into_affine()))
-        .replace("<%ipa_pp_len%>", &pp.g.len().to_string())
+        .replace("<%ipa_pp_len%>", &NUM_BITS.to_string())
+        .replace("<%ipa_log_len%>", &LOG_NUM_BITS.to_string())
         .replace("<%ipa_pp_vecs%>", &{
             let mut populate_ipa_pp_vec = String::new();
             for (i, (g, h)) in pp.g.iter().zip(pp.h.iter()).enumerate() {
@@ -132,7 +136,6 @@ fn main() {
     // Call verify function on contract
     let input = vec![
         encode_group_element::<Bn254>(&comm),
-        Token::Uint(U256::from(32)),
         encode_proof::<Bn254>(&proof)
     ];
     let result = evm.call(contract.encode_call_contract_bytes("verify", &input).unwrap(), &contract_addr, &deployer).unwrap();

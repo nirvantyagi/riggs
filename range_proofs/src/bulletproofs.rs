@@ -131,11 +131,12 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             hash_input.extend_from_slice(&n.to_be_bytes());
             hash_input.append(&mut serialize_group_elem(&comm_bits));
             hash_input.append(&mut serialize_group_elem(&comm_blind));
-            let chal = hash_to_variable_output_length::<D>(&hash_input, 32);
-            println!("rust chal: {:?}", chal);
+            let mut chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+            chal.reverse();  // Reverse to match solidity reading of bytes
             let chal_y = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
             let chal_z = G::ScalarField::from_random_bytes(&chal[16..]).unwrap();
-            let fs_aux = chal[16..].to_vec();
+            chal.reverse();
+            let fs_aux = chal;
             (chal_y, chal_z, fs_aux)
         };
 
@@ -201,8 +202,10 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             hash_input.extend_from_slice(&fs_aux);
             hash_input.append(&mut serialize_group_elem(&comm_lc1));
             hash_input.append(&mut serialize_group_elem(&comm_lc2));
-            let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
-            let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+            let mut chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+            chal.reverse();  // Reverse to match solidity reading of bytes
+            let chal_x = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
+            chal.reverse();
             let fs_aux = chal;
             (chal_x, fs_aux)
         };
@@ -239,8 +242,10 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             hash_input.append(&mut serialize_field_elem(&t_x));
             hash_input.append(&mut serialize_field_elem(&r_t_x));
             hash_input.append(&mut serialize_field_elem(&r_comm_bits));
-            let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
-            let chal_u = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+            let mut chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+            chal.reverse();  // Reverse to match solidity reading of bytes
+            let chal_u = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
+            chal.reverse();
             (chal, chal_u)
         };
 
@@ -301,8 +306,10 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
                     hash_input.extend_from_slice(&fs_aux);
                     hash_input.append(&mut serialize_group_elem(&comm_1));
                     hash_input.append(&mut serialize_group_elem(&comm_2));
-                    let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
-                    let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+                    let mut chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+                    chal.reverse();  // Reverse to match solidity reading of bytes
+                    let chal_x = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
+                    chal.reverse();
                     fs_aux = chal;
                     chal_x
                 };
@@ -376,10 +383,12 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             hash_input.extend_from_slice(&n.to_be_bytes());
             hash_input.append(&mut serialize_group_elem(&proof.comm_bits));
             hash_input.append(&mut serialize_group_elem(&proof.comm_blind));
-            let chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+            let mut chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+            chal.reverse();  // Reverse to match solidity reading of bytes
             let chal_y = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
             let chal_z = G::ScalarField::from_random_bytes(&chal[16..]).unwrap();
-            let fs_aux = chal[16..].to_vec();
+            chal.reverse();
+            let fs_aux = chal;
             (chal_y, chal_z, fs_aux)
         };
 
@@ -388,8 +397,10 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             hash_input.extend_from_slice(&fs_aux);
             hash_input.append(&mut serialize_group_elem(&proof.comm_lc1));
             hash_input.append(&mut serialize_group_elem(&proof.comm_lc2));
-            let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
-            let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+            let mut chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+            chal.reverse();  // Reverse to match solidity reading of bytes
+            let chal_x = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
+            chal.reverse();
             let fs_aux = chal;
             (chal_x, fs_aux)
         };
@@ -400,8 +411,10 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
             hash_input.append(&mut serialize_field_elem(&proof.t_x));
             hash_input.append(&mut serialize_field_elem(&proof.r_t_x));
             hash_input.append(&mut serialize_field_elem(&proof.r_ab));
-            let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
-            let chal_u = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+            let mut chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+            chal.reverse();  // Reverse to match solidity reading of bytes
+            let chal_u = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
+            chal.reverse();
             (chal, chal_u)
         };
         let mut recursive_challenges = Vec::new();
@@ -411,8 +424,10 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
                 hash_input.extend_from_slice(&fs_aux);
                 hash_input.append(&mut serialize_group_elem(comm_1));
                 hash_input.append(&mut serialize_group_elem(comm_2));
-                let chal = hash_to_variable_output_length::<D>(&hash_input, 16);
-                let chal_x = G::ScalarField::from_random_bytes(&chal[..]).unwrap();
+                let mut chal = hash_to_variable_output_length::<D>(&hash_input, 32);
+                chal.reverse();  // Reverse to match solidity reading of bytes
+                let chal_x = G::ScalarField::from_random_bytes(&chal[..16]).unwrap();
+                chal.reverse();
                 fs_aux = chal;
                 chal_x
             };
