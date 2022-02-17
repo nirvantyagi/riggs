@@ -58,7 +58,16 @@ impl Contract {
             }"#
         .replace("{opt}", &opt.to_string())
         .replace("{src}", &src);
-        let out = from_str::<serde_json::Value>(&compile(&solc_config))
+        Self::compile_from_config(&solc_config, contract_name)
+    }
+
+    pub fn compile_from_config(
+        config: &String,
+        contract_name: &str,
+    ) -> Result<Self, Error> {
+        // Compile source file using solc
+        // Configuration: https://docs.soliditylang.org/en/v0.8.10/using-the-compiler.html
+        let out = from_str::<serde_json::Value>(&compile(config))
             .map_err(|_| Box::new(EvmTestError("solc compile failed".to_string())))?;
 
         if out["errors"].is_array() {
@@ -95,7 +104,7 @@ impl Contract {
                     .to_string()
                     .as_bytes(),
             )
-            .map_err(|_| Box::new(EvmTestError("ethabi failed loading abi".to_string())))?;
+                .map_err(|_| Box::new(EvmTestError("ethabi failed loading abi".to_string())))?;
             abi
         };
 

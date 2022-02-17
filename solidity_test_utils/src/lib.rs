@@ -1,7 +1,8 @@
 use ark_ff::ToBytes;
-use ark_ec::{PairingEngine};
+use ark_ec::{PairingEngine, ProjectiveCurve};
 
 use primitive_types::U256;
+use ethabi::Token;
 
 use std::{
     error::Error as ErrorTrait,
@@ -56,6 +57,15 @@ pub fn parse_field<E: PairingEngine>(f: &E::Fr) -> Vec<u8> {
     f.write(&mut bytes).unwrap();
     bytes.reverse();
     bytes
+}
+
+pub fn encode_group_element<E: PairingEngine>(g: &E::G1Projective) -> Token {
+    let (x, y) = parse_g1::<E>(&g.into_affine());
+    Token::Tuple(vec![Token::Uint(U256::from_big_endian(&x)), Token::Uint(U256::from_big_endian(&y))])
+}
+
+pub fn encode_field_element<E: PairingEngine>(f: &E::Fr) -> Token {
+    Token::Uint(U256::from_big_endian(&parse_field::<E>(f)))
 }
 
 
