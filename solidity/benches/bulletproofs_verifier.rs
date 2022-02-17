@@ -87,6 +87,7 @@ fn main() {
         &mut rng, &pp, &ped_pp, &comm, &v, &opening, NUM_BITS,
     )
         .unwrap();
+    assert!(Bulletproofs::<G, sha3::Keccak256>::verify_range(&pp, &ped_pp, &comm, NUM_BITS, &proof).unwrap());
 
     // Compile contract from template
     let contract_path = format!(

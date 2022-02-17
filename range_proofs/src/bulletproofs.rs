@@ -450,14 +450,6 @@ impl<G: ProjectiveCurve, D: Digest> Bulletproofs<G, D> {
         // Linear combination check
         let delta = (chal_z.clone() - chal_z.clone() * &chal_z) * &chal_y_powers.iter().sum()
             - &(two_powers.iter().sum::<G::ScalarField>() * &chal_z * &chal_z * &chal_z);
-        let ver1_left =
-            ped_pp.g.mul(&proof.t_x.into_repr()) + ped_pp.h.mul(&proof.r_t_x.into_repr());
-        let ver1_right = comm.mul(&(chal_z.clone() * &chal_z).into_repr())
-            + ped_pp.g.mul(&delta.into_repr())
-            + proof.comm_lc1.mul(&chal_x.into_repr())
-            + proof.comm_lc2.mul(&(chal_x.clone() * &chal_x).into_repr());
-        debug_assert_eq!(ver1_left, ver1_right);
-
         let lc_check_bases = vec![ped_pp.g.clone(), ped_pp.h.clone(), comm.clone(), proof.comm_lc1.clone(), proof.comm_lc2.clone()];
         let lc_check_exps = vec![
             proof.t_x.clone() - &delta,
