@@ -15,7 +15,7 @@ use rsa::{
     poe::hash_to_prime::hash_to_variable_output_length,
 };
 use range_proofs::bulletproofs::{
-    Bulletproofs, Proof, Params, PedersenComm, PedersenParams,
+    Bulletproofs, Proof, PedersenComm,
     serialize_group_elem,
 };
 
@@ -107,6 +107,7 @@ fn main() {
         .replace("<%ipa_pp_u%>", &parse_g1_to_solidity_string::<Bn254>(&pp.u.into_affine()))
         .replace("<%ipa_pp_len%>", &NUM_BITS.to_string())
         .replace("<%ipa_log_len%>", &LOG_NUM_BITS.to_string())
+        .replace("<%ipa_final_check_len%>", &(2*NUM_BITS + 2*LOG_NUM_BITS + 8).to_string())
         .replace("<%ipa_pp_vecs%>", &{
             let mut populate_ipa_pp_vec = String::new();
             for (i, (g, h)) in pp.g.iter().zip(pp.h.iter()).enumerate() {
@@ -140,7 +141,7 @@ fn main() {
         encode_proof::<Bn254>(&proof)
     ];
     let result = evm.call(contract.encode_call_contract_bytes("verify", &input).unwrap(), &contract_addr, &deployer).unwrap();
-    //assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
+    assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
     println!("{:?}", result);
 
 

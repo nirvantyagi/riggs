@@ -120,9 +120,9 @@ contract BulletproofsVerifier {
         <%ipa_pp_vecs%>
     }
 
-    function verify(BN254.G1Point memory comm, Proof memory proof) public view returns (bytes memory) {
+    function verify(BN254.G1Point memory comm, Proof memory proof) public view returns (bool) {
         Params memory pp = publicParams();
-        uint256[4] memory ch_yzxu;
+        uint256[5] memory ch_yzxu;
         uint256[<%ipa_log_len%>] memory ch_recurse;
         {
             bytes32 digest = keccak256(abi.encodePacked(pp.hash, comm.X, comm.Y, uint64(<%ipa_pp_len%>), proof.commBits.X, proof.commBits.Y, proof.commBlind.X, proof.commBlind.Y));
@@ -140,10 +140,14 @@ contract BulletproofsVerifier {
                 ch_recurse[i] = ch_x_recurse;
             }
 
+            digest = keccak256(abi.encodePacked(digest, proof.baseA, proof.baseB));
+            (uint256 ch_c, ) = splitHashToScalarChallenges(digest);
+
             ch_yzxu[0] = ch_y;
             ch_yzxu[1] = ch_z;
             ch_yzxu[2] = ch_x;
             ch_yzxu[3] = ch_u;
+            ch_yzxu[4] = ch_c;
         }
 
         uint256[<%ipa_pp_len%>][3] memory powers;
@@ -156,87 +160,76 @@ contract BulletproofsVerifier {
             powers[2] = two_powers;
         }
 
+        uint256[<%ipa_final_check_len%>] memory final_check_exps;
+        BN254.G1Point[<%ipa_final_check_len%>] memory final_check_bases;
 
-        //uint256[5] memory lc_check_exps;
-        //{
-        //    uint256 ch_z_squared = mulmod(ch_yzxu[1], ch_yzxu[1], BN254.P);
-        //    uint256 ch_z_cubed = mulmod(ch_z_squared, ch_yzxu[1], BN254.P);
-        //    uint256 ch_y_powers_sum;
-        //    uint256 two_powers_sum;
-        //    for (uint i = 0; i < <%ipa_pp_len%>; i++) {
-        //        ch_y_powers_sum = addmod(ch_y_powers_sum, ch_y_powers[i], BN254.P);
-        //        two_powers_sum = addmod(two_powers_sum, two_powers[i], BN254.P);
-        //    }
-        //    uint256 delta = BN254.submod(mulmod(BN254.submod(ch_yzxu[1], ch_z_squared), ch_y_powers_sum, BN254.P), mulmod(two_powers_sum, ch_z_cubed, BN254.P));
-        //    lc_check_exps[0] = BN254.submod(proof.tx, delta);
-        //    lc_check_exps[1] = proof.rtx;
-        //    lc_check_exps[2] = BN254.submod(0, ch_z_squared);
-        //    lc_check_exps[3] = BN254.submod(0, ch_yzxu[2]);
-        //    lc_check_exps[4] = BN254.submod(0, mulmod(ch_yzxu[2], ch_yzxu[2], BN254.P));
-        //}
-
-        //BN254.G1Point[5] memory lc_check_bases;
-        //lc_check_bases[0] = pp.pedG;
-        //lc_check_bases[1] = pp.pedH;
-        //lc_check_bases[2] = comm;
-        //lc_check_bases[3] = proof.commLC1;
-        //lc_check_bases[4] = proof.commLC2;
-
-        //BN254.G1Point memory out = variableBaseMSM(lc_check_bases, lc_check_exps);
-        //return abi.encodePacked(out.X, out.Y);
-
-        // 32 + 32 + 5 + 5 + 3
-        uint256[77] memory ipa_check_exps;
-        BN254.G1Point[77] memory ipa_check_bases;
+        // Populate IPA exponents and bases
         {
-            for (uint i = 0; i < 32; i++) {
-                ipa_check_bases[i] = pp.ipaG[i];
-                ipa_check_bases[i + 32] = pp.ipaH[i];
+            for (uint i = 0; i < <%ipa_pp_len%>; i++) {
+                final_check_bases[i] = pp.ipaG[i];
+                final_check_bases[i + <%ipa_pp_len%>] = pp.ipaH[i];
             }
-            for (uint i = 0; i < 5; i++) {
-                ipa_check_bases[i + 64] = proof.commIPAL[i];
-                ipa_check_bases[i + 64 + 5] = proof.commIPAR[i];
+            for (uint i = 0; i < <%ipa_log_len%>; i++) {
+                final_check_bases[i + 2*<%ipa_pp_len%>] = proof.commIPAL[i];
+                final_check_bases[i + 2*<%ipa_pp_len%> + <%ipa_log_len%>] = proof.commIPAR[i];
             }
-            ipa_check_bases[0 + 64 + 10] = pp.ipaU;
-            ipa_check_bases[1 + 64 + 10] = proof.commBits;
-            ipa_check_bases[2 + 64 + 10] = proof.commBlind;
+            final_check_bases[0 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%>] = pp.ipaU;
+            final_check_bases[1 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%>] = proof.commBits;
+            final_check_bases[2 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%>] = proof.commBlind;
         }
         {
-            //uint256[32] memory g_agg_chal_exps;
-            //uint256[32] memory h_agg_chal_exps;
-            //g_agg_chal_exps[0] = 1;
-            //h_agg_chal_exps[0] = 1;
-            ipa_check_exps[0] = 1;
-            ipa_check_exps[0 + 32] = 1;
-            for (uint i = 0; i < 5; i++) {
-                uint256 ch_x = ch_recurse[4 - i];
-                uint256 ch_x_inv = BN254.inverse(ch_recurse[4 - i]);
+            final_check_exps[0] = 1;
+            final_check_exps[0 + <%ipa_pp_len%>] = 1;
+            for (uint i = 0; i < <%ipa_log_len%>; i++) {
+                uint256 ch_x = ch_recurse[<%ipa_log_len%> - 1 - i];
+                uint256 ch_x_inv = BN254.inverse(ch_recurse[<%ipa_log_len%> - 1 - i]);
                 // IPA commitment exponents
-                ipa_check_exps[4 - i + 64] = BN254.submod(0, ch_x);
-                ipa_check_exps[4 - i + 64 + 5] = BN254.submod(0, ch_x_inv);
+                final_check_exps[<%ipa_log_len%> - 1 - i + 2*<%ipa_pp_len%>] = BN254.submod(0, ch_x);
+                final_check_exps[<%ipa_log_len%> - 1 - i + 2*<%ipa_pp_len%> + <%ipa_log_len%>] = BN254.submod(0, ch_x_inv);
                 for (uint j = 0; j < 2**i; j++) {
-                    //g_agg_chal_exps[(2**i - 1) + j] = mulmod(g_agg_chal_exps[j], ch_x_inv, BN254.P);
-                    //h_agg_chal_exps[(2**i - 1) + j] = mulmod(h_agg_chal_exps[j], ch_x, BN254.P);
-                    ipa_check_exps[(2**i - 1) + j + 1] = mulmod(ipa_check_exps[j], ch_x_inv, BN254.P);
-                    ipa_check_exps[(2**i - 1) + j + 32 + 1] = mulmod(ipa_check_exps[j + 32], ch_x, BN254.P);
+                    final_check_exps[(2**i - 1) + j + 1] = mulmod(final_check_exps[j], ch_x_inv, BN254.P);
+                    final_check_exps[(2**i - 1) + j + <%ipa_pp_len%> + 1] = mulmod(final_check_exps[j + <%ipa_pp_len%>], ch_x, BN254.P);
                 }
             }
             // G and H exponents
             uint256 ch_z_squared = mulmod(ch_yzxu[1], ch_yzxu[1], BN254.P);
-            for (uint i = 0; i < 32; i++) {
-                ipa_check_exps[i] = addmod(mulmod(ipa_check_exps[i], proof.baseA, BN254.P), ch_yzxu[1], BN254.P);
-                ipa_check_exps[i + 32] = BN254.submod(mulmod(powers[1][i], BN254.submod(mulmod(ipa_check_exps[i + 32], proof.baseB, BN254.P), mulmod(ch_z_squared, powers[2][i], BN254.P)), BN254.P), ch_yzxu[1]);
+            for (uint i = 0; i < <%ipa_pp_len%>; i++) {
+                final_check_exps[i] = addmod(mulmod(final_check_exps[i], proof.baseA, BN254.P), ch_yzxu[1], BN254.P);
+                final_check_exps[i + <%ipa_pp_len%>] = BN254.submod(mulmod(powers[1][i], BN254.submod(mulmod(final_check_exps[i + <%ipa_pp_len%>], proof.baseB, BN254.P), mulmod(ch_z_squared, powers[2][i], BN254.P)), BN254.P), ch_yzxu[1]);
             }
         }
         {
-            ipa_check_exps[0 + 64 + 10] = BN254.submod(mulmod(mulmod(proof.baseA, proof.baseB, BN254.P), ch_yzxu[3], BN254.P), BN254.submod(mulmod(proof.tx, ch_yzxu[3], BN254.P), proof.rAB));
-            ipa_check_exps[1 + 64 + 10] = BN254.submod(0, 1);
-            ipa_check_exps[2 + 64 + 10] = BN254.submod(0, ch_yzxu[2]);
+            final_check_exps[0 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%>] = BN254.submod(mulmod(mulmod(proof.baseA, proof.baseB, BN254.P), ch_yzxu[3], BN254.P), BN254.submod(mulmod(proof.tx, ch_yzxu[3], BN254.P), proof.rAB));
+            final_check_exps[1 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%>] = BN254.submod(0, 1);
+            final_check_exps[2 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%>] = BN254.submod(0, ch_yzxu[2]);
         }
-        BN254.G1Point memory out = variableBaseMSM(ipa_check_bases, ipa_check_exps);
-        //return abi.encodePacked(ipa_check_exps[69]);
-        //BN254.G1Point memory out = ipa_check_bases[0];
-        return abi.encodePacked(out.X, out.Y);
+
+        // Populate LC exponents and bases
+        {
+            uint256 ch_z_squared = mulmod(ch_yzxu[1], ch_yzxu[1], BN254.P);
+            uint256 ch_z_cubed = mulmod(ch_z_squared, ch_yzxu[1], BN254.P);
+            uint256 ch_y_powers_sum;
+            uint256 two_powers_sum;
+            for (uint i = 0; i < <%ipa_pp_len%>; i++) {
+                ch_y_powers_sum = addmod(ch_y_powers_sum, powers[0][i], BN254.P);
+                two_powers_sum = addmod(two_powers_sum, powers[2][i], BN254.P);
+            }
+            uint256 delta = BN254.submod(mulmod(BN254.submod(ch_yzxu[1], ch_z_squared), ch_y_powers_sum, BN254.P), mulmod(two_powers_sum, ch_z_cubed, BN254.P));
+            final_check_exps[0 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = mulmod(BN254.submod(proof.tx, delta), ch_yzxu[4], BN254.P);
+            final_check_exps[1 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = mulmod(proof.rtx, ch_yzxu[4], BN254.P);
+            final_check_exps[2 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = mulmod(BN254.submod(0, ch_z_squared), ch_yzxu[4], BN254.P);
+            final_check_exps[3 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = mulmod(BN254.submod(0, ch_yzxu[2]), ch_yzxu[4], BN254.P);
+            final_check_exps[4 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = mulmod(BN254.submod(0, mulmod(ch_yzxu[2], ch_yzxu[2], BN254.P)), ch_yzxu[4], BN254.P);
+        }
+
+        final_check_bases[0 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = pp.pedG;
+        final_check_bases[1 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = pp.pedH;
+        final_check_bases[2 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = comm;
+        final_check_bases[3 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = proof.commLC1;
+        final_check_bases[4 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = proof.commLC2;
+
+        BN254.G1Point memory out = variableBaseMSM(final_check_bases, final_check_exps);
+        return (out.X == 0) && (out.Y == 0);
     }
 
     function splitHashToScalarChallenges(bytes32 h) internal pure returns (uint256 ch1, uint256 ch2) {
@@ -252,9 +245,9 @@ contract BulletproofsVerifier {
         }
     }
 
-    function variableBaseMSM(BN254.G1Point[77] memory bases, uint256[77] memory exps) internal view returns (BN254.G1Point memory out) {
+    function variableBaseMSM(BN254.G1Point[<%ipa_final_check_len%>] memory bases, uint256[<%ipa_final_check_len%>] memory exps) internal view returns (BN254.G1Point memory out) {
         out = BN254.g1mul(bases[0], exps[0]);
-        for (uint i = 1; i < 77; i++) {
+        for (uint i = 1; i < <%ipa_final_check_len%>; i++) {
             out = BN254.g1add(out, BN254.g1mul(bases[i], exps[i]));
         }
     }
