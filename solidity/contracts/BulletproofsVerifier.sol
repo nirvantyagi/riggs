@@ -37,6 +37,56 @@ contract BulletproofsVerifier {
         <%ipa_pp_vecs%>
     }
 
+    function variableBaseMSM(BN254.G1Point[<%ipa_final_check_len%>] memory bases, uint256[<%ipa_final_check_len%>] memory exps) internal view returns (BN254.G1Point memory out) {
+        out = BN254.g1mul(bases[0], exps[0]);
+        for (uint i = 1; i < <%ipa_final_check_len%>; i++) {
+            out = BN254.g1add(out, BN254.g1mul(bases[i], exps[i]));
+        }
+    }
+
+    //function variableBaseMSM(BN254.G1Point[<%ipa_final_check_len%>] memory bases, uint256[<%ipa_final_check_len%>] memory exps) internal view returns (BN254.G1Point memory out) {
+    //    uint c = 5;
+    //    BN254.G1Point[51] memory window_sums;
+    //    //for (uint window_start = 0; window_start < 254; window_start += c) {
+    //    for (uint j = 0; j < 51; j++) {
+    //        uint window_start = j * c;
+    //        BN254.G1Point memory res;
+    //        res.X = 0;
+    //        res.Y = 0;
+    //        BN254.G1Point[32] memory buckets;
+    //        for (uint i = 0; i < <%ipa_final_check_len%>; i++) {
+    //            uint256 scalar = exps[i];
+    //            if ((scalar == 1) && (window_start == 0)) {
+    //                res = BN254.g1add(res, bases[i]);
+    //            } else {
+    //                scalar >>= window_start;
+    //                scalar %= (1 << c);
+    //                if (scalar != 0) {
+    //                    buckets[scalar] = BN254.g1add(buckets[scalar], bases[i]);
+    //                }
+    //            }
+    //        }
+    //        BN254.G1Point memory sum;
+    //        sum.X = 0;
+    //        sum.Y = 0;
+    //        for (uint i = 1; i < 32; i++) {
+    //            sum = BN254.g1add(sum, buckets[32 - i]);
+    //            res = BN254.g1add(res, sum);
+    //        }
+    //        window_sums[j] = res;
+    //    }
+    //    BN254.G1Point memory out;
+    //    out.X = 0;
+    //    out.Y = 0;
+    //    for (uint i = 1; i < 51; i++) {
+    //        out = BN254.g1add(out, window_sums[51 - i]);
+    //        for (uint j = 0; j < c; j++) {
+    //            out = BN254.g1add(out, out);
+    //        }
+    //    }
+    //    out = BN254.g1add(out, window_sums[0]);
+    //}
+
     function verify(BN254.G1Point memory comm, Proof memory proof) public view returns (bool) {
         Params memory pp = publicParams();
         uint256[5] memory ch_yzxu;
@@ -161,13 +211,5 @@ contract BulletproofsVerifier {
             s_pow = mulmod(s_pow, s, BN254.P);
         }
     }
-
-    function variableBaseMSM(BN254.G1Point[<%ipa_final_check_len%>] memory bases, uint256[<%ipa_final_check_len%>] memory exps) internal view returns (BN254.G1Point memory out) {
-        out = BN254.g1mul(bases[0], exps[0]);
-        for (uint i = 1; i < <%ipa_final_check_len%>; i++) {
-            out = BN254.g1add(out, BN254.g1mul(bases[i], exps[i]));
-        }
-    }
-
 
 }
