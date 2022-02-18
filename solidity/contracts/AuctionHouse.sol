@@ -1,16 +1,15 @@
 pragma solidity ^0.8.11;
 
-import "./RSA2048.sol";
+import "./RSA.sol";
 
 // 0x6523784162348715238471625341873265421652378416234871523847162534
-
 
 contract AuctionHouse {
     
     struct TCbid {
         bool opened;
         bytes pc;
-        RSA2048.Element tc;
+        RSA.Element tc;
         // need a pedersen commitment element
         uint256 bid;
     }
@@ -61,7 +60,7 @@ contract AuctionHouse {
     function bid(bytes32 auction_id, bytes calldata bid_pc, bytes calldata bid_tc) 
     external returns (uint) {
         // currently ignoring the pedersen part
-        TCbid memory new_bid = TCbid(false, bid_pc, RSA2048._new(bid_tc), 0);
+        TCbid memory new_bid = TCbid(false, bid_pc, RSA._new(bid_tc), 0);
 
         auctionMap[auction_id].bids.push(new_bid);
 
