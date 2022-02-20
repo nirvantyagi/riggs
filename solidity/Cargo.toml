@@ -28,3 +28,8 @@ rand = { version = "0.8" }
 name = "bulletproofs_verifier"
 path = "benches/bulletproofs_verifier.rs"
 harness = false
+
+[[bench]]
+name = "pedersen"
+path = "benches/pedersen.rs"
+harness = false

@@ -79,6 +79,42 @@ pub fn get_bulletproofs_verifier_contract_src(pp: &Params<G>, ped_pp: &PedersenP
     src
 }
 
+pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>, n: u64, lg_n: u64) -> String {
+    let contract_path = format!(
+        "{}/contracts/Pedersen.sol",
+        env!("CARGO_MANIFEST_DIR")
+    );
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src.replace("\"", "\\\"")
+        .replace("<%ped_pp_g%>", &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()))
+        .replace("<%ped_pp_h%>", &parse_g1_to_solidity_string::<Bn254>(&ped_pp.h.into_affine()));
+    src
+}
+
+pub fn get_pedersen_test_src() -> String {
+    let contract_path = format!(
+        "{}/contracts/PedersenTest.sol",
+        env!("CARGO_MANIFEST_DIR")
+    );
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src.replace("\"", "\\\"");
+    src
+}
+
+
+
+
+pub fn _encode_field_element<E: PairingEngine>(f: &E::Fr) -> Token {
+    encode_field_element::<E>(&f)
+}
+
+
 pub fn encode_bulletproof<E: PairingEngine>(proof: &Proof<E::G1Projective>) -> Token {
     let mut tokens = Vec::new();
     tokens.push(encode_group_element::<E>(&proof.comm_bits));
