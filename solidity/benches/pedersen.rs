@@ -23,7 +23,7 @@ use range_proofs::bulletproofs::{
 use solidity::{
     get_bn254_library_src,
     get_pedersen_library_src,
-    get_pedersen_test_src,
+    get_filename_src,
     get_bulletproofs_verifier_contract_src,
     _encode_field_element,
     encode_bulletproof,
@@ -48,7 +48,8 @@ fn main() {
 
     let pedersen_lib_src = get_pedersen_library_src(&ped_pp, NUM_BITS, LOG_NUM_BITS);
 
-    let pedersen_test_src = get_pedersen_test_src();
+    // let pedersen_test_src = get_pedersen_test_src();
+    let pedersen_test_src = get_filename_src("PedersenTest.sol");
 
 
     let solc_config = r#"

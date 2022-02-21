@@ -108,6 +108,20 @@ pub fn get_pedersen_test_src() -> String {
 }
 
 
+pub fn get_filename_src(filename: &str) -> String {
+    let contract_path = format!(
+        "{}/contracts/",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let full_path : String = contract_path +filename;
+
+    let mut src_file = File::open(full_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src.replace("\"", "\\\"");
+    src
+}
+
 
 
 pub fn _encode_field_element<E: PairingEngine>(f: &E::Fr) -> Token {
