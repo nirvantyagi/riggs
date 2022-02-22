@@ -40,6 +40,15 @@ impl<P: RsaGroupParams> Hash for RsaHiddenOrderGroup<P> {
 }
 
 impl<P: RsaGroupParams> RsaHiddenOrderGroup<P> {
+    pub fn get_modulus(&self) -> Self {
+        let mut ma = P::M.deref().clone();
+        RsaHiddenOrderGroup {
+            n: ma,
+            _params: PhantomData,
+        }
+    }
+
+
     pub fn from_nat(n: BigInt) -> Self {
         let mut a = n;
         assert!(a > BigInt::zero());

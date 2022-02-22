@@ -41,6 +41,17 @@ impl<G: ProjectiveCurve> PedersenComm<G> {
         Ok((comm, r))
     }
 
+    pub fn commit2<R: CryptoRng + Rng>(
+        rng: &mut R,
+        pp: &PedersenParams<G>,
+        m: &[u8],
+    ) -> Result<(G, G::ScalarField, G::ScalarField), Error> {
+        let r = G::ScalarField::rand(rng);
+        let m_f = nat_to_f::<G::ScalarField>(&BigInt::from_bytes_le(Sign::Plus, m))?;
+        let comm = pp.g.mul(&m_f.into_repr()) + &pp.h.mul(&r.into_repr());
+        Ok((comm, m_f, r))
+    }
+
     pub fn ver_open(
         pp: &PedersenParams<G>,
         comm: &G,

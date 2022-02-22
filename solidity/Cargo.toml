@@ -23,6 +23,8 @@ rsa = { path = "../rsa" }
 primitive-types = { version = "0.10", features = ["rlp"] }
 rand = { version = "0.8" }
 
+once_cell = { version = "1.9" }
+
 
 [[bench]]
 name = "bulletproofs_verifier"
@@ -32,4 +34,9 @@ harness = false
 [[bench]]
 name = "pedersen"
 path = "benches/pedersen.rs"
+harness = false
+
+[[bench]]
+name = "rsa"
+path = "benches/rsa.rs"
 harness = false

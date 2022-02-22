@@ -1,4 +1,5 @@
-pragma solidity 0.8.11;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.10;
 
 import "./BigNumber.sol";
 
@@ -16,7 +17,18 @@ library RSA {
 
     function _new(bytes memory val) 
     internal pure returns (Element memory) {
-        BigNumber.instance memory bni = BigNumber.instance(val, false, 2048);
+        bytes memory full_bytes = new bytes(256);
+        uint i=0;
+        while (i+val.length < 256) {
+            full_bytes[i] = 0;
+            i = i+1;
+        }
+        uint j=0;
+        while (j<val.length) {
+            full_bytes[i+j] = val[j];
+            j=j+1;
+        }
+        BigNumber.instance memory bni = BigNumber.instance(full_bytes, false, 2048);
         Element memory ret = Element(bni);
         return ret;
     }
@@ -49,7 +61,19 @@ library RSA {
 
     function as_bytes(Element memory a) 
     internal pure returns (bytes memory) {
-        return a.bn.val;
+        bytes memory full_bytes = new bytes(256);
+        uint i=0;
+        while (i+a.bn.val.length < 256) {
+            full_bytes[i] = 0;
+            i = i+1;
+        }
+        uint j=0;
+        while (j<a.bn.val.length) {
+            full_bytes[i+j] = a.bn.val[j];
+            j=j+1;
+        }
+        return full_bytes;
+        // return a.bn.val;
     }
 
     // //   function mul(Element memory a, uint b, Element memory modulus) 
@@ -136,10 +160,33 @@ library RSA {
     // returns true iff a==b
     function is_equal(Element memory a, Element memory b) 
     internal pure returns (bool) {
-        for (uint i=0; i<a.bn.val.length; i++) {
-            if (a.bn.val[i] != b.bn.val[i]) return false;
+        uint a_len = a.bn.val.length;
+        uint b_len = b.bn.val.length;
+
+        uint ml = a_len;
+        if (a_len > b_len) {
+            ml = b_len;
+        }  
+
+        for (uint i=0; i< ml; i++) {
+            if (a.bn.val[a_len-1-i] != b.bn.val[b_len-1-i]) return false;
+        }
+        if (a_len > b_len) {
+            for (uint i=b_len; i<a_len; i++) {
+                if (a.bn.val[a_len-1-i] != 0) return false;
+            }
+        } else if (a_len < b_len) {
+            for (uint i=a_len; i<b_len; i++) {
+                if (b.bn.val[b_len-1-i] != 0) return false;
+            }
         }
         return true;
     }
+
+    // returns true iff a==b
+    // function cmp(Element memory a, Element memory b) 
+    // internal pure returns (bool) {
+    //     return BigNumber.cmp(a.bn, b.bn, false) == 0;
+    // }
 
 }
