@@ -40,3 +40,8 @@ harness = false
 name = "rsa"
 path = "benches/rsa.rs"
 harness = false
+
+[[bench]]
+name = "fkps"
+path = "benches/fkps.rs"
+harness = false
