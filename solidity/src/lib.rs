@@ -16,7 +16,7 @@ use range_proofs::bulletproofs::{
     serialize_group_elem,
 };
 use rsa::{
-    poe::hash_to_prime::hash_to_variable_output_length,
+    hash_to_prime::hash_to_variable_output_length,
 };
 
 pub fn get_bn254_library_src() -> String {
@@ -79,7 +79,7 @@ pub fn get_bulletproofs_verifier_contract_src(pp: &Params<G>, ped_pp: &PedersenP
     src
 }
 
-pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>, n: u64, lg_n: u64) -> String {
+pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>) -> String {
     let contract_path = format!(
         "{}/contracts/Pedersen.sol",
         env!("CARGO_MANIFEST_DIR")
@@ -121,13 +121,6 @@ pub fn get_filename_src(filename: &str) -> String {
     src = src.replace("\"", "\\\"");
     src
 }
-
-
-
-pub fn _encode_field_element<E: PairingEngine>(f: &E::Fr) -> Token {
-    encode_field_element::<E>(&f)
-}
-
 
 pub fn encode_bulletproof<E: PairingEngine>(proof: &Proof<E::G1Projective>) -> Token {
     let mut tokens = Vec::new();

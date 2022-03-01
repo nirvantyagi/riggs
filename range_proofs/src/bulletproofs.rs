@@ -9,7 +9,7 @@ use rand::{CryptoRng, Rng};
 use crate::Error;
 use std::{marker::PhantomData, ops::Neg};
 
-use rsa::{bigint::BigInt, poe::hash_to_prime::hash_to_variable_output_length};
+use rsa::{bigint::BigInt, hash_to_prime::hash_to_variable_output_length};
 
 
 pub use timed_commitments::{PedersenComm, PedersenParams};

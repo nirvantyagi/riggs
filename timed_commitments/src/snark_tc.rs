@@ -20,7 +20,8 @@ use rsa::{
         BigInt,
     },
     hog::{constraints::RsaHogVar, RsaGroupParams, RsaHiddenOrderGroup},
-    poe::{PoE, PoEParams, Proof as PoEProof, hash_to_prime::HashToPrime},
+    poe::{PoE, PoEParams, Proof as PoEProof},
+    hash_to_prime::{HashToPrime},
 };
 
 use crate::{
@@ -425,7 +426,7 @@ mod tests {
     use sha3::Sha3_256;
     use std::str::FromStr;
 
-    use rsa::poe::hash_to_prime::PlannedPocklingtonHash;
+    use rsa::hash_to_prime::planned_pocklington::PlannedPocklingtonHash;
     use marlin::{MarlinWrapper, MarlinPCWrapper};
 
     type MarlinInstantiation = MarlinWrapper<F, MarlinPCWrapper<Bls12_381, DensePolynomial<F>>, Sha3_256>;

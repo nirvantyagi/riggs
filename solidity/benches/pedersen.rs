@@ -11,6 +11,7 @@ use solidity_test_utils::{
     evm::Evm,
     address::Address,
     encode_group_element,
+    encode_field_element,
     to_be_bytes,
 };
 
@@ -25,12 +26,9 @@ use solidity::{
     get_pedersen_library_src,
     get_filename_src,
     get_bulletproofs_verifier_contract_src,
-    _encode_field_element,
     encode_bulletproof,
 };
 
-const NUM_BITS: u64 = 64;
-const LOG_NUM_BITS: u64 = 6;
 
 fn main() {
     let mut rng = StdRng::seed_from_u64(0u64);
@@ -46,7 +44,7 @@ fn main() {
     // Compile contract from template
     let bn254_src = get_bn254_library_src();
 
-    let pedersen_lib_src = get_pedersen_library_src(&ped_pp, NUM_BITS, LOG_NUM_BITS);
+    let pedersen_lib_src = get_pedersen_library_src(&ped_pp);
 
     // let pedersen_test_src = get_pedersen_test_src();
     let pedersen_test_src = get_filename_src("PedersenTest.sol");
@@ -90,8 +88,8 @@ fn main() {
     // Call verify function on contract
     let input = vec![
         encode_group_element::<Bn254>(&comm),
-        _encode_field_element::<Bn254>(&v_f),
-        _encode_field_element::<Bn254>(&opening)
+        encode_field_element::<Bn254>(&v_f),
+        encode_field_element::<Bn254>(&opening)
     ];
     let result = evm.call(contract.encode_call_contract_bytes("verify", &input).unwrap(), &contract_addr, &deployer).unwrap();
     assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));

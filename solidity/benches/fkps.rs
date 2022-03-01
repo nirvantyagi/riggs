@@ -3,7 +3,10 @@ use ark_bn254::{
     G1Projective as G,
 };
 
-use std::str::FromStr;
+use std::{
+    str::FromStr,
+    ops::Deref,
+};
 
 use rand::{rngs::StdRng, SeedableRng};
 use primitive_types::{U256};
@@ -13,6 +16,7 @@ use solidity_test_utils::{
     evm::Evm,
     address::Address,
     encode_group_element,
+    encode_field_element,
     encode_int_from_bytes,
     to_be_bytes,
     encode_bytes,
@@ -37,7 +41,6 @@ use solidity::{
     get_pedersen_library_src,
     get_filename_src,
     get_bulletproofs_verifier_contract_src,
-    _encode_field_element,
     encode_bulletproof,
 };
 
@@ -127,7 +130,7 @@ fn main() {
     let g = Hog::from_nat(BigInt::from_str("45746267326477510121777008810664706780700497316550259121257880520529714488628").unwrap());
     let h = Hog::from_nat(BigInt::from_str("45746267326477510121777008810664706780700497316550259121257880520529714488627").unwrap());
     let z = Hog::from_nat(BigInt::from_str("45746267326477510121777008810664706780700497316550259121257880520529714488626").unwrap());
-    let modulus = g.get_modulus();
+    let modulus = TestRsaParams::M.deref().clone();
 
     let bid = BigInt::from(10000);
 
@@ -183,7 +186,7 @@ fn main() {
 
     // Call verify function on contract
     let input = vec![
-        encode_bytes(&modulus.n.to_bytes_be().1),
+        encode_bytes(&modulus.to_bytes_be().1),
         encode_bytes(&g.n.to_bytes_be().1),
         encode_bytes(&h.n.to_bytes_be().1),
         encode_bytes(&z.n.to_bytes_be().1),

@@ -11,7 +11,8 @@ use rand::{CryptoRng, Rng};
 use rsa::{
     bigint::{nat_to_f, BigInt},
     hog::RsaGroupParams,
-    poe::{PoEParams, Proof as PoEProof, hash_to_prime::HashToPrime},
+    poe::{PoEParams, Proof as PoEProof},
+    hash_to_prime::{HashToPrime},
 };
 use std::marker::PhantomData;
 
@@ -139,7 +140,7 @@ mod tests {
     use rand::{rngs::StdRng, SeedableRng};
     use sha3::Sha3_256;
     use std::str::FromStr;
-    use rsa::poe::hash_to_prime::PlannedPocklingtonHash;
+    use rsa::hash_to_prime::planned_pocklington::PlannedPocklingtonHash;
 
     use rsa::hog::RsaHiddenOrderGroup;
 

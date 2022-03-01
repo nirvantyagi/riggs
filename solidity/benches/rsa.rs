@@ -3,7 +3,10 @@ use ark_bn254::{
     G1Projective as G,
 };
 
-use std::str::FromStr;
+use std::{
+    str::FromStr,
+    ops::Deref,
+};
 
 use rand::{rngs::StdRng, SeedableRng};
 use primitive_types::{U256};
@@ -13,6 +16,7 @@ use solidity_test_utils::{
     evm::Evm,
     address::Address,
     encode_group_element,
+    encode_field_element,
     encode_int_from_bytes,
     to_be_bytes,
     encode_bytes,
@@ -34,7 +38,6 @@ use solidity::{
     get_pedersen_library_src,
     get_filename_src,
     get_bulletproofs_verifier_contract_src,
-    _encode_field_element,
     encode_bulletproof,
 };
 
@@ -111,11 +114,11 @@ fn main() {
 
     let g = Hog::from_nat(BigInt::from_str("231").unwrap());
 
-    let x = BigInt::from(123);;
+    let x = BigInt::from(123);
 
     let y = g.power(&x);
 
-    let m = g.get_modulus();
+    let m = TestRsaParams::M.deref().clone();
 
     // Setup EVM
     let mut evm = Evm::new();
@@ -131,7 +134,7 @@ fn main() {
     let input = vec![
         encode_bytes(&g.n.to_bytes_be().1),
         encode_bytes(&y.n.to_bytes_be().1),
-        encode_bytes(&m.n.to_bytes_be().1),
+        encode_bytes(&m.to_bytes_be().1),
         encode_int_from_bytes(&x.to_bytes_be().1),
     ];
 

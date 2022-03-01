@@ -3,7 +3,7 @@
 use crate::{
     bigint::BigInt,
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
-    poe::hash_to_prime::{
+    hash_to_prime::{
         HashToPrime,
     },
     Error,
@@ -11,8 +11,6 @@ use crate::{
 
 use num_integer::Integer;
 use std::{fmt::Debug, marker::PhantomData};
-
-pub mod hash_to_prime;
 
 pub type Hog<P> = RsaHiddenOrderGroup<P>;
 
@@ -80,7 +78,7 @@ mod tests {
     use sha3::Sha3_256;
     use std::str::FromStr;
 
-    use crate::poe::hash_to_prime::PlannedPocklingtonHash;
+    use crate::hash_to_prime::planned_pocklington::PlannedPocklingtonHash;
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
