@@ -78,7 +78,7 @@ mod tests {
     use sha3::Sha3_256;
     use std::str::FromStr;
 
-    use crate::hash_to_prime::planned_pocklington::PlannedPocklingtonHash;
+    use crate::hash_to_prime::MillerRabinRejectionSample;
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
@@ -105,7 +105,7 @@ mod tests {
     }
 
     pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
-    pub type TestWesolowski = PoE<TestPoEParams, TestRsaParams, PlannedPocklingtonHash<Sha3_256>>;
+    pub type TestWesolowski = PoE<TestPoEParams, TestRsaParams, MillerRabinRejectionSample<Sha3_256>>;
 
     #[test]
     fn proof_of_exponentiation_test() {

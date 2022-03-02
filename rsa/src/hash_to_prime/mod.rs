@@ -7,8 +7,9 @@ use std::{
     fmt::{self, Debug},
     marker::PhantomData,
 };
+use num_integer::Integer;
 
-pub mod planned_pocklington;
+pub mod pocklington;
 
 pub trait HashToPrime {
     type Certificate: Clone + Eq + Debug;
@@ -72,14 +73,11 @@ pub fn miller_rabin(n: &BigInt, rounds: usize) -> bool {
 /// Returns whether `n` passes a Miller-Rabin check with base `b`.
 fn miller_rabin_round(n: &BigInt, b: &BigInt) -> bool {
     let n_less_one = n - BigInt::one();
-    let mut d = n - BigInt::one();
-    let d_bits = d.to_str_radix(2);
-    let last_one = d_bits.as_str().rfind('1').expect("Input must be >1");
-    if last_one == d_bits.len() - 1 {
+    let s = n_less_one.trailing_zeros().expect("Input must be > 1");
+    if s == 0 {
         return false;
     }
-    let s = d_bits.len() - last_one - 1;
-    d >>= s as u32;
+    let d =  &n_less_one >> s as u32;
     let mut pow = b.modpow(&d, &n);
     if pow == BigInt::one() || pow == n_less_one {
         return true;
@@ -104,17 +102,15 @@ pub fn miller_rabin_32b(n: &BigInt) -> bool {
 pub fn hash_to_prime<D: Digest>(inputs: &[u8], n_bits: usize) -> Result<(BigInt, u32), Error> {
     let n_rounds = -128f64 * 2f64.ln() / (1f64 - 2f64 / n_bits as f64).ln();
     let nonce_bits = (n_rounds.log2().ceil() + 0.1) as usize;
-    let mut nonce = 0u32;
+    debug_assert!(nonce_bits < 32);
     let mut inputs: Vec<u8> = inputs.iter().copied().collect();
-    inputs.extend_from_slice(&nonce.to_le_bytes());
-    for _ in 0..(1 << nonce_bits) {
+    for nonce in 0..(1u32 << nonce_bits) {
+        inputs.extend_from_slice(&nonce.to_le_bytes());
         let hash = hash_to_integer::<D>(&inputs, n_bits);
         if miller_rabin(&hash, 30) {
             return Ok((hash, nonce));
         }
-        nonce += 1;
         inputs.truncate(inputs.len() - 4);
-        inputs.extend_from_slice(&nonce.to_le_bytes());
     }
     Err(Box::new(HashToPrimeError::NoValidNonce))
 }
@@ -151,6 +147,34 @@ pub fn hash_to_variable_output_length<D: Digest>(inputs: &[u8], n_bytes: usize) 
 
     out.truncate(n_bytes);
     out
+}
+
+/// Returns factorization of n
+pub fn factor(n: &BigInt) -> Vec<(BigInt, u32)> {
+    let mut factorization = Vec::new();
+
+    let mut ps = Vec::new();
+    let mut p = BigInt::from(2);
+    let mut n = n.clone();
+    //TODO: Optimize can also check if n is prime via Miller-Rabin
+    while n != BigInt::one() {
+        let mut multiplicity = 0;
+        while n.is_multiple_of(&p) {
+            multiplicity += 1;
+            n = n.div_floor(&p);
+        }
+        if multiplicity > 0 {
+            factorization.push((p.clone(), multiplicity))
+        }
+
+        // Next prime
+        ps.push(p.clone());
+        while {
+            p += BigInt::one();
+            ps.iter().any(|q| p.is_multiple_of(q))
+        }{}
+    }
+    factorization
 }
 
 #[derive(Debug)]
@@ -195,5 +219,14 @@ mod tests {
         println!("mr: {}", h);
         println!("nonce: {}", cert);
         assert!(MillerRabinRejectionSample::<Sha3_256>::verify_hash_to_prime(128, &vec![0], &h, &cert).unwrap());
+    }
+
+    #[test]
+    fn factor_test() {
+        let factors = factor(&BigInt::from(34102));
+        assert_eq!(factors.len(), 3);
+        assert_eq!(factors[0], (BigInt::from(2), 1));
+        assert_eq!(factors[1], (BigInt::from(17), 2));
+        assert_eq!(factors[2], (BigInt::from(59), 1));
     }
 }
