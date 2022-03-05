@@ -26,6 +26,46 @@ P_LIMIT = 1 << 32
 #
 # => if no candidate is found, re-randomize the proof and start over.
 
+def primegen_opt1(bits):
+    while True:
+        b1 = bits // 2
+        f1 = getrandbits(b1)
+        f2 = getrandbits(bits - b1 - 1)
+        p_cand = f1 * f2 * 2 + 1
+        if is_prime(p_cand):
+            return p_cand
+
+#
+# really, this would be implemented as:
+# 1. generate (1.1 * bits // 3 - 10) bits by hashing; call this value f11
+# 2. for f12 in [0, 1024), test if ((f11 << 11) + (f12 << 1) + 1) is prime.
+# 3. Call the first resulting prime f1. The hash input and f12 are the witness.
+# 4. Using a PRG seeded by a hash, generate the remaining bits (b2, below)
+#
+# The eventual Pocklington certificate for the big prime also naturally proves
+# the little prime f1's primality, which is handy.
+#
+def primegen_opt2(bits):
+    lb = 1 << (bits // 3 + 1)
+    ub = 11 * lb // 10
+    f1 = random_prime(ub, lbound=lb)
+    brem = bits - int(f1).bit_length()
+    while True:
+        f2 = getrandbits(brem)
+        p_cand = f1 * f2 * 2 + 1
+        assert(p_cand % 2 == 1)
+        if is_prime(p_cand):
+            nf = 1
+            while f2 % f1 == 0:
+                f2 //= f1
+                nf += 1
+            n2 = 0
+            d2 = p_cand - 1
+            while d2 % 2 == 0:
+                d2 //= 2
+                n2 += 1
+            return (p_cand, [(2, n2), (f1, nf)])
+
 def test_pock_a(p, f, a):
     if pow(a, p - 1, p) != 1:
         return False
@@ -52,13 +92,14 @@ def test_pock_f(p, f, n, n2):
     return (F1, R1, r, s)
 
 PockCert = namedtuple("Pock", ['f', 'n', 'n2', 'a', 't', 'bf', 'br'])
-def pocklington_step(p):
+def pocklington_step(p, ff=None):
     assert(is_prime(p))
     if p < P_LIMIT:
         return None
 
     # choose smallest usable f
-    ff = factor(p-1)
+    if ff is None:
+        ff = factor(p-1)
     assert ff[0][0] == 2
     n2 = ff[0][1]
 
@@ -127,16 +168,28 @@ def verify_pocklington_step(p, cert):
 
     return False
 
-def pocklington(p):
+def pocklington(p, ff=None):
     assert is_prime(p)
     cert = []
     while p > P_LIMIT:
-        this_cert = pocklington_step(p)
+        this_cert = pocklington_step(p, ff)
+        ff = None
         if this_cert is None:
             return None
         cert.append(this_cert)
         p = this_cert.f
     return cert
+
+def random_pocklington(bits, ptype=0):
+    if ptype == 0:
+        p = random_prime(1 << bits)
+        ff = None
+    elif ptype == 1:
+        p = primegen_opt1(bits)
+        ff = None
+    else:
+        (p, ff) = primegen_opt2(bits)
+    return pocklington(p, ff)
 
 def verify_pocklington(p, cert):
     for this_cert in cert:
