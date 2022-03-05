@@ -1,0 +1,22 @@
+[package]
+name = "pari_factor"
+version = "0.1.0"
+authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
+edition = "2021"
+links = "libpari"
+build = "build.rs"
+
+# Uses PARI for integer factoring
+# PARI: https://pari.math.u-bordeaux.fr/
+# Bindings modeled off of https://github.com/ZenGo-X/class
+
+[build-dependencies]
+bindgen = "0.59"
+fs_extra = "1"
+anyhow = "1"
+
+[dependencies]
+libc = { version = "0.2.0" }
+num-bigint = { version = "0.4" }
+num-integer = { version = "0.1" }
+num-traits = { version = "0.2" }

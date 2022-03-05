@@ -21,6 +21,8 @@ once_cell = { version = "1.9" }
 tracing = { version = "0.1", default-features = false, features = [ "attributes" ] }
 rayon = { version = "1", optional = true }
 
+pari_factor = { path = "../pari_factor" }
+
 [dev-dependencies]
 ark-ed-on-bls12-381 = { version = "0.3", default-features = false, features = ["r1cs"] }
 sha3 = { version = "0.9" }

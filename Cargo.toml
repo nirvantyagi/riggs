@@ -6,4 +6,5 @@ members = [
   "range_proofs",
   "solidity_test_utils",
   "solidity",
+  "pari_factor",
 ]

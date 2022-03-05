@@ -226,7 +226,7 @@ mod tests {
     use rand::{rngs::StdRng, SeedableRng};
     use sha3::Sha3_256;
     use std::str::FromStr;
-    use rsa::hash_to_prime::planned_pocklington::PlannedPocklingtonHash;
+    use rsa::hash_to_prime::pocklington::{PocklingtonHash, PocklingtonCertParams};
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
@@ -253,7 +253,14 @@ mod tests {
         const HASH_TO_PRIME_ENTROPY: usize = 128;
     }
 
-    pub type TC = BasicTC<TestPoEParams, TestRsaParams, Sha3_256, PlannedPocklingtonHash<Sha3_256>>;
+    #[derive(Clone, PartialEq, Eq, Debug)]
+    pub struct TestPocklingtonParams;
+    impl PocklingtonCertParams for TestPocklingtonParams {
+        const NONCE_SIZE: usize = 16;
+        const MAX_STEPS: usize = 5;
+    }
+
+    pub type TC = BasicTC<TestPoEParams, TestRsaParams, Sha3_256, PocklingtonHash<TestPocklingtonParams, Sha3_256>>;
 
     #[test]
     fn key_committing_ae_test() {

@@ -426,7 +426,7 @@ mod tests {
     use sha3::Sha3_256;
     use std::str::FromStr;
 
-    use rsa::hash_to_prime::planned_pocklington::PlannedPocklingtonHash;
+    use rsa::hash_to_prime::pocklington::{PocklingtonHash, PocklingtonCertParams};
     use marlin::{MarlinWrapper, MarlinPCWrapper};
 
     type MarlinInstantiation = MarlinWrapper<F, MarlinPCWrapper<Bls12_381, DensePolynomial<F>>, Sha3_256>;
@@ -506,6 +506,13 @@ mod tests {
     }
 
     #[derive(Clone, PartialEq, Eq, Debug)]
+    pub struct TestPocklingtonParams;
+    impl PocklingtonCertParams for TestPocklingtonParams {
+        const NONCE_SIZE: usize = 16;
+        const MAX_STEPS: usize = 5;
+    }
+
+    #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestSnarkTCParams;
 
     impl SnarkTCParams<F> for TestSnarkTCParams {
@@ -534,7 +541,7 @@ mod tests {
         TestPoEParams,
         TestRsaParams,
         BigNatTestParams,
-        PlannedPocklingtonHash<Sha3_256>,
+        PocklingtonHash<TestPocklingtonParams, Sha3_256>,
         G,
         GV,
     >;
@@ -545,7 +552,7 @@ mod tests {
         TestPoEParams,
         TestRsaParams,
         BigNatTestParams,
-        PlannedPocklingtonHash<Sha3_256>,
+        PocklingtonHash<TestPocklingtonParams, Sha3_256>,
         G,
         GV,
     >;
@@ -559,7 +566,7 @@ mod tests {
         TestPoEParams,
         TestRsa512Params,
         BigNat512TestParams,
-        PlannedPocklingtonHash<Sha3_256>,
+        PocklingtonHash<TestPocklingtonParams, Sha3_256>,
         G,
         GV,
     >;
@@ -573,7 +580,7 @@ mod tests {
         TestPoEParams,
         TestRsa64Params,
         BigNat64TestParams,
-        PlannedPocklingtonHash<Sha3_256>,
+        PocklingtonHash<TestPocklingtonParams, Sha3_256>,
         G,
         GV,
     >;
@@ -585,7 +592,7 @@ mod tests {
         TestPoEParams,
         TestRsa64Params,
         BigNat64TestParams,
-        PlannedPocklingtonHash<Sha3_256>,
+        PocklingtonHash<TestPocklingtonParams, Sha3_256>,
         G,
         GV,
     >;

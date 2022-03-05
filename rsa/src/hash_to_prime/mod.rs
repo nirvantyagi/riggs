@@ -72,18 +72,16 @@ pub fn miller_rabin(n: &BigInt, rounds: usize) -> bool {
 
 /// Returns whether `n` passes a Miller-Rabin check with base `b`.
 fn miller_rabin_round(n: &BigInt, b: &BigInt) -> bool {
+    if n.is_even() { return false };
     let n_less_one = n - BigInt::one();
     let s = n_less_one.trailing_zeros().expect("Input must be > 1");
-    if s == 0 {
-        return false;
-    }
     let d =  &n_less_one >> s as u32;
     let mut pow = b.modpow(&d, &n);
     if pow == BigInt::one() || pow == n_less_one {
         return true;
     }
     for _ in 0..(s - 1) {
-        pow.pow(2);
+        pow = pow.pow(2);
         pow %= n;
         if pow == n_less_one {
             return true;
@@ -149,34 +147,6 @@ pub fn hash_to_variable_output_length<D: Digest>(inputs: &[u8], n_bytes: usize) 
     out
 }
 
-/// Returns factorization of n
-pub fn factor(n: &BigInt) -> Vec<(BigInt, u32)> {
-    let mut factorization = Vec::new();
-
-    let mut ps = Vec::new();
-    let mut p = BigInt::from(2);
-    let mut n = n.clone();
-    //TODO: Optimize can also check if n is prime via Miller-Rabin
-    while n != BigInt::one() {
-        let mut multiplicity = 0;
-        while n.is_multiple_of(&p) {
-            multiplicity += 1;
-            n = n.div_floor(&p);
-        }
-        if multiplicity > 0 {
-            factorization.push((p.clone(), multiplicity))
-        }
-
-        // Next prime
-        ps.push(p.clone());
-        while {
-            p += BigInt::one();
-            ps.iter().any(|q| p.is_multiple_of(q))
-        }{}
-    }
-    factorization
-}
-
 #[derive(Debug)]
 pub enum HashToPrimeError {
     NoValidNonce,
@@ -200,6 +170,7 @@ impl fmt::Display for HashToPrimeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
     use sha3::Sha3_256;
 
     #[test]
@@ -222,11 +193,8 @@ mod tests {
     }
 
     #[test]
-    fn factor_test() {
-        let factors = factor(&BigInt::from(34102));
-        assert_eq!(factors.len(), 3);
-        assert_eq!(factors[0], (BigInt::from(2), 1));
-        assert_eq!(factors[1], (BigInt::from(17), 2));
-        assert_eq!(factors[2], (BigInt::from(59), 1));
+    fn miller_rabin_32b_test() {
+        let p = BigInt::from_str("42589817").unwrap();
+        assert!(miller_rabin_32b(&p));
     }
 }

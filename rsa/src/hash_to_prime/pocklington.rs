@@ -6,20 +6,18 @@ use crate::{
         hash_to_integer,
         miller_rabin,
         miller_rabin_32b,
-        factor,
     },
     Error,
 };
 use digest::Digest;
-use num_bigint::Sign;
 use num_integer::{Integer, gcd};
 use num_traits::{One, Zero};
 use std::{
-    cmp::min,
     fmt::{Debug},
     marker::PhantomData,
 };
-use tracing::{debug, warn};
+
+use pari_factor::factor;
 
 /// https://www-sop.inria.fr/members/Benjamin.Gregoire/Publi/pock.pdf
 pub trait PocklingtonCertParams: Clone + Eq + Debug + Send + Sync {
@@ -77,7 +75,16 @@ impl<P: PocklingtonCertParams, D: Digest> HashToPrime for PocklingtonHash<P, D> 
     }
 
     fn verify_hash_to_prime(entropy: usize, input: &[u8], p: &BigInt, cert: &Self::Certificate) -> Result<bool, Error> {
-        unimplemented!();
+        let mut inputs: Vec<u8> = input.iter().copied().collect();
+        inputs.extend_from_slice(&cert.nonce.to_le_bytes());
+        let p_curr= hash_to_integer::<D>(&inputs, Self::prime_bits(entropy));
+        let check1 = &p_curr == p;
+        let p_path = vec![p_curr].iter().chain(cert.step_certificates.iter().map(|c| c.f.clone()).collect::<Vec<BigInt>>().iter()).cloned().collect::<Vec<BigInt>>();
+        let check2 = cert.step_certificates.iter().zip(p_path.iter())
+            .all(|(c, p)| Self::verify_pocklington_step(p, c));
+        let p_last = p_path.last().unwrap();
+        let check3 = p_last.bits() < 32 && miller_rabin_32b(&p_last);
+        Ok(check1 && check2 && check3)
     }
 }
 
@@ -101,7 +108,7 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
     }
 
     fn pocklington_step(p: &BigInt) -> Option<StepCert> {
-        let factors = factor(p);
+        let factors = factor(&(p - BigInt::one()));
         debug_assert_eq!(factors[0].0, BigInt::from(2));
         let n2 = factors[0].1;
         let (f, n, u, v) = factors.iter().find_map(|(f, n)| Self::test_pocklington_f(p, f, *n, n2))?;
@@ -122,6 +129,19 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
         Some(StepCert { f, n, n2, a, bu, bv })
     }
 
+    fn verify_pocklington_step(p: &BigInt, cert: &StepCert) -> bool {
+        match Self::test_pocklington_f(p, &cert.f, cert.n, cert.n2) {
+            Some((_, _, u, v)) => {
+                let test_a = Self::test_pocklington_a(p, &cert.f, &cert.a);
+                let test_parity = u.is_even() && v.is_odd();
+                let test_prod = &u * &v == p - BigInt::one();
+                let test_coprime = &cert.bu * &u + &cert.bv * &v == BigInt::one();
+                test_a && test_parity && test_prod && test_coprime
+            },
+            None => false,
+        }
+    }
+
     fn test_pocklington_f(p: &BigInt, f: &BigInt, n: u32, n2: u32) -> Option<(BigInt, u32, BigInt, BigInt)> {
         let u = BigInt::from(2).pow(n2) * f.pow(n);
         let v = p.div_floor(&u);
@@ -129,10 +149,9 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
         let s = v.div_floor(&(BigInt::from(2) * &u));
 
         let expr = r.pow(2) - BigInt::from(8) * &s;
-        let test1 = expr >= BigInt::zero();
-        let test2 = &((&u + BigInt::one()) * (BigInt::from(2) * u.pow(2) + (&r - BigInt::one()) * &u + BigInt::one())) > p;
-        let test3 = (s == BigInt::zero()) || !(expr.sqrt().pow(2) == expr);
-        if test1 && test2 && test3 {
+        let test1 = &((&u + BigInt::one()) * (BigInt::from(2) * u.pow(2) + (&r - BigInt::one()) * &u + BigInt::one())) > p;
+        let test2 = (s == BigInt::zero()) || (expr >= BigInt::zero() && !(expr.sqrt().pow(2) == expr));
+        if test1 && test2 {
             Some((f.clone(), n, u, v))
         } else {
             None
@@ -153,9 +172,20 @@ mod tests {
     use super::*;
     use sha3::Sha3_256;
 
-    //#[test]
-    //fn pocklington_prime_test() {
-    //    let (h, cert) = PlannedPocklingtonHash::<Sha3_256>::hash_to_prime(128, &vec![0]).unwrap();
-    //    assert!(PlannedPocklingtonHash::<Sha3_256>::verify_hash_to_prime(128, &vec![0], &h, &cert).unwrap());
-    //}
+    #[derive(Clone, PartialEq, Eq, Debug)]
+    pub struct TestPocklingtonParams;
+    impl PocklingtonCertParams for TestPocklingtonParams {
+        const NONCE_SIZE: usize = 16;
+        const MAX_STEPS: usize = 5;
+    }
+
+    type TestPocklingtonHash = PocklingtonHash<TestPocklingtonParams, Sha3_256>;
+
+    #[test]
+    fn pocklington_prime_test() {
+        let (h, cert) = TestPocklingtonHash::hash_to_prime(128, &vec![0]).unwrap();
+        println!("h: {}", h);
+        println!("nonce: {}", &cert.nonce);
+        assert!(TestPocklingtonHash::verify_hash_to_prime(128, &vec![0], &h, &cert).unwrap());
+    }
 }
