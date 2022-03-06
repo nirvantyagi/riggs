@@ -11,7 +11,16 @@ contract RSATest {
       RSA.Element memory G_rsa = RSA._new(G);
       RSA.Element memory Y_rsa = RSA._new(Y);
       RSA.Element memory N_rsa = RSA._new(N);
-      return RSA.is_equal(Y_rsa, RSA.power(G_rsa, log, N_rsa));
+      return RSA.cmp(Y_rsa, RSA.power(G_rsa, log, N_rsa), N_rsa);
+      // return RSA.as_bytes(G_rsa);
+    }
+
+    function testPowerInt(bytes memory G, bytes memory Y, bytes memory N, uint log) 
+    public view returns (uint) {
+      RSA.Element memory G_rsa = RSA._new(G);
+      RSA.Element memory Y_rsa = RSA._new(Y);
+      RSA.Element memory N_rsa = RSA._new(N);
+      return Y_rsa.bn.bitlen;
       // return RSA.as_bytes(G_rsa);
     }
 
@@ -21,6 +30,13 @@ contract RSATest {
       RSA.Element memory Y_rsa = RSA._new(Y);
       RSA.Element memory N_rsa = RSA._new(N);
       // return RSA.as_bytes(RSA.power(G_rsa, log, N_rsa));
+      return RSA.power(G_rsa, log, N_rsa).bn.val;
+    }
+
+    function returnTrue(bytes memory G) 
+    public view returns (bool) {
+      // RSA.Element memory G_rsa = RSA._new(G);
+      return true;
     }
 
     
@@ -28,7 +44,7 @@ contract RSATest {
     function testIdentity(bytes memory G) 
     public view returns (bytes memory) {
       RSA.Element memory G_rsa = RSA._new(G);
-      return RSA.as_bytes(G_rsa);
+      return hex"1212121212121212";
     }
 
 

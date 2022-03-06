@@ -17,18 +17,23 @@ library RSA {
 
     function _new(bytes memory val) 
     internal pure returns (Element memory) {
-        bytes memory full_bytes = new bytes(256);
-        uint i=0;
-        while (i+val.length < 256) {
-            full_bytes[i] = 0;
-            i = i+1;
-        }
-        uint j=0;
-        while (j<val.length) {
-            full_bytes[i+j] = val[j];
-            j=j+1;
-        }
-        BigNumber.instance memory bni = BigNumber.instance(full_bytes, false, 2048);
+        require(val.length >= 256);
+        // bytes memory full_bytes = new bytes(256);
+        // // uint i=0;
+        // // while (i+val.length < 256) {
+        // //     full_bytes[i] = 0;
+        // //     i = i+1;
+        // // }
+        // // uint j=0;
+        // // while (j<val.length) {
+        // //     full_bytes[i+j] = val[j];
+        // //     j=j+1;
+        // // }
+        // uint x = val.length;
+        // for (uint i=0; i<256; i++) {
+        //     full_bytes[255-i] = val[x-1-i];
+        // }
+        BigNumber.instance memory bni = BigNumber.instance(val, false, 2048);
         Element memory ret = Element(bni);
         return ret;
     }
@@ -61,16 +66,22 @@ library RSA {
 
     function as_bytes(Element memory a) 
     internal pure returns (bytes memory) {
+        // bytes memory full_bytes = new bytes(256);
+        // uint i=0;
+        // while (i+a.bn.val.length < 256) {
+        //     full_bytes[i] = 0;
+        //     i = i+1;
+        // }
+        // uint j=0;
+        // while (j<a.bn.val.length) {
+        //     full_bytes[i+j] = a.bn.val[j];
+        //     j=j+1;
+        // }
+        bytes memory aval = a.bn.val;
         bytes memory full_bytes = new bytes(256);
-        uint i=0;
-        while (i+a.bn.val.length < 256) {
-            full_bytes[i] = 0;
-            i = i+1;
-        }
-        uint j=0;
-        while (j<a.bn.val.length) {
-            full_bytes[i+j] = a.bn.val[j];
-            j=j+1;
+        uint x = aval.length;
+        for (uint i=0; i<256; i++) {
+            full_bytes[255-i] = aval[x-1-i];
         }
         return full_bytes;
         // return a.bn.val;
@@ -140,8 +151,9 @@ library RSA {
     // when e is uint256
     function power(Element memory base, uint e, Element memory modulus) 
     internal view returns (Element memory) {
-        Element memory e_elem = _new(abi.encodePacked(e));
-        return Element((base.bn).prepare_modexp(e_elem.bn, modulus.bn));
+        // Element memory e_elem = _new(abi.encodePacked(e));
+        BigNumber.instance memory e_bn = BigNumber._new(abi.encodePacked(e), false, false);
+        return Element((base.bn).prepare_modexp(e_bn, modulus.bn));
     }
 
     // when e is RSA.Element
@@ -182,11 +194,21 @@ library RSA {
         }
         return true;
     }
+    
+    function new_is_equal(Element memory a, Element memory b) 
+    internal pure returns (bool) {
+        Element memory neg_asq_plus_bsq = Element(BigNumber.prepare_sub(a.bn, b.bn));
+        return BigNumber.cmp(neg_asq_plus_bsq.bn, zero().bn, false) == 0;
+    }
 
     // returns true iff a==b
-    // function cmp(Element memory a, Element memory b) 
-    // internal pure returns (bool) {
-    //     return BigNumber.cmp(a.bn, b.bn, false) == 0;
-    // }
+    function cmp(Element memory a, Element memory b, Element memory n) 
+    internal view returns (bool) {
+        // require(a.bn.val.length >= 256);
+        // require(b.bn.val.length >= 256);
+        BigNumber.instance memory abn = BigNumber.bn_mod(a.bn, n.bn);
+        BigNumber.instance memory bbn = BigNumber.bn_mod(b.bn, n.bn);
+        return BigNumber.cmp(abn, bbn, false) == 0;
+    }
 
 }

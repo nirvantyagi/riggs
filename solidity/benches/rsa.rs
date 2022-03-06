@@ -1,51 +1,49 @@
-use ark_bn254::{
-    Bn254,
-    G1Projective as G,
-};
+use ark_bn254::{Bn254, G1Projective as G};
 
-use std::{
-    str::FromStr,
-    ops::Deref,
-};
+use std::{ops::Deref, str::FromStr};
 
+use primitive_types::U256;
 use rand::{rngs::StdRng, SeedableRng};
-use primitive_types::{U256};
 
 use solidity_test_utils::{
-    contract::Contract,
-    evm::Evm,
     address::Address,
-    encode_group_element,
-    encode_field_element,
-    encode_int_from_bytes,
-    to_be_bytes,
+    // <<<<<<< Updated upstream
+    contract::Contract,
     encode_bytes,
+    // =======
+    //     address::Address, contract::Contract, encode_bytes, encode_group_element,
+    //     encode_int_from_bytes, evm::Evm, to_be_bytes,
+    // >>>>>>> Stashed changes
+    encode_field_element,
+    encode_group_element,
+    encode_int_from_bytes,
+    evm::Evm,
+    to_be_bytes,
 };
 
-use rsa::{
-    bigint::BigInt,
-};
+use rsa::bigint::BigInt;
 
-use rsa::{
-    hog::{RsaHiddenOrderGroup, RsaGroupParams},
-};
+use rsa::hog::{RsaGroupParams, RsaHiddenOrderGroup};
 
-use range_proofs::bulletproofs::{
-    Bulletproofs, PedersenComm,
-};
+use range_proofs::bulletproofs::{Bulletproofs, PedersenComm};
 use solidity::{
-    get_bn254_library_src,
-    get_pedersen_library_src,
-    get_filename_src,
-    get_bulletproofs_verifier_contract_src,
+    // _encode_field_element,
+    // =======
+    //     _encode_field_element, encode_bulletproof, get_bn254_library_src,
+    //     get_bulletproofs_verifier_contract_src, get_filename_src, get_pedersen_library_src,
+    // >>>>>>> Stashed changes
     encode_bulletproof,
+    // <<<<<<< Updated upstream
+    get_bn254_library_src,
+    get_bulletproofs_verifier_contract_src,
+    get_filename_src,
+    get_pedersen_library_src,
 };
 
 use once_cell::sync::Lazy;
 
 const NUM_BITS: u64 = 64;
 const LOG_NUM_BITS: u64 = 6;
-
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 
@@ -59,10 +57,10 @@ impl RsaGroupParams for TestRsaParams {
 }
 
 fn pad_256(input: &[u8]) -> [u8; 256] {
-    let mut padded: [u8;256] = [0; 256];
+    let mut padded: [u8; 256] = [0; 256];
     let m = std::cmp::min(256, input.len());
     for i in 0..m {
-        padded[255-i] = input[input.len()-1-i];
+        padded[255 - i] = input[input.len() - 1 - i];
     }
     return padded;
 }
@@ -103,10 +101,10 @@ fn main() {
                         "": [ "*" ] } }
                 }
             }"#
-        .replace("<%opt%>", &false.to_string()) // Needed to disable opt for a BigNumber assembly instruction
-        .replace("<%bignum_lib_src%>", &bignum_lib_src)
-        .replace("<%rsa_lib_src%>", &rsa_lib_src)
-        .replace("<%src%>", &rsa_test_lib_src);
+    .replace("<%opt%>", &false.to_string()) // Needed to disable opt for a BigNumber assembly instruction
+    .replace("<%bignum_lib_src%>", &bignum_lib_src)
+    .replace("<%rsa_lib_src%>", &rsa_lib_src)
+    .replace("<%src%>", &rsa_test_lib_src);
 
     let contract = Contract::compile_from_config(&solc_config, "RSATest").unwrap();
 
@@ -126,30 +124,64 @@ fn main() {
     evm.create_account(&deployer, 0);
 
     // Deploy contract
-    let create_result = evm.deploy(contract.encode_create_contract_bytes(&[]).unwrap(), &deployer).unwrap();
+    let create_result = evm
+        .deploy(
+            contract.encode_create_contract_bytes(&[]).unwrap(),
+            &deployer,
+        )
+        .unwrap();
     let contract_addr = create_result.addr.clone();
     println!("Contract deploy gas cost: {}", create_result.gas);
 
     // Call verify function on contract
     let input = vec![
-        encode_bytes(&g.n.to_bytes_be().1),
-        encode_bytes(&y.n.to_bytes_be().1),
-        encode_bytes(&m.to_bytes_be().1),
+        // <<<<<<< Updated upstream
+        //         encode_bytes(&g.n.to_bytes_be().1),
+        //         encode_bytes(&y.n.to_bytes_be().1),
+        //         encode_bytes(&m.to_bytes_be().1),
+        // =======
+        encode_bytes(&pad_256(&g.n.to_bytes_be().1)),
+        encode_bytes(&pad_256(&y.n.to_bytes_be().1)),
+        encode_bytes(&pad_256(&m.to_bytes_be().1)),
+        // >>>>>>> Stashed changes
         encode_int_from_bytes(&x.to_bytes_be().1),
     ];
 
     let padded_y = pad_256(&y.n.to_bytes_be().1);
 
-    let result = evm.call(contract.encode_call_contract_bytes("testVerifyPower", &input).unwrap(), &contract_addr, &deployer).unwrap();
-    
+    let result = evm
+        .call(
+            contract
+                .encode_call_contract_bytes("testVerifyPower", &input)
+                .unwrap(),
+            &contract_addr,
+            &deployer,
+        )
+        .unwrap();
     //assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
     let res_len = result.out.len();
     let padded_res = pad_256(&result.out);
 
-    // assert_eq!(&padded_res, &padded_y);
-    assert_eq!(&padded_res, &pad_256(&[1]));
-    
-    // println!("{:?}", &padded_res);
-    println!("RSA exp check costs {:?} gas", result.gas);
+    println!("{:?}", &result);
+    println!("{:?}", &padded_y);
+    // println!("RSA exp check costs {:?} gas", result.gas);
 
+    // assert_eq!(&padded_res, &padded_y);
+    // assert_eq!(&padded_res, &pad_256(&[1]));
+
+    // // Call verify function on contract
+    // let input = vec![
+    //     encode_bytes(&pad_256(&y.n.to_bytes_be().1))
+    // ];
+
+    // let padded_y = pad_256(&y.n.to_bytes_be().1);
+
+    // let result = evm.call(contract.encode_call_contract_bytes("returnTrue", &input).unwrap(), &contract_addr, &deployer).unwrap();
+    // println!("{:?}", result);
+    // //assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
+    // let padded_res = pad_256(&result.out);
+    // assert_eq!(&padded_res, &padded_y);
+    // // assert_eq!(&padded_res, &pad_256(&[1]));
+    // // println!("{:?}", &padded_res);
+    // println!("RSA identity costs {:?} gas", result.gas);
 }

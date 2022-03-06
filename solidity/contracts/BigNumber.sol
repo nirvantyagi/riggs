@@ -635,15 +635,18 @@ library BigNumber {
             else if(a.neg==true && b.neg==false) return -1;
         }
 
-        if(a.bitlen>b.bitlen) return  1*trigger;
-        if(b.bitlen>a.bitlen) return -1*trigger;
+        // Arasu: commented these below 
+        // and set length to 256
+        // if(a.bitlen>b.bitlen) return  1*trigger;
+        // if(b.bitlen>a.bitlen) return -1*trigger;
 
         uint a_ptr;
         uint b_ptr;
         uint a_word;
         uint b_word;
 
-        uint len = a.val.length; //bitlen is same so no need to check length.
+        uint len = 256;
+        // uint len = a.val.length; //bitlen is same so no need to check length.
 
         assembly{
             a_ptr := add(mload(a),0x20) 
