@@ -77,14 +77,14 @@ library RSA {
         //     full_bytes[i+j] = a.bn.val[j];
         //     j=j+1;
         // }
-        bytes memory aval = a.bn.val;
-        bytes memory full_bytes = new bytes(256);
-        uint x = aval.length;
-        for (uint i=0; i<256; i++) {
-            full_bytes[255-i] = aval[x-1-i];
-        }
-        return full_bytes;
-        // return a.bn.val;
+        // bytes memory aval = a.bn.val;
+        // bytes memory full_bytes = new bytes(256);
+        // uint x = aval.length;
+        // for (uint i=0; i<256; i++) {
+        //     full_bytes[255-i] = aval[x-1-i];
+        // }
+        // return full_bytes;
+        return a.bn.val;
     }
 
     // //   function mul(Element memory a, uint b, Element memory modulus) 

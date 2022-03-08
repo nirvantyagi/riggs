@@ -8,17 +8,13 @@ use solidity_test_utils::{
     to_be_bytes,
 };
 
-use range_proofs::bulletproofs::{Bulletproofs, PedersenComm};
+use range_proofs::bulletproofs::PedersenComm;
 use rsa::bigint::BigInt;
-use solidity::{
-    encode_bulletproof, get_bn254_library_src, get_bulletproofs_verifier_contract_src,
-    get_filename_src, get_pedersen_test_src,
-};
+use solidity::{get_bn254_library_src, get_filename_src, get_pedersen_test_src};
 
 fn main() {
     let mut rng = StdRng::seed_from_u64(0u64);
     let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
-    // let pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, NUM_BITS);
 
     let v = BigInt::from(10000);
     let (comm, v_f, opening) =
@@ -28,9 +24,6 @@ fn main() {
 
     // Compile contract from template
     let bn254_src = get_bn254_library_src();
-
-    // let pedersen_lib_src = get_pedersen_library_src(&ped_pp);
-    // let pedersen_test_src = get_filename_src("PedersenTest.sol");
 
     let pedersen_lib_src = get_filename_src("Pedersen.sol");
     let pedersen_test_src = get_pedersen_test_src(&ped_pp);
@@ -90,6 +83,7 @@ fn main() {
             &deployer,
         )
         .unwrap();
+
     assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-    println!("{:?}", result);
+    println!("Pedersen verification cost {:?} gas", result.gas);
 }

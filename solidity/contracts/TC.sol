@@ -1,20 +1,21 @@
-pragma solidity 0.8.11;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.10;
 
 import "./FKPS.sol";
-import "./PedersenComm.sol";
+import "./Pedersen.sol";
 
-library TCPi {
+library TC {
   using FKPS for *; 
-  using PedersenComm for *; 
+  using Pedersen for *; 
 
   struct Comm {
     FKPS.Comm fkps;
-    uint[2] pc;
+    BN254.G1Point pc;
   }
 
   struct Params {
-    FKPS.Params pp_fkps;
-    PedersenComm.Params pp_ped;
+    FKPS.Params fkps_pp;
+    Pedersen.Params pc_pp;
   }
 
   // need PoE Keygen pk, vk
@@ -26,16 +27,18 @@ library TCPi {
   bytes constant H_pc = "0x6523784162348715238471625341873265421652378416234871523847162535";
 
   // comm = (h_hat, ct, pc)
-  function _new(bytes memory h_hat, bytes32 ct, uint[2] memory pc) internal pure returns (Comm memory comm) {
-    comm.fkps = FKPS._new(h_hat, ct);
-    comm.pc = pc;
-  }
+  // function _new(bytes memory h_hat, bytes32 ct, uint[2] memory pc) internal pure returns (Comm memory comm) {
+  //   comm.fkps = FKPS._new(h_hat, ct);
+  //   comm.pc = pc;
+  // }
 
   // proof has b +  alpha for FKPS + r for PC  
-  function verOpen(Comm memory comm, uint256 alpha, uint b, uint r) 
-  internal returns (bool) {
-    bool fkps_check = FKPS.verOpen(comm.fkps, alpha, b);
-    bool pc_check = PedersenComm.verify(comm.pc, b, r);
+  function verOpen(Params memory pp, Comm memory comm, uint256 alpha, uint b, uint r) 
+  internal view returns (bool) {
+    bool fkps_check = true;
+    bool pc_check = true;
+    fkps_check = FKPS.verOpen(pp.fkps_pp, comm.fkps, alpha, b);
+    // pc_check = Pedersen.verify(pp.pc_pp, comm.pc, b, r);
     return fkps_check && pc_check;
   }
   

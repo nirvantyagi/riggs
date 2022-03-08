@@ -1,12 +1,12 @@
-use ark_ff::ToBytes;
 use ark_ec::{PairingEngine, ProjectiveCurve};
+use ark_ff::ToBytes;
 
-use primitive_types::U256;
 use ethabi::Token;
+use primitive_types::U256;
 
 use std::{
     error::Error as ErrorTrait,
-    fmt::{self, Debug},
+    fmt::{self, Debug, Write},
 };
 
 pub mod address;
@@ -32,24 +32,31 @@ impl fmt::Display for EvmTestError {
 
 /// Helper methods for parsing group structure
 /// https://github.com/Zokrates/ZoKrates/blob/develop/zokrates_core/src/proof_system/ark/mod.rs#L166
-pub fn parse_g1<E: PairingEngine>(
-    g1: &E::G1Affine,
-) -> (Vec<u8>, Vec<u8>) {
+pub fn parse_g1<E: PairingEngine>(g1: &E::G1Affine) -> (Vec<u8>, Vec<u8>) {
     let mut bytes: Vec<u8> = Vec::new();
     g1.write(&mut bytes).unwrap();
-    let element_length = (bytes.len() - 1) / 2;  // [x, y, infinity] - infinity
+    let element_length = (bytes.len() - 1) / 2; // [x, y, infinity] - infinity
     let mut x = bytes[0..element_length].to_vec();
-    let mut y = bytes[element_length..2*element_length].to_vec();
+    let mut y = bytes[element_length..2 * element_length].to_vec();
     x.reverse();
     y.reverse();
     (x, y)
 }
 
-pub fn parse_g1_to_solidity_string<E: PairingEngine>(
-    g1: &E::G1Affine,
-) -> String {
+pub fn parse_g1_to_solidity_string<E: PairingEngine>(g1: &E::G1Affine) -> String {
     let (x, y) = parse_g1::<E>(g1);
     format!("0x{}, 0x{}", hex::encode(&x), hex::encode(&y))
+}
+
+pub fn encode_hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        write!(&mut s, "{:02x}", b).unwrap();
+    }
+    s
+}
+pub fn parse_bytes_to_solidity_string(g1: &[u8]) -> String {
+    format!("{}", encode_hex(g1))
 }
 
 pub fn parse_field<E: PairingEngine>(f: &E::Fr) -> Vec<u8> {
@@ -69,13 +76,15 @@ pub fn encode_bytes(b: &[u8]) -> Token {
 
 pub fn encode_group_element<E: PairingEngine>(g: &E::G1Projective) -> Token {
     let (x, y) = parse_g1::<E>(&g.into_affine());
-    Token::Tuple(vec![Token::Uint(U256::from_big_endian(&x)), Token::Uint(U256::from_big_endian(&y))])
+    Token::Tuple(vec![
+        Token::Uint(U256::from_big_endian(&x)),
+        Token::Uint(U256::from_big_endian(&y)),
+    ])
 }
 
 pub fn encode_field_element<E: PairingEngine>(f: &E::Fr) -> Token {
     Token::Uint(U256::from_big_endian(&parse_field::<E>(f)))
 }
-
 
 pub fn to_be_bytes(n: &U256) -> [u8; 32] {
     let mut input_bytes: [u8; 32] = [0; 32];
@@ -86,13 +95,9 @@ pub fn to_be_bytes(n: &U256) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        address::Address,
-        contract::Contract,
-        evm::{Evm},
-    };
-    use rand::{rngs::StdRng, SeedableRng};
+    use crate::{address::Address, contract::Contract, evm::Evm};
     use ethabi::Token;
+    use rand::{rngs::StdRng, SeedableRng};
 
     #[test]
     fn simple_storage_contract_test() {
@@ -112,21 +117,49 @@ mod tests {
         evm.create_account(&deployer, 0);
 
         // Deploy contract
-        let create_result = evm.deploy(contract.encode_create_contract_bytes(&[]).unwrap(), &deployer).unwrap();
+        let create_result = evm
+            .deploy(
+                contract.encode_create_contract_bytes(&[]).unwrap(),
+                &deployer,
+            )
+            .unwrap();
         let contract_addr = create_result.addr.clone();
         println!("Contract deploy gas cost: {}", create_result.gas);
 
         // Call get function on contract
-        let get_result = evm.call(contract.encode_call_contract_bytes("get", &[]).unwrap(), &contract_addr, &deployer).unwrap();
+        let get_result = evm
+            .call(
+                contract.encode_call_contract_bytes("get", &[]).unwrap(),
+                &contract_addr,
+                &deployer,
+            )
+            .unwrap();
         assert_eq!(&get_result.out, &to_be_bytes(&U256::from(0)));
         println!("{:?}", get_result);
 
         // Call set function on contract
-        let set_result = evm.call(contract.encode_call_contract_bytes("set", &[Token::Tuple(vec![Token::Uint(U256::from(40))])]).unwrap(), &contract_addr, &deployer).unwrap();
+        let set_result = evm
+            .call(
+                contract
+                    .encode_call_contract_bytes(
+                        "set",
+                        &[Token::Tuple(vec![Token::Uint(U256::from(40))])],
+                    )
+                    .unwrap(),
+                &contract_addr,
+                &deployer,
+            )
+            .unwrap();
         println!("{:?}", set_result);
 
         // Call get function on contract
-        let get_result = evm.call(contract.encode_call_contract_bytes("get", &[]).unwrap(), &contract_addr, &deployer).unwrap();
+        let get_result = evm
+            .call(
+                contract.encode_call_contract_bytes("get", &[]).unwrap(),
+                &contract_addr,
+                &deployer,
+            )
+            .unwrap();
         assert_eq!(&get_result.out, &to_be_bytes(&U256::from(40)));
         println!("{:?}", get_result);
     }

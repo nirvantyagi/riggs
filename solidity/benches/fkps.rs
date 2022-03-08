@@ -1,29 +1,21 @@
-use ark_bn254::{Bn254, G1Projective as G};
-
 use std::{ops::Deref, str::FromStr};
 
 use primitive_types::U256;
 use rand::{rngs::StdRng, SeedableRng};
 
 use solidity_test_utils::{
-    address::Address, contract::Contract, encode_bytes, encode_field_element, encode_group_element,
-    encode_int_from_bytes, evm::Evm, to_be_bytes,
+    address::Address, contract::Contract, encode_bytes, encode_int_from_bytes, evm::Evm,
+    to_be_bytes,
 };
 
-use sha3;
+use solidity::{get_filename_src, get_fkps_test_src};
+
 use sha3::{Digest, Keccak256};
 
 use rsa::bigint::BigInt;
-
 use rsa::hog::{RsaGroupParams, RsaHiddenOrderGroup};
 
-use range_proofs::bulletproofs::{Bulletproofs, PedersenComm};
-use solidity::{encode_bulletproof, get_bn254_library_src, get_filename_src};
-
 use once_cell::sync::Lazy;
-
-const NUM_BITS: u64 = 64;
-const LOG_NUM_BITS: u64 = 6;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 
@@ -56,22 +48,43 @@ fn pad_256(input: &[u8]) -> [u8; 256] {
 
 fn main() {
     let mut rng = StdRng::seed_from_u64(0u64);
-    let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
-    // let pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, NUM_BITS);
 
-    let v = BigInt::from(10000);
-    let (comm, v_f, opening) =
-        PedersenComm::<G>::commit2(&mut rng, &ped_pp, &v.to_bytes_le().1).unwrap();
+    // initialize FKPS parameters (modulus, g, h, z)
+    // TODO: Replace this with random pp generated from the fkps library
+    pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 
-    assert!(PedersenComm::<G>::ver_open(&ped_pp, &comm, &v.to_bytes_le().1, &opening).unwrap());
+    let modulus = TestRsaParams::M.deref().clone();
+    let g = Hog::from_nat(
+        BigInt::from_str(
+            "45746267326477510121777008810664706780700497316550259121257880520529714488628",
+        )
+        .unwrap(),
+    );
+    let h = Hog::from_nat(
+        BigInt::from_str(
+            "45746267326477510121777008810664706780700497316550259121257880520529714488627",
+        )
+        .unwrap(),
+    );
+    let z = Hog::from_nat(
+        BigInt::from_str(
+            "45746267326477510121777008810664706780700497316550259121257880520529714488626",
+        )
+        .unwrap(),
+    );
 
     // Compile contract from template
     let bignum_lib_src = get_filename_src("BigNumber.sol");
-
     let rsa_lib_src = get_filename_src("RSA.sol");
     let fkps_lib_src = get_filename_src("FKPS.sol");
 
-    let fkps_test_lib_src = get_filename_src("FKPSTest.sol");
+    // FKPS test contract requires these parameters
+    let fkps_test_lib_src = get_fkps_test_src(&[
+        &pad_256(&modulus.to_bytes_be().1),
+        &pad_256(&g.n.to_bytes_be().1),
+        &pad_256(&h.n.to_bytes_be().1),
+        &pad_256(&z.n.to_bytes_be().1),
+    ]);
 
     let solc_config = r#"
             {
@@ -100,50 +113,32 @@ fn main() {
 
     let contract = Contract::compile_from_config(&solc_config, "FKPSTest").unwrap();
 
-    pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
-    let g = Hog::from_nat(
-        BigInt::from_str(
-            "45746267326477510121777008810664706780700497316550259121257880520529714488628",
-        )
-        .unwrap(),
-    );
-    let h = Hog::from_nat(
-        BigInt::from_str(
-            "45746267326477510121777008810664706780700497316550259121257880520529714488627",
-        )
-        .unwrap(),
-    );
-    let z = Hog::from_nat(
-        BigInt::from_str(
-            "45746267326477510121777008810664706780700497316550259121257880520529714488626",
-        )
-        .unwrap(),
-    );
-    let modulus = TestRsaParams::M.deref().clone();
-
+    // create sample bid and FKPS commitment
+    // 1. Sample alpha
     let bid = BigInt::from(10000);
-
     let alpha = BigInt::from(10000);
 
+    // 2. Compute h^alpha, z^alpha
     let h_hat = h.power(&alpha);
     let z_hat = z.power(&alpha);
 
-    let z_hat_bytes = z_hat.n.to_bytes_be().1;
-
+    // 3. Compute k = Hash(z_hat, pp)
+    // TODO: add pp to the hash
     let mut hasher = Keccak256::new();
+    let z_hat_bytes = z_hat.n.to_bytes_be().1;
     hasher.update(&z_hat_bytes);
     let key = hasher.finalize();
 
+    // 4. Compute ciphertext
+    // The cipher used here is hash-to-cipher
     let mut pad_hasher = Keccak256::new();
     let zeros = &[
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00,
     ];
-    let mut concat: Vec<u8> = [key.to_vec(), zeros.to_vec()].concat();
-
+    let concat: Vec<u8> = [key.to_vec(), zeros.to_vec()].concat();
     pad_hasher.update(&concat);
-
     let pad = pad_hasher.finalize();
 
     let bid_256 = pad_32(&bid.to_bytes_be().1);
@@ -153,6 +148,8 @@ fn main() {
         .zip(pad.iter())
         .map(|(&x1, &x2)| x1 ^ x2)
         .collect();
+
+    // Thus, the FKPS commitment is: (h_hat, ct)
 
     // Setup EVM
     let mut evm = Evm::new();
@@ -169,24 +166,8 @@ fn main() {
     let contract_addr = create_result.addr.clone();
     println!("Contract deploy gas cost: {}", create_result.gas);
 
-    // println!("{:x?}", &modulus.n.to_bytes_be().1);
-    // println!("{:x?}", &g.n.to_bytes_be().1);
-    // println!("{:x?}", &h.n.to_bytes_be().1);
-    // println!("{:x?}", &z.n.to_bytes_be().1);
-    // println!("{:x?}", &h_hat.n.to_bytes_be().1);
-
-    // println!("{:x?}", &ct);
-
-    // println!("{:x?}", &alpha.to_bytes_be().1);
-
-    // println!("{:x?}", &bid.to_bytes_be().1);
-
     // Call verify function on contract
     let input = vec![
-        encode_bytes(&modulus.to_bytes_be().1),
-        encode_bytes(&g.n.to_bytes_be().1),
-        encode_bytes(&h.n.to_bytes_be().1),
-        encode_bytes(&z.n.to_bytes_be().1),
         encode_bytes(&h_hat.n.to_bytes_be().1),
         encode_bytes(&ct),
         encode_int_from_bytes(&alpha.to_bytes_be().1),
@@ -203,14 +184,6 @@ fn main() {
         )
         .unwrap();
     // println!("{:?}", &result);
+    assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
     println!("FKPS verification costs {:?} gas", result.gas);
-
-    // //assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-    // let res_len = result.out.len();
-    // let padded_res = pad_256(&result.out);
-
-    // // assert_eq!(&padded_res, &padded_y);
-    // assert_eq!(&padded_res, &pad_256(&[1]));
-
-    // // println!("{:?}", &padded_res);
 }

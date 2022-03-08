@@ -6,7 +6,8 @@ use range_proofs::bulletproofs::{serialize_group_elem, Params, PedersenParams, P
 use rsa::bigint::BigInt;
 use rsa::hash_to_prime::hash_to_variable_output_length;
 use solidity_test_utils::{
-    encode_field_element, encode_group_element, parse_g1_to_solidity_string,
+    encode_field_element, encode_group_element, parse_bytes_to_solidity_string,
+    parse_g1_to_solidity_string,
 };
 use std::{fs::File, io::Read};
 
@@ -158,6 +159,40 @@ pub fn get_poe_library_src() -> String {
 
 pub fn get_pedersen_test_src(ped_pp: &PedersenParams<G>) -> String {
     let contract_path = format!("{}/contracts/PedersenTest.sol", env!("CARGO_MANIFEST_DIR"));
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src
+        .replace("\"", "\\\"")
+        .replace(
+            "<%ped_pp_g%>",
+            &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()),
+        )
+        .replace(
+            "<%ped_pp_h%>",
+            &parse_g1_to_solidity_string::<Bn254>(&ped_pp.h.into_affine()),
+        );
+    src
+}
+
+pub fn get_fkps_test_src(fkps_pp: &[&[u8; 256]; 4]) -> String {
+    let contract_path = format!("{}/contracts/FKPSTest.sol", env!("CARGO_MANIFEST_DIR"));
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src
+        .replace("\"", "\\\"")
+        .replace("<%rsa_n%>", &parse_bytes_to_solidity_string(fkps_pp[0]))
+        .replace("<%rsa_g%>", &parse_bytes_to_solidity_string(fkps_pp[1]))
+        .replace("<%rsa_h%>", &parse_bytes_to_solidity_string(fkps_pp[2]))
+        .replace("<%rsa_z%>", &parse_bytes_to_solidity_string(fkps_pp[3]));
+    src
+}
+
+pub fn get_tc_test_src(ped_pp: &PedersenParams<G>) -> String {
+    let contract_path = format!("{}/contracts/TCTest.sol", env!("CARGO_MANIFEST_DIR"));
 
     let mut src_file = File::open(contract_path).unwrap();
     let mut src = String::new();
