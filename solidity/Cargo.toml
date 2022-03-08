@@ -14,6 +14,9 @@ ark-bn254 = { version = "0.3", features = [ "curve" ] }
 ethabi = "16.0.0"
 hex = { version = "0.4" }
 sha3 = { version = "0.9" }
+num-bigint = { version = "0.4", features = ["rand"] }
+num-integer = { version = "0.1" }
+num-traits = { version = "0.2" }
 
 solidity_test_utils = { path = "../solidity_test_utils" }
 range_proofs = { path = "../range_proofs" }
@@ -44,4 +47,9 @@ harness = false
 [[bench]]
 name = "fkps"
 path = "benches/fkps.rs"
+harness = false
+
+[[bench]]
+name = "poe_verifier"
+path = "benches/poe_verifier.rs"
 harness = false

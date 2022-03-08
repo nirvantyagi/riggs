@@ -18,6 +18,7 @@ use range_proofs::bulletproofs::{
 use rsa::{
     hash_to_prime::hash_to_variable_output_length,
 };
+use rsa::bigint::BigInt;
 
 pub fn get_bn254_library_src() -> String {
     let contract_path = format!(
@@ -76,6 +77,63 @@ pub fn get_bulletproofs_verifier_contract_src(pp: &Params<G>, ped_pp: &PedersenP
             }
             populate_ipa_pp_vec
         });
+    src
+}
+
+pub fn get_bigint_library_src() -> String {
+    let contract_path = format!(
+        "{}/contracts/BigInt.sol",
+        env!("CARGO_MANIFEST_DIR")
+    );
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src.replace("\"", "\\\"");
+    src
+}
+
+pub fn get_rsa_library_src(m: &BigInt, m_len: usize) -> String {
+    let contract_path = format!(
+        "{}/contracts/RSA2048.sol",
+        env!("CARGO_MANIFEST_DIR")
+    );
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src.replace("\"", "\\\"")
+        .replace("<%pp_m_len%>", &format!("{}", m_len / 256))
+        .replace("<%pp_m_populate%>", &{
+            let mut populate_m = String::new();
+            for (i, u256digit) in m.to_u64_digits().1.chunks(4).rev().enumerate() {
+                populate_m.push_str(&format!(
+                    "m_u256_digits[{}] = 0x{}{}{}{};",
+                    i,
+                    hex::encode(&u256digit[3].to_be_bytes()),
+                    hex::encode(&u256digit[2].to_be_bytes()),
+                    hex::encode(&u256digit[1].to_be_bytes()),
+                    hex::encode(&u256digit[0].to_be_bytes()),
+                ));
+                if i < m.to_u64_digits().1.len() / 4 - 1 {
+                    populate_m.push_str("\n        ");
+                }
+            }
+            populate_m
+        });
+    src
+}
+
+pub fn get_poe_library_src() -> String {
+    let contract_path = format!(
+        "{}/contracts/PoEVerifier.sol",
+        env!("CARGO_MANIFEST_DIR")
+    );
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src.replace("\"", "\\\"");
     src
 }
 
