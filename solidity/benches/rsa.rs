@@ -35,9 +35,7 @@ use solidity::{
     encode_bulletproof,
     // <<<<<<< Updated upstream
     get_bn254_library_src,
-    get_bulletproofs_verifier_contract_src,
     get_filename_src,
-    get_pedersen_library_src,
 };
 
 use once_cell::sync::Lazy;
