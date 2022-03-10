@@ -79,13 +79,13 @@ fn main() { // cargo bench --bench poe_verifier --profile test
     let x = Hog::from_nat(BigInt::from_biguint(Sign::Plus, RandomBits::new(2048).sample(&mut rng)));
     let y = x.power(&BigInt::from(2).pow(T));
 
-    println!("Proving PoE");
+    println!("Proving PoE...");
     let proof = TestWesolowski::prove(&x, &y, T).unwrap();
-    println!("Verifying PoE");
+    println!("Verifying PoE...");
     let is_valid = TestWesolowski::verify(&x, &y, T, &proof).unwrap();
     assert!(is_valid);
 
-    println!("Compiling contract");
+    println!("Compiling contract...");
 
     // Compile contract from template
     let bigint_src = get_bigint_library_src();
@@ -135,7 +135,6 @@ fn main() { // cargo bench --bench poe_verifier --profile test
         encode_poe_proof(&proof)
     ];
     let result = evm.call(contract.encode_call_contract_bytes("verify", &input).unwrap(), &contract_addr, &deployer).unwrap();
-    //assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
+    assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
     println!("{:?}", result);
-    println!("contract length: {}", result.out.len());
 }

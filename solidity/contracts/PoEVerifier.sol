@@ -40,7 +40,9 @@ contract PoEVerifier {
     function verify(RSA2048.Element memory x, RSA2048.Element memory y, uint32 t, Proof memory proof) public view returns (bool) {
         RSA2048.Params memory pp = RSA2048.publicParams();
         BigInt.BigInt memory h = hashToBigInt(abi.encodePacked(x.n.val, y.n.val, t, proof.cert.nonce));
-        return verifyHashToPrime(h, proof.cert);
+        require(verifyHashToPrime(h, proof.cert));
+        BigInt.BigInt memory r = BigInt.prepare_modexp(BigInt.from_uint256(2), BigInt.from_uint32(t), h);
+        return y.eq(proof.q.power(h, pp).op(x.power(r, pp), pp).reduce(pp));
     }
 
     function verifyHashToPrime(BigInt.BigInt memory h, PocklingtonCertificate memory cert) public view returns (bool) {

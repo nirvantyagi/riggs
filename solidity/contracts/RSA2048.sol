@@ -21,11 +21,6 @@ library RSA2048 {
         pp.m.val = abi.encodePacked(m_u256_digits);
     }
 
-    //function add(Element memory a, Element memory b, Params memory pp)
-    //internal view returns (Element memory) {
-    //    return Element(BigInt.bn_mod(BigInt.prepare_add(a.n, b.n), pp.m));
-    //}
-
     function op(Element memory a, Element memory b, Params memory pp)
     internal view returns (Element memory) {
         return Element(BigInt.modmul(a.n, b.n, pp.m));
@@ -36,14 +31,22 @@ library RSA2048 {
         return Element(BigInt.prepare_modexp(base.n, e, pp.m));
     }
 
-    // returns true iff a==b
-    //function cmp(Element memory a, Element memory b, Element memory n)
-    //internal view returns (bool) {
-    //    // require(a.bn.val.length >= 256);
-    //    // require(b.bn.val.length >= 256);
-    //    BigNumber.instance memory abn = BigNumber.bn_mod(a.bn, n.bn);
-    //    BigNumber.instance memory bbn = BigNumber.bn_mod(b.bn, n.bn);
-    //    return BigNumber.cmp(abn, bbn, false) == 0;
-    //}
+    // Reduce to canonical form
+    function reduce(Element memory elmt, Params memory pp)
+    internal view returns (Element memory out) {
+        BigInt.BigInt memory a = BigInt.bn_mod(elmt.n, pp.m);
+        BigInt.BigInt memory ma = BigInt.prepare_sub(pp.m, a);
+        if (BigInt.cmp(a, ma, false) == 1) { // a > ma
+            out.n = ma;
+        } else {
+            out.n = a;
+        }
+    }
+
+    // Compare two RSA elements in canonical form
+    function eq(Element memory a, Element memory b)
+    internal view returns (bool) {
+        return BigInt.cmp(a.n, b.n, false) == 0;
+    }
 
 }

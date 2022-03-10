@@ -88,7 +88,6 @@ impl<P: PocklingtonCertParams, D: Digest> HashToPrime for PocklingtonHash<P, D> 
         let mut inputs: Vec<u8> = input.iter().copied().collect();
         inputs.extend_from_slice(&cert.nonce.to_be_bytes());
         let p_curr= hash_to_integer::<D>(&inputs, Self::prime_bits(entropy));
-        println!("prime_hash: {:?}", p_curr.to_bytes_be().1);
         let check1 = &p_curr == p;
         let p_path = vec![p_curr].iter().chain(cert.step_certificates.iter().map(|c| c.f.clone()).collect::<Vec<BigInt>>().iter()).cloned().collect::<Vec<BigInt>>();
         let check2 = cert.step_certificates.iter().zip(p_path.iter())
@@ -107,12 +106,10 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
     }
 
     fn generate_pocklington_certificate_path(p: &BigInt) -> Option<Vec<StepCert>> {
-        println!("Attempting to generate certificate path");
         let mut certs = Vec::new();
         let mut p = p.clone();
         //TODO: Support other small prime limits, e.g., 40 bits, 48 bits
         while p > BigInt::one() << 32 {
-            println!("Step with p of size: {}", p.bits());
             let cert = Self::pocklington_step(&p)?;
             p = cert.f.clone();
             certs.push(cert);
@@ -121,11 +118,9 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
     }
 
     fn pocklington_step(p: &BigInt) -> Option<StepCert> {
-        println!("Factoring... {}", (p - BigInt::one()).to_string());
         //TODO: gmp-ecm factor is faster than PARI
         //TODO: Instead of factor 280-bit integer, construct from 140-bit prime
         let factors = factor(&(p - BigInt::one()));
-        println!("Done factoring... {:?}", factors);
         debug_assert_eq!(factors[0].0, BigInt::from(2));
         let n2 = factors[0].1;
         let (f, n, u, v, s, expr_sqrt) = factors.iter().find_map(|(f, n)| Self::test_pocklington_f(p, f, *n, n2))?;
@@ -143,11 +138,6 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
             }
             out
         }?;
-        //println!("checka2: {:?}", (a.modpow(&p_less_one_div_f, p) - BigInt::one()).to_bytes_be().1);
-        println!("checka2: {:?}", ((a.modpow(&p_less_one_div_f, p) - BigInt::one()) * &b_p_div_f1).to_bytes_be());
-        println!("checka2-2: {:?}", (p * &b_p_div_f2).to_bytes_be());
-        println!("checka2-3: {:?}", (&b_p_div_f2).to_bytes_be());
-        println!("checka2-p: {:?}", (p).to_bytes_be());
         Some(StepCert {
             f,n, n2, a, bu, bv,
             v: if P::INCLUDE_SOLIDITY_WITNESSES { Some(v) } else { None },
@@ -165,8 +155,6 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
     fn verify_pocklington_step(p: &BigInt, cert: &StepCert) -> bool {
         match (Self::test_pocklington_f(p, &cert.f, cert.n, cert.n2), Self::test_pocklington_a(p, &cert.f, &cert.a)) {
             (Some((_, _, u, v, _, _)), Some(_)) => {
-                println!("u: {:?}", u.to_bytes_be().1);
-                println!("v: {:?}", v.to_bytes_be().1);
                 let test_parity = u.is_even() && v.is_odd();
                 let test_prod = &u * &v == p - BigInt::one();
                 let test_coprime = &cert.bu * &u + &cert.bv * &v == BigInt::one();
