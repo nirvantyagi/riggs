@@ -257,7 +257,7 @@ library BigInt {
            BigInt memory sub_and_square = op_and_square(a,b,1); // sub_and_square = (a-b)^2
            res = prepare_sub(res,sub_and_square);                 // res = add_and_square - sub_and_square
        }
-       res = right_shift(res, 2);                                 // res = res / 4
+       res = in_place_right_shift(res, 2);                                 // res = res / 4
     }
 
     /** @dev op_and_square: takes two instances, performs operation 'op' on them, and squares the result.
@@ -524,7 +524,7 @@ library BigInt {
       * parameter: bool signed
       * returns: int.
       */
-    function right_shift(BigInt memory dividend, uint value) internal pure returns(BigInt memory){
+    function in_place_right_shift(BigInt memory dividend, uint value) internal pure returns(BigInt memory){
         uint256 word_shifted;
         uint256 mask_shift = 256-value;
         uint256 mask;

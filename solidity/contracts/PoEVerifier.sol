@@ -49,6 +49,9 @@ contract PoEVerifier {
             verifyPocklingtonStep(p, cert.steps[i]);
             p = cert.steps[i].f;
         }
+        // Verify final prime using Miller-Rabin for 32 bit integers
+        require(BigInt.cmp(BigInt.from_uint256(1 << 32), p, false) == 1);
+        require(checkMillerRabin32B(p));
         return true;
     }
 
@@ -128,8 +131,34 @@ contract PoEVerifier {
     }
 
     function checkCoprime(BigInt.BigInt memory a, BigInt.BigInt memory b, BigInt.BigInt memory ba, BigInt.BigInt memory bb) private view returns (bool) {
-        //return BigInt.prepare_add(BigInt.bn_mul(a, ba), BigInt.bn_mul(b, bb));
         return BigInt.cmp(BigInt.prepare_add(BigInt.bn_mul(a, ba), BigInt.bn_mul(b, bb)), BigInt.from_uint32(1), true) == 0;
     }
 
+    function checkMillerRabin(BigInt.BigInt memory n, BigInt.BigInt memory b) private view returns (bool) {
+        require(BigInt.is_odd(n) == 1);
+        BigInt.BigInt memory n_less_one = BigInt.prepare_sub(n, BigInt.from_uint256(1));
+        BigInt.BigInt memory d = BigInt.prepare_sub(n, BigInt.from_uint256(1));
+        uint s;
+        for (s = 0; BigInt.is_odd(d) == 0; s++) {
+            d = BigInt.in_place_right_shift(d, 1);
+        }
+
+        BigInt.BigInt memory pow = BigInt.prepare_modexp(b, d, n);
+        if ((BigInt.cmp(pow, BigInt.from_uint32(1), false) == 0) || (BigInt.cmp(pow, n_less_one, false) == 0)) {
+            return true;
+        }
+        for (uint i = 0; i < s - 1; i++) {
+            pow = BigInt.bn_mod(BigInt.square(pow), n);
+            if (BigInt.cmp(pow, n_less_one, false) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function checkMillerRabin32B(BigInt.BigInt memory n) private view returns (bool) {
+        return checkMillerRabin(n, BigInt.from_uint256(2))
+                && checkMillerRabin(n, BigInt.from_uint256(7))
+                && checkMillerRabin(n, BigInt.from_uint256(61));
+    }
 }
