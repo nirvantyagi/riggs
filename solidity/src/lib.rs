@@ -2,14 +2,32 @@ use ark_bn254::{Bn254, G1Projective as G};
 use ark_ec::{PairingEngine, ProjectiveCurve};
 
 use ethabi::Token;
-use range_proofs::bulletproofs::{serialize_group_elem, Params, PedersenParams, Proof};
-use rsa::bigint::BigInt;
-use rsa::hash_to_prime::hash_to_variable_output_length;
+use primitive_types::U256;
+use num_traits::Signed;
+use digest::Digest;
+use std::{
+    fs::File,
+    io::Read,
+};
+use sha3::digest;
+
 use solidity_test_utils::{
     encode_field_element, encode_group_element, parse_bytes_to_solidity_string,
     parse_g1_to_solidity_string,
 };
-use std::{fs::File, io::Read};
+use range_proofs::bulletproofs::{
+    Proof, Params, PedersenParams,
+    serialize_group_elem,
+};
+use rsa::{
+    bigint::BigInt,
+    hog::{RsaHiddenOrderGroup, RsaGroupParams},
+    hash_to_prime::{
+        hash_to_variable_output_length,
+        pocklington::{PocklingtonCertParams, PocklingtonCert, StepCert, PocklingtonHash},
+    },
+    poe::{Proof as PoEProof},
+};
 
 pub fn get_bn254_library_src() -> String {
     let contract_path = format!("{}/contracts/BN254.sol", env!("CARGO_MANIFEST_DIR"));
@@ -247,4 +265,53 @@ pub fn encode_bulletproof<E: PairingEngine>(proof: &Proof<E::G1Projective>) -> T
     tokens.push(encode_field_element::<E>(&proof.base_a));
     tokens.push(encode_field_element::<E>(&proof.base_b));
     Token::Tuple(tokens)
+}
+
+pub fn encode_bigint(n: &BigInt) -> Token {
+    Token::Tuple(vec![Token::Bytes(pad_to_32_byte_offset(n.to_bytes_be().1)), Token::Bool(n.is_negative())])
+}
+
+pub fn encode_rsa_element<P: RsaGroupParams>(elmt: &RsaHiddenOrderGroup<P>) -> Token {
+    Token::Tuple(vec![encode_bigint(&elmt.n)])
+}
+
+pub fn encode_pocklington_step_certificate(cert: &StepCert) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_bigint(&cert.f));
+    tokens.push(Token::Uint(U256::from(cert.n)));
+    tokens.push(Token::Uint(U256::from(cert.n2)));
+    tokens.push(encode_bigint(&cert.a));
+    tokens.push(encode_bigint(&cert.bu));
+    tokens.push(encode_bigint(&cert.bv));
+    tokens.push(encode_bigint(&cert.v.as_ref().unwrap()));
+    tokens.push(encode_bigint(&cert.s.as_ref().unwrap()));
+    tokens.push(encode_bigint(&cert.expr_sqrt.as_ref().unwrap()));
+    tokens.push(encode_bigint(&cert.p_less_one_div_f.as_ref().unwrap()));
+    tokens.push(encode_bigint(&cert.p_less_one_div_two.as_ref().unwrap()));
+    tokens.push(encode_bigint(&cert.b_p_div_f1.as_ref().unwrap()));
+    tokens.push(encode_bigint(&cert.b_p_div_f2.as_ref().unwrap()));
+    tokens.push(encode_bigint(&cert.b_p_div_two1.as_ref().unwrap()));
+    tokens.push(encode_bigint(&cert.b_p_div_two2.as_ref().unwrap()));
+    Token::Tuple(tokens)
+}
+
+pub fn encode_pocklington_certificate(cert: &PocklingtonCert) -> Token {
+    let step_certs = Token::Array(cert.step_certificates.iter().map(|c| encode_pocklington_step_certificate(c)).collect::<Vec<_>>());
+    Token::Tuple(vec![step_certs, Token::Uint(U256::from(cert.nonce))])
+}
+
+pub fn encode_poe_proof<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>(proof: &PoEProof<P, PocklingtonHash<HP, D>>) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_rsa_element(&proof.q));
+    tokens.push(encode_pocklington_certificate(&proof.cert));
+    Token::Tuple(tokens)
+}
+
+fn pad_to_32_byte_offset(mut bytes: Vec<u8>) -> Vec<u8> {
+    let pad_len = 32 * ((bytes.len() - 1) / 32 + 1);
+    bytes.reverse();
+    bytes.resize(pad_len, 0);
+    debug_assert_eq!(bytes.len() % 32, 0);
+    bytes.reverse();
+    bytes
 }

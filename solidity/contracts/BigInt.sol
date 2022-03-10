@@ -12,6 +12,10 @@ library BigInt {
         r.val = abi.encodePacked(n);
     }
 
+    function from_uint32(uint32 n) internal pure returns(BigInt memory r){
+        r.val = abi.encodePacked(n);
+    }
+
 
     /** @dev prepare_add: Initially prepare bignum instances for addition operation; internally calls actual addition/subtraction, depending on inputs.
       *                   In order to do correct addition or subtraction we have to handle the sign.
@@ -59,6 +63,7 @@ library BigInt {
       *              in any order of size, and of different signs (handled in prepare_add).
       *              As values may be of different sizes, inputs are considered starting from the least significant words, working back. 
       *              The function calculates the new bitlen (basically if bitlens are the same for max and min, max_bitlen++) and returns a new instance value.
+      * REQUIRES bytes to be off length offset 32 bytes
       *
       * parameter: bytes max -  biggest value  (determined from prepare_add)
       * parameter: bytes min -  smallest value (determined from prepare_add)
@@ -68,40 +73,53 @@ library BigInt {
       */
     function bn_add(bytes memory max, bytes memory min) private pure returns (bytes memory) {
         bytes memory result;
+        uint256 result_start;
+        uint256 uint_max;
+        uint256 carry = 0;
+        uint256 max_ptr;
+        uint256 min_ptr;
+        uint256 result_ptr;
+        uint256 max_len = max.length;
+
         assembly {
-            let result_start := msize()                                     // Get the highest available block of memory
-            let uint_max := sub(0,1)                                        // uint max. achieved using uint underflow: 0xffff...ffff
-            let carry := 0
-            let max_ptr := add(max, mload(max))
-            let min_ptr := add(min, mload(min))                             // point to last word of each byte array.
-            let result_ptr := add(add(result_start,0x20), mload(max))         // set result_ptr end.
-            for { let i := mload(max) } eq(eq(i,0),0) { i := sub(i, 0x20) } { // for(int i=max_length; i!=0; i-=32)
+            result_start := msize()                                     // Get the highest available block of memory
+            uint_max := sub(0,1)                                        // uint max. achieved using uint underflow: 0xffff...ffff
+            carry := 0
+            max_ptr := add(max, mload(max))
+            min_ptr := add(min, mload(min))                             // point to last word of each byte array.
+            result_ptr := add(add(result_start,0x20), mload(max))         // set result_ptr end.
+        }
+        //for { let i := mload(max) } eq(eq(i,0),0) { i := sub(i, 0x20) } { // for(int i=max_length; i!=0; i-=32)
+        for (uint i = max_len; i > 0; i -= 32) {
+            assembly {
                 let max_val := mload(max_ptr)                               // get next word for 'max'
                 switch gt(i,sub(mload(max),mload(min)))                         // if(i>(max_length-min_length)). while 'min' words are still available.
-                    case 1{ 
-                        let min_val := mload(min_ptr)                       //      get next word for 'min'
-                        mstore(result_ptr, add(add(max_val,min_val),carry)) //      result_word = max_word+min_word+carry
-                        switch gt(max_val, sub(uint_max,sub(min_val,carry)))     //      this switch block finds whether or not to set the carry bit for the next iteration.
-                            case 1  { carry := 1 }
-                            default {
-                                switch and(eq(max_val,uint_max),or(gt(carry,0), gt(min_val,0)))
-                                case 1 { carry := 1 }
-                                default{ carry := 0 }
-                            }
-                        min_ptr := sub(min_ptr,0x20)                       //       point to next 'min' word
+                case 1{
+                    let min_val := mload(min_ptr)                       //      get next word for 'min'
+                    mstore(result_ptr, add(add(max_val,min_val),carry)) //      result_word = max_word+min_word+carry
+                    switch gt(max_val, sub(uint_max,sub(min_val,carry)))     //      this switch block finds whether or not to set the carry bit for the next iteration.
+                    case 1  { carry := 1 }
+                    default {
+                        switch and(eq(max_val,uint_max),or(gt(carry,0), gt(min_val,0)))
+                        case 1 { carry := 1 }
+                        default{ carry := 0 }
                     }
-                    default{                                               // else: remainder after 'min' words are complete.
-                        mstore(result_ptr, add(max_val,carry))             //       result_word = max_word+carry
-                        switch and( eq(uint_max,max_val), eq(carry,1) )         //       this switch block finds whether or not to set the carry bit for the next iteration.
-                            case 1  { carry := 1 }
-                            default { carry := 0 }
-                    }
+                    min_ptr := sub(min_ptr,0x20)                       //       point to next 'min' word
+                }
+                default{                                               // else: remainder after 'min' words are complete.
+                    mstore(result_ptr, add(max_val,carry))             //       result_word = max_word+carry
+                    switch and( eq(uint_max,max_val), eq(carry,1) )         //       this switch block finds whether or not to set the carry bit for the next iteration.
+                    case 1  { carry := 1 }
+                    default { carry := 0 }
+                }
                 result_ptr := sub(result_ptr,0x20)                         // point to next 'result' word
                 max_ptr := sub(max_ptr,0x20)                               // point to next 'max' word
             }
+        }
+        assembly {
             switch eq(carry,0)
-                case 1{ result_start := add(result_start,0x20) }           // if carry is 0, increment result_start, ie. length word for result is now one word position ahead.
-                default { mstore(result_ptr, 1) }                          // else if carry is 1, store 1; overflow has occured, so length word remains in the same position.
+            case 1{ result_start := add(result_start,0x20) }           // if carry is 0, increment result_start, ie. length word for result is now one word position ahead.
+            default { mstore(result_ptr, 1) }                          // else if carry is 1, store 1; overflow has occured, so length word remains in the same position.
             result := result_start                                         // point 'result' bytes value to the correct address in memory
             mstore(result,add(mload(max),mul(0x20,carry)))                   // store length of result. we are finished with the byte array.
             mstore(0x40, add(result,add(mload(result),0x20)))                // Update freemem pointer to point to new end of memory.
@@ -109,7 +127,6 @@ library BigInt {
         return result;
     }
 
-    
       /** @dev prepare_sub: Initially prepare bignum instances for addition operation; internally calls actual addition/subtraction, depending on inputs.
       *                   In order to do correct addition or subtraction we have to handle the sign.
       *                   This function discovers the sign of the result based on the inputs, and calls the correct operation.
@@ -168,19 +185,27 @@ library BigInt {
       * returns: uint - bit length of result.
       */
    function bn_sub(bytes memory max, bytes memory min) private pure returns (bytes memory) {
-        bytes memory result;
-        uint carry = 0;
-        assembly {
-            let result_start := msize()                                         // Get the highest available block of memory
-            let uint_max := sub(0,1)                                            // uint max. achieved using uint underflow: 0xffff...ffff
-            let max_len := mload(max)
-            let min_len := mload(min)                                           // load lengths of inputs
-            let len_diff := sub(max_len,min_len)                                //get differences in lengths.
-            let max_ptr := add(max, max_len)
-            let min_ptr := add(min, min_len)                                    //go to end of arrays
-            let result_ptr := add(result_start, max_len)                        //point to least significant result word.
-            let memory_end := add(result_ptr,0x20)                              // save memory_end to update free memory pointer at the end.
-            for { let i := max_len } eq(eq(i,0),0) { i := sub(i, 0x20) } {      // for(int i=max_length; i!=0; i-=32)
+       bytes memory result;
+       uint256 result_start;
+       uint256 uint_max;
+       uint256 carry = 0;
+       uint256 max_ptr;
+       uint256 min_ptr;
+       uint256 result_ptr;
+       uint256 max_len = max.length;
+       uint256 min_len = min.length;
+       uint256 len_diff = max_len - min_len;
+       assembly {
+            result_start := msize()                                         // Get the highest available block of memory
+            uint_max := sub(0,1)                                            // uint max. achieved using uint underflow: 0xffff...ffff
+            len_diff := sub(max_len,min_len)                                //get differences in lengths.
+            max_ptr := add(max, max_len)
+            min_ptr := add(min, min_len)                                    //go to end of arrays
+            result_ptr := add(result_start, max_len)                        //point to least significant result word.
+       }
+       //for { let i := max_len } eq(eq(i,0),0) { i := sub(i, 0x20) } {      // for(int i=max_length; i!=0; i-=32)
+       for (uint i = max_len; i > 0; i -= 32) {
+           assembly {
                 let max_val := mload(max_ptr)                                   // get next word for 'max'
                 switch gt(i,len_diff)                                           // if(i>(max_length-min_length)). while 'min' words are still available.
                     case 1{ 
@@ -200,41 +225,40 @@ library BigInt {
                     }
                 result_ptr := sub(result_ptr,0x20)                              // point to next 'result' word
                 max_ptr    := sub(max_ptr,0x20)                                 // point to next 'max' word
-            }      
-
+            }
+       }
+       assembly {
             //the following code removes any leading words containing all zeroes in the result.
-            result_ptr := add(result_ptr,0x20)                                                 
+            result_ptr := add(result_ptr,0x20)
             for { }   eq(mload(result_ptr), 0) { result_ptr := add(result_ptr,0x20) } { //for(result_ptr+=32;; result==0; result_ptr+=32)
                result_start := add(result_start, 0x20)                                         // push up the start pointer for the result..
                max_len := sub(max_len,0x20)                                                    // and subtract a word (32 bytes) from the result length.
-            } 
-            result := result_start                                                              // point 'result' bytes value to the correct address in memory
-            mstore(result, max_len)                                                              // store length of result. we are finished with the byte array.
-            mstore(0x40, memory_end)                                                            // Update freemem pointer.
+            }
+           result := result_start                                                              // point 'result' bytes value to the correct address in memory
+           mstore(result, max_len)                                                              // store length of result. we are finished with the byte array.
+           mstore(0x40, add(result,add(mload(result),0x20)))                // Update freemem pointer to point to new end of memory.
         }
         return result;
     }
 
-
     /** @dev bn_mul: takes two instances and multiplies them. Order is irrelevant.
-      *              multiplication achieved using modexp precompile:
-      *                 (a * b) = (((a + b)**2 - (a - b)**2) / 4
-      *              squaring is done in op_and_square function.
-      *
-      * parameter: instance a 
-      * parameter: instance b 
-      * returns: bytes res = a*b.
-      */
-    function bn_mul(BigInt memory a, BigInt memory b) internal view returns(BigInt memory res){
-        res = op_and_square(a,b,0);                                // add_and_square = (a+b)^2
-        //no need to do subtraction part of the equation if a == b; if so, it has no effect on final result.
-        if(cmp(a,b,true)!=0){  
-            BigInt memory sub_and_square = op_and_square(a,b,1); // sub_and_square = (a-b)^2
-            res = prepare_sub(res,sub_and_square);                 // res = add_and_square - sub_and_square
-        }
-        res = right_shift(res, 2);                                 // res = res / 4
-     }
-
+     *              multiplication achieved using modexp precompile:
+     *                 (a * b) = (((a + b)**2 - (a - b)**2) / 4
+     *              squaring is done in op_and_square function.
+     *
+     * parameter: instance a
+     * parameter: instance b
+     * returns: bytes res = a*b.
+     */
+   function bn_mul(BigInt memory a, BigInt memory b) internal view returns(BigInt memory res){
+       res = op_and_square(a,b,0);                                // add_and_square = (a+b)^2
+       //no need to do subtraction part of the equation if a == b; if so, it has no effect on final result.
+       if(cmp(a,b,true)!=0){
+           BigInt memory sub_and_square = op_and_square(a,b,1); // sub_and_square = (a-b)^2
+           res = prepare_sub(res,sub_and_square);                 // res = add_and_square - sub_and_square
+       }
+       res = right_shift(res, 2);                                 // res = res / 4
+    }
 
     /** @dev op_and_square: takes two instances, performs operation 'op' on them, and squares the result.
       *                     bn_mul uses the multiplication by squaring method, ie. a*b == ((a+b)^2 - (a-b)^2)/4.
@@ -247,16 +271,20 @@ library BigInt {
       * returns: bytes res - (a'op'b) ^ 2.
       */
     function op_and_square(BigInt memory a, BigInt memory b, int op) private view returns(BigInt memory res){
+        res = (op == 0) ? prepare_add(a,b) : prepare_sub(a,b); //op == 0: add, op == 1: sub.
+        res = square(res);
+    }
+
+    function square(BigInt memory a) internal view returns(BigInt memory res){
         BigInt memory two = from_uint256(2);
         uint mod_index = 0;
         uint first_word_modulus;
         bytes memory _modulus;
-        
-        res = (op == 0) ? prepare_add(a,b) : prepare_sub(a,b); //op == 0: add, op == 1: sub.
-        uint res_bitlen = res.val.length * 8;
-        assembly { mod_index := mul(res_bitlen,2) }
+
+        uint a_bitlen = a.val.length * 8;
+        assembly { mod_index := mul(a_bitlen,2) }
         first_word_modulus = uint(1) << ((mod_index % 256)); //set bit in first modulus word.
-        
+
         //we pass the minimum modulus value which would return JUST the squaring part of the calculation; therefore the value may be many words long.
         //This is done by:
         //  - storing total modulus byte length
@@ -273,9 +301,47 @@ library BigInt {
         BigInt memory modulus;
         modulus.val = _modulus;
         modulus.neg = false;
-        res = prepare_modexp(res,two,modulus); // ((a 'op' b) ^ 2 % modulus) == (a 'op' b) ^ 2.
+        res = prepare_modexp(a,two,modulus); // ((a) ^ 2 % modulus) == (a) ^ 2.
     }
 
+    /** @dev bn_div: takes three instances (a,b and result), and verifies that a/b == result.
+      *              Verifying a bigint division operation is far cheaper than actually doing the computation.
+      *              As this library is for verification of cryptographic schemes it makes more sense that this function be used in this way.
+      *              (a/b = result) == (a = b * result)
+      *              Integer division only; therefore:
+      *                verify ((b*result) + (a % (b*result))) == a.
+      *              eg. 17/7 == 2:
+      *                verify  (7*2) + (17 % (7*2)) == 17.
+      *              the function returns the 'result' param passed on successful validation. returning a bool on successful validation is an option,
+      *              however it makes more sense in the context of the calling contract that it should return the result.
+      *
+      * parameter: instance a
+      * parameter: instance b
+      * parameter: instance result
+      * returns: int: 1 if exact division no remainder, 0 if checks but with remainder
+      */
+    function check_bn_div(BigInt memory a, BigInt memory b, BigInt memory result) internal view returns(int){
+        if(a.neg==true || b.neg==true){ //first handle sign.
+            if (a.neg==true && b.neg==true) require(result.neg==false);
+            else require(result.neg==true);
+        } else require(result.neg==false);
+
+        BigInt memory zero = from_uint256(0);
+        require(!(cmp(b,zero,true)==0)); //require denominator to not be zero.
+
+        if(cmp(result,zero,true)==0){                //if result is 0:
+            if(cmp(a,b,true)==-1) return 0;     // return zero if a<b (numerator < denominator)
+            else assert(false);                      // else fail.
+        }
+
+        BigInt memory fst = bn_mul(b,result); // do multiplication (b * result)
+        if(cmp(fst,a,true)==0) return 1;  // check if we already have a (ie. no remainder after division). if so, no mod necessary, and return result.
+
+        BigInt memory one = from_uint256(1);
+        BigInt memory snd = prepare_modexp(a,one,fst); //a mod (b*result)
+        require(cmp(prepare_add(fst,snd),a,true)==0); // ((b*result) + a % (b*result)) == a
+        return 0;
+    }
 
     function bn_mod(BigInt memory a, BigInt memory mod) internal view returns(BigInt memory res){
         BigInt memory one = from_uint256(1);
@@ -413,7 +479,7 @@ library BigInt {
       * returns: int.
       */
     function cmp(BigInt memory a, BigInt memory b, bool signed) internal pure returns(int){
-        if(b.val.length > a.val.length) return cmp(b, a, signed);
+        if(b.val.length > a.val.length) return -1 * cmp(b, a, signed);
         int trigger = 1;
         if(signed){
             if(a.neg && b.neg) trigger = -1;
@@ -430,7 +496,7 @@ library BigInt {
         uint b_word;
 
         for(uint i=0; i < a_len - b_len; i++){
-            if (a.val[i] != 0x0) return -1 * trigger;
+            if (a.val[i] != 0x0) return 1*trigger;
         }
 
         assembly{
@@ -459,24 +525,20 @@ library BigInt {
       * returns: int.
       */
     function right_shift(BigInt memory dividend, uint value) internal pure returns(BigInt memory){
-        //TODO use memcpy for cheap rightshift where input is multiple of 8 (byte size)
-        bytes memory result;
-        uint word_shifted;
-        uint mask_shift = 256-value;
-        uint mask;
-        uint result_ptr;
-        uint max;
+        uint256 word_shifted;
+        uint256 mask_shift = 256-value;
+        uint256 mask;
+        uint256 result_ptr;
         uint length = dividend.val.length;
 
         assembly {
-            max := sub(0,32)
-            result_ptr := add(mload(dividend), length)   
+            result_ptr := add(mload(dividend), length)
         }
 
-        for(uint i= length-32; i<max;i-=32){                 //for each word:
+        for(uint i = length; i > 0; i-=32){                 //for each word:
             assembly{
                 word_shifted := mload(result_ptr)               //get next word
-                switch eq(i,0)                               //if i==0:
+                switch eq(i,32)                               //if i==32:
                 case 1 { mask := 0 }                         // handles msword: no mask needed.
                 default { mask := mload(sub(result_ptr,0x20)) } // else get mask.
             }
@@ -486,19 +548,6 @@ library BigInt {
             result_ptr-=32;                                       // point to next value.
         }
 
-        assembly{
-            //the following code removes any leading words containing all zeroes in the result.
-            result_ptr := add(result_ptr,0x20)
-            for { }  eq(mload(result_ptr), 0) { } {
-               result_ptr := add(result_ptr, 0x20) //push up the start pointer for the result..
-               length  := sub(length,0x20) //and subtract a word (32 bytes) from the result length.
-            }
-            
-            result := sub(result_ptr,0x20)
-            mstore(result, length) 
-        }
-        
-        dividend.val = result;
         return dividend;
     }
 }

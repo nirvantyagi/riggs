@@ -115,7 +115,7 @@ pub fn hash_to_prime<D: Digest>(inputs: &[u8], n_bits: usize) -> Result<(BigInt,
 
 pub fn hash_to_integer<D: Digest>(inputs: &[u8], n_bits: usize) -> BigInt {
     assert!(n_bits > 0);
-    let mut n = BigInt::from_bytes_le(
+    let mut n = BigInt::from_bytes_be(
         Sign::Plus,
         &hash_to_variable_output_length::<D>(inputs, ((n_bits - 1) / 8) + 1),
     );
@@ -137,13 +137,15 @@ pub fn hash_to_variable_output_length<D: Digest>(inputs: &[u8], n_bytes: usize) 
         out.extend_from_slice(D::digest(&inputs).as_slice());
     } else {
         for i in 0..n_hashes {
-            inputs.extend_from_slice(&(i as u32).to_le_bytes());
+            inputs.extend_from_slice(&(i as u32).to_be_bytes());
             out.extend_from_slice(D::digest(&inputs).as_slice());
             inputs.truncate(inputs.len() - 4);
         }
     }
 
+    out.reverse();
     out.truncate(n_bytes);
+    out.reverse(); // For ease of big endian solidity encoding
     out
 }
 

@@ -1,14 +1,14 @@
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng, distributions::Distribution};
 use primitive_types::{U256};
 use ethabi::Token;
 use once_cell::sync::Lazy;
+use sha3::Keccak256;
+use num_bigint::{Sign, RandomBits};
 
 use std::{
     str::FromStr,
     ops::Deref,
 };
-use ark_std::UniformRand;
-use num_bigint::Sign;
 
 use solidity_test_utils::{
     contract::Contract,
@@ -20,12 +20,16 @@ use solidity_test_utils::{
 use rsa::{
     bigint::BigInt,
     hog::{RsaHiddenOrderGroup, RsaGroupParams},
+    hash_to_prime::pocklington::{PocklingtonHash, PocklingtonCertParams},
+    poe::{PoE, PoEParams},
 };
 
 use solidity::{
     get_bigint_library_src,
     get_rsa_library_src,
     get_poe_library_src,
+    encode_rsa_element,
+    encode_poe_proof,
 };
 
 
@@ -48,14 +52,40 @@ impl RsaGroupParams for TestRsaParams {
     });
 }
 
-pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TestPoEParams;
+impl PoEParams for TestPoEParams {
+    const HASH_TO_PRIME_ENTROPY: usize = 256;
+}
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TestPocklingtonParams;
+impl PocklingtonCertParams for TestPocklingtonParams {
+    const NONCE_SIZE: usize = 16;
+    const MAX_STEPS: usize = 5;
+    const INCLUDE_SOLIDITY_WITNESSES: bool = true;
+}
+
+
+pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
+pub type TestWesolowski = PoE<TestPoEParams, TestRsaParams, PocklingtonHash<TestPocklingtonParams, Keccak256>>;
 
 
 const MOD_BITS: usize = 2048;
+const T: u32 = 160;
 
 fn main() { // cargo bench --bench poe_verifier --profile test
-    let mut rng = StdRng::seed_from_u64(0u64);
+    let mut rng = StdRng::seed_from_u64(1u64);
+    let x = Hog::from_nat(BigInt::from_biguint(Sign::Plus, RandomBits::new(2048).sample(&mut rng)));
+    let y = x.power(&BigInt::from(2).pow(T));
+
+    println!("Proving PoE");
+    let proof = TestWesolowski::prove(&x, &y, T).unwrap();
+    println!("Verifying PoE");
+    let is_valid = TestWesolowski::verify(&x, &y, T, &proof).unwrap();
+    assert!(is_valid);
+
+    println!("Compiling contract");
 
     // Compile contract from template
     let bigint_src = get_bigint_library_src();
@@ -98,20 +128,14 @@ fn main() { // cargo bench --bench poe_verifier --profile test
     println!("Contract deploy gas cost: {}", create_result.gas);
 
     // Call verify function on contract
-    let exp = <[u8; 32]>::rand(&mut rng);
-    let exp_bigint = BigInt::from_bytes_be(Sign::Plus, &exp);
-    let out = Hog::generator().power(&exp_bigint);
-    println!("rust: {:?}", out.n.to_bytes_be().1);
-    println!("rust length: {}", out.n.to_bytes_be().1.len());
     let input = vec![
-        Token::Uint(U256::from(exp))
+        encode_rsa_element(&x),
+        encode_rsa_element(&y),
+        Token::Uint(U256::from(T)),
+        encode_poe_proof(&proof)
     ];
     let result = evm.call(contract.encode_call_contract_bytes("verify", &input).unwrap(), &contract_addr, &deployer).unwrap();
     //assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
     println!("{:?}", result);
     println!("contract length: {}", result.out.len());
-
-
-
-
 }

@@ -12,6 +12,7 @@ ark-std = { version = "0.3" }
 ark-bn254 = { version = "0.3", features = [ "curve" ] }
 
 ethabi = "16.0.0"
+primitive-types = { version = "0.10", features = ["rlp"] }
 hex = { version = "0.4" }
 sha3 = { version = "0.9" }
 num-bigint = { version = "0.4", features = ["rand"] }
@@ -23,7 +24,6 @@ range_proofs = { path = "../range_proofs" }
 rsa = { path = "../rsa" }
 
 [dev-dependencies]
-primitive-types = { version = "0.10", features = ["rlp"] }
 rand = { version = "0.8" }
 
 once_cell = { version = "1.9" }

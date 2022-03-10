@@ -37,9 +37,9 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
     pub fn prove(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u32) -> Result<Proof<RsaP, H>, Error> {
         // Hash to challenge
         let mut hash_input = vec![];
-        hash_input.append(&mut u.n.to_bytes_le().1);
-        hash_input.append(&mut v.n.to_bytes_le().1);
-        hash_input.extend_from_slice(&t.to_le_bytes());
+        hash_input.append(&mut u.n.to_bytes_be().1);
+        hash_input.append(&mut v.n.to_bytes_be().1);
+        hash_input.extend_from_slice(&t.to_be_bytes());
         let (l, cert) = H::hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input)?;
 
         // Compute quotient of exponent with challenge prime
@@ -60,9 +60,9 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         proof: &Proof<RsaP, H>,
     ) -> Result<bool, Error> {
         let mut hash_input = vec![];
-        hash_input.append(&mut u.n.to_bytes_le().1);
-        hash_input.append(&mut v.n.to_bytes_le().1);
-        hash_input.extend_from_slice(&t.to_le_bytes());
+        hash_input.append(&mut u.n.to_bytes_be().1);
+        hash_input.append(&mut v.n.to_bytes_be().1);
+        hash_input.extend_from_slice(&t.to_be_bytes());
         let b = H::verify_hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input, &proof.l, &proof.cert)?;
         let r = BigInt::from(2).modpow(&BigInt::from(t), &proof.l);
 
@@ -109,6 +109,7 @@ mod tests {
     impl PocklingtonCertParams for TestPocklingtonParams {
         const NONCE_SIZE: usize = 16;
         const MAX_STEPS: usize = 5;
+        const INCLUDE_SOLIDITY_WITNESSES: bool = false;
     }
 
 
