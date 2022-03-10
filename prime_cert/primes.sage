@@ -47,7 +47,7 @@ def primegen_opt1(bits):
 #
 def primegen_opt2(bits):
     lb = 1 << (bits // 3 + 1)
-    ub = 11 * lb // 10
+    ub = 2 * lb
     f1 = random_prime(ub, lbound=lb)
     brem = bits - int(f1).bit_length()
     while True:
