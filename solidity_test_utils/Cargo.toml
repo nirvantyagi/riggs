@@ -18,5 +18,5 @@ bytes = { version = "1.1", default-features = false }
 serde_json = { version = "1.0" }
 rand = { version = "0.8" }
 
-revm = { git = "https://github.com/bluealloy/revm", version = "1.2" }
+revm = { git = "https://github.com/bluealloy/revm", tag = "v5" }
 solc = { git = "https://github.com/g-r-a-n-t/solc-rust", rev = "52d4146" }
