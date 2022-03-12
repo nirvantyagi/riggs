@@ -258,6 +258,7 @@ mod tests {
     impl PocklingtonCertParams for TestPocklingtonParams {
         const NONCE_SIZE: usize = 16;
         const MAX_STEPS: usize = 5;
+        const INCLUDE_SOLIDITY_WITNESSES: bool = false;
     }
 
     pub type TC = BasicTC<TestPoEParams, TestRsaParams, Sha3_256, PocklingtonHash<TestPocklingtonParams, Sha3_256>>;

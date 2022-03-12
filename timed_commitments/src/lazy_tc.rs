@@ -10,9 +10,9 @@ use num_bigint::Sign;
 use rand::{CryptoRng, Rng};
 use rsa::{
     bigint::{nat_to_f, BigInt},
+    hash_to_prime::HashToPrime,
     hog::RsaGroupParams,
     poe::{PoEParams, Proof as PoEProof},
-    hash_to_prime::{HashToPrime},
 };
 use std::marker::PhantomData;
 
@@ -27,7 +27,13 @@ pub struct Opening<RsaP: RsaGroupParams, H2P: HashToPrime> {
     tc_opening: TCOpening<RsaP, H2P>,
     tc_m: Option<Vec<u8>>,
 }
-pub struct LazyTC<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> {
+pub struct LazyTC<
+    G: ProjectiveCurve,
+    PoEP: PoEParams,
+    RsaP: RsaGroupParams,
+    H: Digest,
+    H2P: HashToPrime,
+> {
     _pedersen_g: PhantomData<G>,
     _tc: PhantomData<BasicTC<PoEP, RsaP, H, H2P>>,
 }
@@ -76,7 +82,8 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         comm: &Comm<G, RsaP>,
         ad: &[u8],
     ) -> Result<(Option<Vec<u8>>, Opening<RsaP, H2P>), Error> {
-        let (tc_m, tc_opening) = BasicTC::<PoEP, RsaP, H, H2P>::force_open(time_pp, &comm.tc_comm, ad)?;
+        let (tc_m, tc_opening) =
+            BasicTC::<PoEP, RsaP, H, H2P>::force_open(time_pp, &comm.tc_comm, ad)?;
         match &tc_m {
             Some(tc_m_inner) => {
                 let mut m = tc_m_inner.to_vec();
@@ -138,9 +145,9 @@ mod tests {
     use ark_bls12_381::G1Projective as G;
     use once_cell::sync::Lazy;
     use rand::{rngs::StdRng, SeedableRng};
+    use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
     use sha3::Sha3_256;
     use std::str::FromStr;
-    use rsa::hash_to_prime::pocklington::{PocklingtonHash, PocklingtonCertParams};
 
     use rsa::hog::RsaHiddenOrderGroup;
 
@@ -174,9 +181,16 @@ mod tests {
     impl PocklingtonCertParams for TestPocklingtonParams {
         const NONCE_SIZE: usize = 16;
         const MAX_STEPS: usize = 5;
+        const INCLUDE_SOLIDITY_WITNESSES: bool = false;
     }
 
-    pub type TC = LazyTC<G, TestPoEParams, TestRsaParams, Sha3_256, PocklingtonHash<TestPocklingtonParams, Sha3_256>>;
+    pub type TC = LazyTC<
+        G,
+        TestPoEParams,
+        TestRsaParams,
+        Sha3_256,
+        PocklingtonHash<TestPocklingtonParams, Sha3_256>,
+    >;
 
     #[test]
     fn lazy_tc_test() {
