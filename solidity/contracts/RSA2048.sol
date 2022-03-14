@@ -26,10 +26,22 @@ library RSA2048 {
         return Element(BigInt.modmul(a.n, b.n, pp.m));
     }
 
+    // when e is uint256
+    function power(Element memory base, uint256 e, Params memory pp)
+    internal view returns (Element memory) {
+        return power(base, BigInt.from_uint256(e), pp);
+    }
+
     function power(Element memory base, BigInt.BigInt memory e, Params memory pp)
     internal view returns (Element memory) {
         return Element(BigInt.prepare_modexp(base.n, e, pp.m));
     }
+
+    function power_and_reduce(Element memory base, uint256 e, Params memory pp)
+    internal view returns (Element memory) {
+        return reduce(power(base, e, pp), pp);
+    }
+
 
     // Reduce to canonical form
     function reduce(Element memory elmt, Params memory pp)
