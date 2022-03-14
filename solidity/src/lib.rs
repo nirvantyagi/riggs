@@ -200,23 +200,8 @@ pub fn get_poe_library_src() -> String {
     src
 }
 
-// pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>) -> String {
-//     let contract_path = format!(
-//         "{}/contracts/Pedersen.sol",
-//         env!("CARGO_MANIFEST_DIR")
-//     );
-
-//     let mut src_file = File::open(contract_path).unwrap();
-//     let mut src = String::new();
-//     src_file.read_to_string(&mut src).unwrap();
-//     src = src.replace("\"", "\\\"")
-//         .replace("<%ped_pp_g%>", &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()))
-//         .replace("<%ped_pp_h%>", &parse_g1_to_solidity_string::<Bn254>(&ped_pp.h.into_affine()));
-//     src
-// }
-
-pub fn get_pedersen_test_src(ped_pp: &PedersenParams<G>) -> String {
-    let contract_path = format!("{}/contracts/PedersenTest.sol", env!("CARGO_MANIFEST_DIR"));
+pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>) -> String {
+    let contract_path = format!("{}/contracts/Pedersen.sol", env!("CARGO_MANIFEST_DIR"));
 
     let mut src_file = File::open(contract_path).unwrap();
     let mut src = String::new();
@@ -233,6 +218,25 @@ pub fn get_pedersen_test_src(ped_pp: &PedersenParams<G>) -> String {
         );
     src
 }
+
+// pub fn get_pedersen_test_src(ped_pp: &PedersenParams<G>) -> String {
+//     let contract_path = format!("{}/contracts/PedersenTest.sol", env!("CARGO_MANIFEST_DIR"));
+
+//     let mut src_file = File::open(contract_path).unwrap();
+//     let mut src = String::new();
+//     src_file.read_to_string(&mut src).unwrap();
+//     src = src
+//         .replace("\"", "\\\"")
+//         .replace(
+//             "<%ped_pp_g%>",
+//             &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()),
+//         )
+//         .replace(
+//             "<%ped_pp_h%>",
+//             &parse_g1_to_solidity_string::<Bn254>(&ped_pp.h.into_affine()),
+//         );
+//     src
+// }
 
 pub fn get_fkps_test_src(fkps_pp: &[&[u8; 256]; 4]) -> String {
     let contract_path = format!("{}/contracts/FKPSTest.sol", env!("CARGO_MANIFEST_DIR"));

@@ -53,37 +53,8 @@ library FKPS {
     return (ct, mac);
   }
 
-  // function verOpenTest(Params memory pp, Comm memory comm, uint256 alpha, uint256 bid) 
-  // internal view returns (bool) {
-  //   // create RSA elements from the constant bytes
-  //   // RSA2048.Element memory h_rsa = RSA2048._new(h_bytes);
-  //   // RSA2048.Element memory z_rsa = RSA2048._new(z_bytes);
-  //   // RSA2048.Element memory N_rsa = RSA2048._new(N_bytes);
-
-  //   // 1. compute zhat = z_pow_a
-  //   RSA2048.Element memory z_hat = RSA2048.power(pp.z, alpha, pp.N);
-
-  //   // 2. obtain key as k = H(z, pp)
-  //   // TODO: add pp to the hash input
-  //   bytes32 k = keccak256(z_hat.as_bytes());
-  //   //bytes32 k = keccak256(hex"5f928c8f3775b44c8ee5643aff0da5cca0d483fc851a4d1ecc38914f8c90a429d577c2a5f19f62fc49bff442feb7f7aded344ae93c18704767ca0e1b2d3a9d4036f475813fd6100756872a1a192e0052397986df031b69793f009d8d7cf8140c8c6dff63ab9f65906f9842b3a0488846de4d50ebdfd9fc87682ba88186369d3beac3189a8d2f80e0106ab7bffdc489fd0beef3e9eff559b58e64153408c2f62646309dd935f4909fd42e11eb603e8fc8797bdf9e87c5104b516d821d68c1e97a07ce995aa3df233af99e7c7aa92ed4b3032c490380b66907c101bd7504007774f2b750e025f1d02c44bd0d86ac2052e40c47fdd6d6676208ee9f3585a4dd08f1");
-  //   //bytes32 k = keccak256(hex"00");
-
-  //   // 3. decrypt ciphertext
-  //   bytes32 pt;
-  //   bytes32 mac;
-  //   (pt, mac) = decrypt(k, comm.ct);
-
-  //   // 4. Check h^alpha
-  //   RSA2048.Element memory h_hat = RSA2048.power(pp.h, alpha, pp.N);
-
-  //   // 4. Check equality
-  //   return bid == uint256(pt) && h_hat.is_equal(comm.h_hat);
-  // }
-
-  function verOpen(Comm memory comm, uint256 alpha, uint256 bid) internal view returns (bool) {
-    Params memory pp = publicParams();
-
+  function verOpen(Comm memory comm, uint256 alpha, uint256 bid, Params memory pp) 
+  internal view returns (bool) {
     // 1. compute z_hat = z ^ a
     RSA2048.Element memory z_hat = RSA2048.power_and_reduce(pp.z, alpha, pp.rsa_pp);
 
