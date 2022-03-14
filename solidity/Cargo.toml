@@ -50,6 +50,7 @@ path = "benches/fkps.rs"
 harness = false
 
 [[bench]]
-name = "poe_verifier"
-path = "benches/poe_verifier.rs"
+name = "tc"
+path = "benches/tc.rs"
 harness = false
+
