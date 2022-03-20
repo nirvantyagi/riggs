@@ -1,9 +1,9 @@
 use crate::Error;
 use rsa::{
     bigint::BigInt,
+    hash_to_prime::HashToPrime,
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
     poe::{PoE, PoEParams, Proof as PoEProof},
-    hash_to_prime::{HashToPrime},
 };
 use std::{
     error::Error as ErrorTrait,
@@ -45,7 +45,9 @@ pub struct BasicTC<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashTo
     _hash_to_prime: PhantomData<H2P>,
 }
 
-impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> BasicTC<PoEP, RsaP, H, H2P> {
+impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
+    BasicTC<PoEP, RsaP, H, H2P>
+{
     pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
         let g = Hog::<RsaP>::generator();
         let y = g.power(&BigInt::from(2).pow(t));
@@ -78,7 +80,7 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> BasicTC
 
         let mut ad = ad.to_vec();
         ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
-        let ct = KeyCommittingAE::encrypt(rng, &key, &ad, m)?;
+        let ct = KeyCommittingAE::encrypt::<_, H>(rng, &key, &ad, m)?;
         Ok((Comm { x, ct }, Opening::SELF(r)))
     }
 
@@ -98,7 +100,7 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> BasicTC
 
         let mut ad = ad.to_vec();
         ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
-        let m = KeyCommittingAE::decrypt(&key, &ad, &comm.ct);
+        let m = KeyCommittingAE::decrypt::<H>(&key, &ad, &comm.ct);
 
         let opening = Opening::FORCE(y, proof);
         match m {
@@ -122,7 +124,7 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> BasicTC
                 key.truncate(16);
                 let mut ad = ad.to_vec();
                 ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
-                let dec_m = KeyCommittingAE::decrypt(&key, &ad, &comm.ct);
+                let dec_m = KeyCommittingAE::decrypt::<H>(&key, &ad, &comm.ct);
                 match (m, dec_m) {
                     (Some(m), Ok(dec_m)) => Ok(x_valid && m == &dec_m),
                     (None, Err(_)) => Ok(x_valid),
@@ -135,7 +137,7 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> BasicTC
                 key.truncate(16);
                 let mut ad = ad.to_vec();
                 ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
-                let dec_m = KeyCommittingAE::decrypt(&key, &ad, &comm.ct);
+                let dec_m = KeyCommittingAE::decrypt::<H>(&key, &ad, &comm.ct);
                 match (m, dec_m) {
                     (Some(m), Ok(dec_m)) => Ok(proof_valid && m == &dec_m),
                     (None, Err(_)) => Ok(proof_valid),
@@ -149,12 +151,58 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> BasicTC
 pub struct KeyCommittingAE;
 
 impl KeyCommittingAE {
-    pub fn encrypt<R: CryptoRng + Rng>(
+    // pub fn encrypt<R: CryptoRng + Rng>(
+    //     rng: &mut R,
+    //     key: &[u8],
+    //     ad: &[u8],
+    //     pt: &[u8],
+    // ) -> Result<Vec<u8>, Error> {
+    //     let ae = Aes128Gcm::new_from_slice(key)
+    //         .or(Err(Box::new(KeyCommittingAEError::InvalidKeyFormat)))?;
+    //     let mut nonce = [0u8; 12]; // 96-bit nonce
+    //     rng.fill(&mut nonce);
+
+    //     // Build up plaintext to encrypt in place
+    //     let mut ct = Vec::new();
+    //     // Prepend 128-bit zero block for key committing
+    //     // - https://eprint.iacr.org/2020/1491.pdf
+    //     // - https://www.usenix.org/system/files/sec22summer_albertini.pdf
+    //     ct.extend_from_slice(&[0u8; 16]);
+    //     ct.extend_from_slice(pt);
+    //     ae.encrypt_in_place(&nonce.into(), ad, &mut ct)
+    //         .map_err(|_| Box::new(KeyCommittingAEError::EncryptionFailed))?;
+
+    //     // Append nonce to end
+    //     ct.extend_from_slice(&nonce);
+    //     Ok(ct)
+    // }
+
+    // // TODO: Fix timing side channel of decryption error
+    // pub fn decrypt(key: &[u8], ad: &[u8], ct: &[u8]) -> Result<Vec<u8>, Error> {
+    //     let ae = Aes128Gcm::new_from_slice(key)
+    //         .or(Err(Box::new(KeyCommittingAEError::InvalidKeyFormat)))?;
+    //     let mut pt_zero_preprend = ct.to_vec();
+    //     // Parse nonce from end
+    //     let nonce = pt_zero_preprend.split_off(pt_zero_preprend.len() - 12);
+    //     ae.decrypt_in_place(Nonce::from_slice(&nonce), ad, &mut pt_zero_preprend)
+    //         .map_err(|_| Box::new(KeyCommittingAEError::DecryptionFailed))?;
+
+    //     // Verify key-committing 0-block
+    //     let pt = pt_zero_preprend.split_off(16);
+    //     if (pt_zero_preprend.len() != 16) || (pt_zero_preprend.iter().any(|b| *b != 0)) {
+    //         Err(Box::new(KeyCommittingAEError::DecryptionFailed))
+    //     } else {
+    //         Ok(pt)
+    //     }
+    // }
+
+    pub fn encrypt<R: CryptoRng + Rng, H: Digest>(
         rng: &mut R,
         key: &[u8],
         ad: &[u8],
         pt: &[u8],
     ) -> Result<Vec<u8>, Error> {
+        let mut pad = H::digest(&key.to_vec()).to_vec();
         let ae = Aes128Gcm::new_from_slice(key)
             .or(Err(Box::new(KeyCommittingAEError::InvalidKeyFormat)))?;
         let mut nonce = [0u8; 12]; // 96-bit nonce
@@ -172,11 +220,14 @@ impl KeyCommittingAE {
 
         // Append nonce to end
         ct.extend_from_slice(&nonce);
+
         Ok(ct)
     }
 
     // TODO: Fix timing side channel of decryption error
-    pub fn decrypt(key: &[u8], ad: &[u8], ct: &[u8]) -> Result<Vec<u8>, Error> {
+    pub fn decrypt<H: Digest>(key: &[u8], ad: &[u8], ct: &[u8]) -> Result<Vec<u8>, Error> {
+        assert!(H::output_size() >= 16);
+
         let ae = Aes128Gcm::new_from_slice(key)
             .or(Err(Box::new(KeyCommittingAEError::InvalidKeyFormat)))?;
         let mut pt_zero_preprend = ct.to_vec();
@@ -224,9 +275,10 @@ mod tests {
     use super::*;
     use once_cell::sync::Lazy;
     use rand::{rngs::StdRng, SeedableRng};
-    use sha3::Sha3_256;
+    use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
+    //use sha3::Sha3_256;
+    use sha3::Keccak256;
     use std::str::FromStr;
-    use rsa::hash_to_prime::pocklington::{PocklingtonHash, PocklingtonCertParams};
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
@@ -261,7 +313,12 @@ mod tests {
         const INCLUDE_SOLIDITY_WITNESSES: bool = false;
     }
 
-    pub type TC = BasicTC<TestPoEParams, TestRsaParams, Sha3_256, PocklingtonHash<TestPocklingtonParams, Sha3_256>>;
+    pub type TC = BasicTC<
+        TestPoEParams,
+        TestRsaParams,
+        Keccak256,
+        PocklingtonHash<TestPocklingtonParams, Keccak256>,
+    >;
 
     #[test]
     fn key_committing_ae_test() {
@@ -273,22 +330,22 @@ mod tests {
         let mut ad = [0u8; 32];
         rng.fill(&mut ad);
 
-        let ct = KeyCommittingAE::encrypt(&mut rng, &key, &ad, &pt).unwrap();
-        let dec_ct = KeyCommittingAE::decrypt(&key, &ad, &ct).unwrap();
+        let ct = KeyCommittingAE::encrypt::<_, Keccak256>(&mut rng, &key, &ad, &pt).unwrap();
+        let dec_ct = KeyCommittingAE::decrypt::<Keccak256>(&key, &ad, &ct).unwrap();
         assert!(pt.iter().eq(dec_ct.iter()));
 
         let mut key_bad = key.to_vec();
         key_bad[0] = key_bad[0] + 1u8;
-        assert!(KeyCommittingAE::decrypt(&key_bad, &ad, &ct).is_err());
+        assert!(KeyCommittingAE::decrypt::<Keccak256>(&key_bad, &ad, &ct).is_err());
 
         let mut ad_bad = ad.to_vec();
         ad_bad[0] = ad_bad[0] + 1u8;
-        assert!(KeyCommittingAE::decrypt(&key, &ad_bad, &ct).is_err());
+        assert!(KeyCommittingAE::decrypt::<Keccak256>(&key, &ad_bad, &ct).is_err());
 
         let mut nonce_bad = ct.to_vec();
         let l = nonce_bad.len();
         nonce_bad[l - 1] = nonce_bad[l - 1] + 1u8;
-        assert!(KeyCommittingAE::decrypt(&key, &ad, &nonce_bad).is_err());
+        assert!(KeyCommittingAE::decrypt::<Keccak256>(&key, &ad, &nonce_bad).is_err());
     }
 
     #[test]
