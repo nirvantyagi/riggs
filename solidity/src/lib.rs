@@ -3,6 +3,7 @@ use ark_ec::{PairingEngine, ProjectiveCurve};
 
 use digest::Digest;
 use ethabi::Token;
+use num_bigint::{RandomBits, Sign};
 use num_traits::Signed;
 use primitive_types::U256;
 use sha3::digest;
@@ -22,6 +23,21 @@ use solidity_test_utils::{
     encode_field_element, encode_group_element, parse_bytes_to_solidity_string,
     parse_g1_to_solidity_string,
 };
+
+// use rsa::hog::TestRsaParams;
+use once_cell::sync::Lazy;
+use std::{ops::Deref, str::FromStr};
+use timed_commitments::basic_tc;
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TestRsaParams;
+
+impl RsaGroupParams for TestRsaParams {
+    const G: Lazy<BigInt> = Lazy::new(|| BigInt::from(2));
+    const M: Lazy<BigInt> = Lazy::new(|| {
+        BigInt::from_str("25195908475657893494027183240048398571429282126204032027777137836043662020707595556264018525880784406918290641249515082189298559149176184502808489120072844992687392807287776735971418347270261896375014971824691165077613379859095700097330459748808428401797429100642458691817195118746121515172654632282216869987549182422433637259085141865462043576798423387184774447920739934236584823824281198163815010674810451660377306056201619676256133844143603833904414952634432190114657544454178424020924616515723350778707749817125772467962926386356373289912154831438167899885040445364023527381951378636564391212010397122822120720357").unwrap()
+    });
+}
 
 pub fn get_bn254_library_src() -> String {
     let contract_path = format!("{}/contracts/BN254.sol", env!("CARGO_MANIFEST_DIR"));
@@ -114,6 +130,55 @@ pub fn get_bigint_library_src() -> String {
     src = src.replace("\"", "\\\"");
     src
 }
+
+// pub fn get_fkps_library_src(fkps_pp: &basic_tc::TimeParams<TestRsaParams>, m_len: usize) -> String {
+//     let contract_path = format!("{}/contracts/FKPS.sol", env!("CARGO_MANIFEST_DIR"));
+
+//     let h: BigInt = fkps_pp.x.n.clone();
+//     let z: BigInt = fkps_pp.y.n.clone();
+
+//     let mut src_file = File::open(contract_path).unwrap();
+//     let mut src = String::new();
+//     src_file.read_to_string(&mut src).unwrap();
+//     src = src
+//         .replace("\"", "\\\"")
+//         .replace("<%pp_m_len%>", &format!("{}", m_len / 256))
+//         .replace("<%pp_h_populate%>", &{
+//             let mut populate_h = String::new();
+//             for (i, u256digit) in h.to_u64_digits().1.chunks(4).rev().enumerate() {
+//                 populate_h.push_str(&format!(
+//                     "h_u256_digits[{}] = 0x{}{}{}{};",
+//                     i,
+//                     hex::encode(&u256digit[3].to_be_bytes()),
+//                     hex::encode(&u256digit[2].to_be_bytes()),
+//                     hex::encode(&u256digit[1].to_be_bytes()),
+//                     hex::encode(&u256digit[0].to_be_bytes()),
+//                 ));
+//                 if i < h.to_u64_digits().1.len() / 4 - 1 {
+//                     populate_h.push_str("\n        ");
+//                 }
+//             }
+//             populate_h
+//         })
+//         .replace("<%pp_z_populate%>", &{
+//             let mut populate_z = String::new();
+//             for (i, u256digit) in z.to_u64_digits().1.chunks(4).rev().enumerate() {
+//                 populate_z.push_str(&format!(
+//                     "z_u256_digits[{}] = 0x{}{}{}{};",
+//                     i,
+//                     hex::encode(&u256digit[3].to_be_bytes()),
+//                     hex::encode(&u256digit[2].to_be_bytes()),
+//                     hex::encode(&u256digit[1].to_be_bytes()),
+//                     hex::encode(&u256digit[0].to_be_bytes()),
+//                 ));
+//                 if i < h.to_u64_digits().1.len() / 4 - 1 {
+//                     populate_z.push_str("\n        ");
+//                 }
+//             }
+//             populate_z
+//         });
+//     src
+// }
 
 pub fn get_fkps_library_src(h: &BigInt, z: &BigInt, m_len: usize) -> String {
     let contract_path = format!("{}/contracts/FKPS.sol", env!("CARGO_MANIFEST_DIR"));

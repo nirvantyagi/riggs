@@ -22,6 +22,8 @@ num-traits = { version = "0.2" }
 solidity_test_utils = { path = "../solidity_test_utils" }
 range_proofs = { path = "../range_proofs" }
 rsa = { path = "../rsa" }
+timed_commitments = { path = "../timed_commitments" }
+once_cell = { version = "1.9" }
 
 [dev-dependencies]
 rand = { version = "0.8" }
@@ -47,10 +49,5 @@ harness = false
 [[bench]]
 name = "fkps"
 path = "benches/fkps.rs"
-harness = false
-
-[[bench]]
-name = "tc"
-path = "benches/tc.rs"
 harness = false
 

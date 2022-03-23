@@ -46,11 +46,13 @@ library FKPS {
     pp.z.n.val = abi.encodePacked(z_u256_digits);
   }
 
-  function decrypt(bytes32 key, bytes32 pt) internal pure returns (bytes32, bytes32) {
-    bytes32 pad = keccak256(bytes.concat(key, bytes32(0)));
-    bytes32 ct = pt ^ pad;
-    bytes32 mac = keccak256(bytes.concat(key, ct));
-    return (ct, mac);
+  function decrypt(bytes32 key, bytes32 ct) internal pure returns (bytes32, bytes32) {
+    // bytes32 pad = keccak256(bytes.concat(key, bytes32(0)));
+    bytes32 pad = keccak256(bytes.concat(key));
+    bytes32 pt = ct ^ pad;
+    bytes32 mac = keccak256(bytes.concat(key, pt));
+    // return (ct, mac);
+    return (pt, mac);
   }
 
   function verOpen(Comm memory comm, uint256 alpha, uint256 bid, Params memory pp) 
@@ -72,6 +74,7 @@ library FKPS {
 
     // 4. Check equality
     return bid == uint256(pt) && h_hat.eq(comm.h_hat);
+    // return z_hat.n.val;
   }
 
 }

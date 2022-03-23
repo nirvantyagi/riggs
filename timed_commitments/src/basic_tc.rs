@@ -45,11 +45,21 @@ pub struct BasicTC<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashTo
     _hash_to_prime: PhantomData<H2P>,
 }
 
+fn pad_32(input: &[u8]) -> [u8; 32] {
+    let mut padded: [u8; 32] = [0; 32];
+    let m = std::cmp::min(32, input.len());
+    for i in 0..m {
+        padded[31 - i] = input[input.len() - 1 - i];
+    }
+    return padded;
+}
+
 impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
     BasicTC<PoEP, RsaP, H, H2P>
 {
     pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
-        let g = Hog::<RsaP>::generator();
+        let two = Hog::<RsaP>::generator();
+        let g = two.power(&BigInt::from(2).pow(t));
         let y = g.power(&BigInt::from(2).pow(t));
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&g, &y, t)?;
         Ok((TimeParams { t, x: g, y }, proof))
@@ -74,13 +84,16 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         let y = pp.y.power(&r);
 
         // Derive key from repeated square
-        assert!(H::output_size() >= 16);
-        let mut key = H::digest(&y.n.to_bytes_le().1).to_vec();
-        key.truncate(16);
+        assert!(H::output_size() >= 32);
+        let key = H::digest(&y.n.to_bytes_be().1).to_vec();
+        // key.truncate(16);
+
+        let padded_msg = pad_32(m);
 
         let mut ad = ad.to_vec();
         ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
-        let ct = KeyCommittingAE::encrypt::<_, H>(rng, &key, &ad, m)?;
+        let ct = KeyCommittingAE::encrypt::<H>(&key, &ad, &padded_msg)?;
+        //let ct = m.to_vec();
         Ok((Comm { x, ct }, Opening::SELF(r)))
     }
 
@@ -94,9 +107,9 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&comm.x, &y, pp.t)?;
 
         // Derive key from repeated square
-        assert!(H::output_size() >= 16);
-        let mut key = H::digest(&y.n.to_bytes_le().1).to_vec();
-        key.truncate(16);
+        assert!(H::output_size() >= 32);
+        let key = H::digest(&y.n.to_bytes_be().1).to_vec();
+        // key.truncate(16);
 
         let mut ad = ad.to_vec();
         ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
@@ -120,8 +133,8 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
             Opening::SELF(r) => {
                 let x_valid = pp.x.power(r) == comm.x;
                 let y = pp.y.power(r);
-                let mut key = H::digest(&y.n.to_bytes_le().1).to_vec();
-                key.truncate(16);
+                let mut key = H::digest(&y.n.to_bytes_be().1).to_vec();
+                // key.truncate(16);
                 let mut ad = ad.to_vec();
                 ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
                 let dec_m = KeyCommittingAE::decrypt::<H>(&key, &ad, &comm.ct);
@@ -133,8 +146,8 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
             }
             Opening::FORCE(y, proof) => {
                 let proof_valid = PoE::<PoEP, RsaP, H2P>::verify(&comm.x, y, pp.t, proof)?;
-                let mut key = H::digest(&y.n.to_bytes_le().1).to_vec();
-                key.truncate(16);
+                let mut key = H::digest(&y.n.to_bytes_be().1).to_vec();
+                // key.truncate(16);
                 let mut ad = ad.to_vec();
                 ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
                 let dec_m = KeyCommittingAE::decrypt::<H>(&key, &ad, &comm.ct);
@@ -196,30 +209,18 @@ impl KeyCommittingAE {
     //     }
     // }
 
-    pub fn encrypt<R: CryptoRng + Rng, H: Digest>(
-        rng: &mut R,
-        key: &[u8],
-        ad: &[u8],
-        pt: &[u8],
-    ) -> Result<Vec<u8>, Error> {
-        let mut pad = H::digest(&key.to_vec()).to_vec();
-        let ae = Aes128Gcm::new_from_slice(key)
-            .or(Err(Box::new(KeyCommittingAEError::InvalidKeyFormat)))?;
-        let mut nonce = [0u8; 12]; // 96-bit nonce
-        rng.fill(&mut nonce);
+    pub fn encrypt<H: Digest>(key: &[u8], ad: &[u8], pt: &[u8]) -> Result<Vec<u8>, Error> {
+        let pad = H::digest(&key.to_vec()).to_vec();
 
-        // Build up plaintext to encrypt in place
-        let mut ct = Vec::new();
-        // Prepend 128-bit zero block for key committing
-        // - https://eprint.iacr.org/2020/1491.pdf
-        // - https://www.usenix.org/system/files/sec22summer_albertini.pdf
-        ct.extend_from_slice(&[0u8; 16]);
-        ct.extend_from_slice(pt);
-        ae.encrypt_in_place(&nonce.into(), ad, &mut ct)
-            .map_err(|_| Box::new(KeyCommittingAEError::EncryptionFailed))?;
+        let ct: Vec<u8> = pad
+            .iter()
+            .zip(pt.iter())
+            .map(|(&x1, &x2)| x1 ^ x2)
+            .collect();
 
-        // Append nonce to end
-        ct.extend_from_slice(&nonce);
+        // let ct_key = [ct.clone(), key.to_vec()].concat();
+        // let mac = H::digest(&ct_key).to_vec();
+        // Ok(key.to_vec())
 
         Ok(ct)
     }
@@ -228,21 +229,9 @@ impl KeyCommittingAE {
     pub fn decrypt<H: Digest>(key: &[u8], ad: &[u8], ct: &[u8]) -> Result<Vec<u8>, Error> {
         assert!(H::output_size() >= 16);
 
-        let ae = Aes128Gcm::new_from_slice(key)
-            .or(Err(Box::new(KeyCommittingAEError::InvalidKeyFormat)))?;
-        let mut pt_zero_preprend = ct.to_vec();
-        // Parse nonce from end
-        let nonce = pt_zero_preprend.split_off(pt_zero_preprend.len() - 12);
-        ae.decrypt_in_place(Nonce::from_slice(&nonce), ad, &mut pt_zero_preprend)
-            .map_err(|_| Box::new(KeyCommittingAEError::DecryptionFailed))?;
+        let pt = KeyCommittingAE::encrypt::<H>(key, ad, ct).unwrap();
 
-        // Verify key-committing 0-block
-        let pt = pt_zero_preprend.split_off(16);
-        if (pt_zero_preprend.len() != 16) || (pt_zero_preprend.iter().any(|b| *b != 0)) {
-            Err(Box::new(KeyCommittingAEError::DecryptionFailed))
-        } else {
-            Ok(pt)
-        }
+        Ok(pt)
     }
 }
 
@@ -330,22 +319,24 @@ mod tests {
         let mut ad = [0u8; 32];
         rng.fill(&mut ad);
 
-        let ct = KeyCommittingAE::encrypt::<_, Keccak256>(&mut rng, &key, &ad, &pt).unwrap();
+        let ct = KeyCommittingAE::encrypt::<Keccak256>(&key, &ad, &pt).unwrap();
         let dec_ct = KeyCommittingAE::decrypt::<Keccak256>(&key, &ad, &ct).unwrap();
         assert!(pt.iter().eq(dec_ct.iter()));
 
-        let mut key_bad = key.to_vec();
-        key_bad[0] = key_bad[0] + 1u8;
-        assert!(KeyCommittingAE::decrypt::<Keccak256>(&key_bad, &ad, &ct).is_err());
+        // TODO: add "bad" tests when incorporating ad
 
-        let mut ad_bad = ad.to_vec();
-        ad_bad[0] = ad_bad[0] + 1u8;
-        assert!(KeyCommittingAE::decrypt::<Keccak256>(&key, &ad_bad, &ct).is_err());
+        // let mut key_bad = key.to_vec();
+        // key_bad[0] = key_bad[0] + 1u8;
+        // assert!(KeyCommittingAE::decrypt::<Keccak256>(&key_bad, &ad, &ct).is_err());
 
-        let mut nonce_bad = ct.to_vec();
-        let l = nonce_bad.len();
-        nonce_bad[l - 1] = nonce_bad[l - 1] + 1u8;
-        assert!(KeyCommittingAE::decrypt::<Keccak256>(&key, &ad, &nonce_bad).is_err());
+        // let mut ad_bad = ad.to_vec();
+        // ad_bad[0] = ad_bad[0] + 1u8;
+        // assert!(KeyCommittingAE::decrypt::<Keccak256>(&key, &ad_bad, &ct).is_err());
+
+        // let mut nonce_bad = ct.to_vec();
+        // let l = nonce_bad.len();
+        // nonce_bad[l - 1] = nonce_bad[l - 1] + 1u8;
+        // assert!(KeyCommittingAE::decrypt::<Keccak256>(&key, &ad, &nonce_bad).is_err());
     }
 
     #[test]
@@ -366,9 +357,10 @@ mod tests {
         assert!(TC::ver_open(&pp, &comm, &ad, &force_m, &force_opening).unwrap());
         assert_eq!(force_m, Some(m.to_vec()));
 
-        let mut ad_bad = ad.to_vec();
-        ad_bad[0] = ad_bad[0] + 1u8;
-        assert!(!TC::ver_open(&pp, &comm, &ad_bad, &Some(m.to_vec()), &self_opening).unwrap());
-        assert!(!TC::ver_open(&pp, &comm, &ad_bad, &force_m, &force_opening).unwrap());
+        // TODO: add "bad" tests when incorporating ad
+        // let mut ad_bad = ad.to_vec();
+        // ad_bad[0] = ad_bad[0] + 1u8;
+        // assert!(!TC::ver_open(&pp, &comm, &ad_bad, &Some(m.to_vec()), &self_opening).unwrap());
+        // assert!(!TC::ver_open(&pp, &comm, &ad_bad, &force_m, &force_opening).unwrap());
     }
 }

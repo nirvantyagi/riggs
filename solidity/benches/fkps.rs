@@ -13,13 +13,18 @@ use solidity_test_utils::{
 
 use rsa::{
   bigint::BigInt,
+  hash_to_prime::HashToPrime,
   hog::{RsaGroupParams, RsaHiddenOrderGroup},
+  poe::{PoE, PoEParams, Proof as PoEProof},
 };
 
 use solidity::{
   encode_rsa_element, get_bigint_library_src, get_filename_src, get_fkps_library_src,
   get_rsa_library_src,
 };
+
+use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
+use timed_commitments::basic_tc;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
@@ -36,6 +41,28 @@ pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 const MOD_BITS: usize = 2048;
 
 use hex::ToHex;
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TestPoEParams;
+
+impl PoEParams for TestPoEParams {
+  const HASH_TO_PRIME_ENTROPY: usize = 128;
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TestPocklingtonParams;
+impl PocklingtonCertParams for TestPocklingtonParams {
+  const NONCE_SIZE: usize = 16;
+  const MAX_STEPS: usize = 5;
+  const INCLUDE_SOLIDITY_WITNESSES: bool = false;
+}
+
+pub type TC = basic_tc::BasicTC<
+  TestPoEParams,
+  TestRsaParams,
+  Keccak256,
+  PocklingtonHash<TestPocklingtonParams, Keccak256>,
+>;
 
 fn pad_32(input: &[u8]) -> [u8; 32] {
   let mut padded: [u8; 32] = [0; 32];
@@ -71,12 +98,40 @@ fn main() {
   .unwrap();
   let z = Hog::from_nat(z_bigint.clone());
 
+  // create sample bid and FKPS commitment
+  // 1. Sample alpha
+  let bid = BigInt::from(10000);
+  let bid_clone = BigInt::from(10000);
+  let alpha = BigInt::from(10000);
+
+  // CONNECT with BasicTC library
+  let (fkps_pp, fkps_pp_proof) = TC::gen_time_params(40).unwrap();
+  // assert!(TC::ver_time_params(&fkps_pp, &fkps_pp_proof).unwrap());
+  let mut ad = [0u8; 32];
+  let (fkps_comm, fkps_opening) =
+    TC::commit(&mut rng, &fkps_pp, &bid.to_bytes_be().1, &ad).unwrap();
+
+  let open_r = match &fkps_opening {
+    basic_tc::Opening::SELF(r) => r.to_bytes_be().1,
+    basic_tc::Opening::FORCE(y, _) => y.n.to_bytes_be().1,
+  };
+
+  // assert!(TC::ver_open(
+  //   &fkps_pp,
+  //   &fkps_comm,
+  //   &ad,
+  //   &Some(bid.to_bytes_be().1.to_vec()),
+  //   &fkps_opening
+  // )
+  // .unwrap());
+
   println!("Compiling contract...");
 
   // Compile contract from template
   let bigint_src = get_bigint_library_src();
   let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS);
-  let fkps_src = get_fkps_library_src(&h_bigint, &z_bigint, MOD_BITS);
+  // let fkps_src = get_fkps_library_src(&h_bigint, &z_bigint, MOD_BITS);
+  let fkps_src = get_fkps_library_src(&fkps_pp.x.n, &fkps_pp.y.n, MOD_BITS);
   let fkps_test_src = get_filename_src("FKPSTest.sol");
 
   let solc_config = r#"
@@ -105,11 +160,6 @@ fn main() {
     .replace("<%src%>", &fkps_test_src);
 
   let contract = Contract::compile_from_config(&solc_config, "FKPSTest").unwrap();
-
-  // create sample bid and FKPS commitment
-  // 1. Sample alpha
-  let bid = BigInt::from(10000);
-  let alpha = BigInt::from(10000);
 
   // 2. Compute h^alpha, z^alpha
   let h_hat = h.power(&alpha);
@@ -160,9 +210,12 @@ fn main() {
 
   // Call verify function on contract
   let input = vec![
-    encode_rsa_element(&h_hat),
-    encode_bytes(&ct),
-    encode_int_from_bytes(&alpha.to_bytes_be().1),
+    // encode_rsa_element(&h_hat),
+    // encode_bytes(&ct),
+    // encode_int_from_bytes(&alpha.to_bytes_be().1),
+    encode_rsa_element(&fkps_comm.x),
+    encode_bytes(&fkps_comm.ct),
+    encode_int_from_bytes(&open_r),
     encode_int_from_bytes(&bid.to_bytes_be().1),
   ];
 
@@ -175,10 +228,43 @@ fn main() {
       &deployer,
     )
     .unwrap();
-  // println!("{:?}", &result.out.encode_hex::<String>());
+
   assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
   println!("FKPS verification costs {:?} gas", result.gas);
 
+  // IGNORE MESS BELOW
+
+  // println!("PT from solidity {:?}", &result.out.encode_hex::<String>());
   //   &pad_256(&z_hat.n.to_bytes_be().1).encode_hex::<String>()
-  // println!("Key: {:?}", &key.encode_hex::<String>());
+  // println!(
+  //   "h_hat: {:?}",
+  //   &fkps_comm.x.n.to_bytes_be().1.encode_hex::<String>()
+  // );
+
+  //  println!(
+  //   "CT from rust is: {:?}",
+  //   &fkps_comm.ct.encode_hex::<String>()
+  // );
+
+  // let mut zhasher = Keccak256::new();
+  // let zero: &[u8] = &[0];
+  // let z_hat_string_solidity = "0681af53be16307765407990ae6548f667f2f51ef63b17e7a674f6811fab13bd5cd3dac0d0ab68696d5a02ad0fafaf9453e0fd50691117ae580b056fb55a43616a57e35f8edd72973e03e413f561430b8abaa6db834fc81bfc34a087e878c654309c9da5723adb36b9732eb32f4c5107567b62d3ab21427fc1959e8169ab3a793ab19302b283404c2f36979ff6a8508bc98875440ed3f38b085c0c4d1dfd7344244fd16ff475c7bc03bc7e2775432477c80be9624428243243ab7cc55a4888f16afd34bb938d4db1a906d8a6581d5ddb1b72b12b95fea9fe430a3a7afd90f20cd55b541476391e626087be04b7267af2ffcc029474ffd7d41d7aa27285a87c57";
+  // // zhasher.update(&fkps_comm.x.n.to_bytes_be().1.encode_hex::<String>());
+  // zhasher.update(decode_hex(z_hat_string_solidity).unwrap());
+  // let zhash = zhasher.finalize();
+  // println!("key should be: {:?}", &zhash.encode_hex::<String>());
+  // println!("key is: {:?}", &fkps_comm.ct.encode_hex::<String>());
+
+  // println!(
+  //   "try digest directly: {:?}",
+  //   &Keccak256::digest(&zero).encode_hex::<String>()
+  // );
+  // // use the following beloe for extra decoding functionality
+  // // use std::{fmt::Write, num::ParseIntError};
+  // // pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
+  // //   (0..s.len())
+  // //     .step_by(2)
+  // //     .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
+  // //     .collect()
+  // // }
 }
