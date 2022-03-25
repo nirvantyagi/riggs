@@ -101,12 +101,11 @@ fn main() {
   // create sample bid and FKPS commitment
   // 1. Sample alpha
   let bid = BigInt::from(10000);
-  let bid_clone = BigInt::from(10000);
   let alpha = BigInt::from(10000);
 
   // CONNECT with BasicTC library
   let (fkps_pp, fkps_pp_proof) = TC::gen_time_params(40).unwrap();
-  // assert!(TC::ver_time_params(&fkps_pp, &fkps_pp_proof).unwrap());
+  assert!(TC::ver_time_params(&fkps_pp, &fkps_pp_proof).unwrap());
   let mut ad = [0u8; 32];
   let (fkps_comm, fkps_opening) =
     TC::commit(&mut rng, &fkps_pp, &bid.to_bytes_be().1, &ad).unwrap();
@@ -161,35 +160,35 @@ fn main() {
 
   let contract = Contract::compile_from_config(&solc_config, "FKPSTest").unwrap();
 
-  // 2. Compute h^alpha, z^alpha
-  let h_hat = h.power(&alpha);
-  let z_hat = z.power(&alpha);
+  // // 2. Compute h^alpha, z^alpha
+  // let h_hat = h.power(&alpha);
+  // let z_hat = z.power(&alpha);
 
-  // 3. Compute k = Hash(z_hat, pp)
-  // TODO: add pp to the hash
-  let mut hasher = Keccak256::new();
-  let z_hat_bytes = pad_256(&z_hat.n.to_bytes_be().1);
-  hasher.update(&z_hat_bytes);
-  let key = hasher.finalize();
+  // // 3. Compute k = Hash(z_hat, pp)
+  // // TODO: add pp to the hash
+  // let mut hasher = Keccak256::new();
+  // let z_hat_bytes = pad_256(&z_hat.n.to_bytes_be().1);
+  // hasher.update(&z_hat_bytes);
+  // let key = hasher.finalize();
 
-  // 4. Compute ciphertext
-  // The cipher used here is hash-to-cipher
-  let mut pad_hasher = Keccak256::new();
-  let zeros = &[
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  ];
-  let concat: Vec<u8> = [key.to_vec(), zeros.to_vec()].concat();
-  pad_hasher.update(&concat);
-  let pad = pad_hasher.finalize();
+  // // 4. Compute ciphertext
+  // // The cipher used here is hash-to-cipher
+  // let mut pad_hasher = Keccak256::new();
+  // let zeros = &[
+  //   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  //   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  // ];
+  // let concat: Vec<u8> = [key.to_vec(), zeros.to_vec()].concat();
+  // pad_hasher.update(&concat);
+  // let pad = pad_hasher.finalize();
 
-  let bid_256 = pad_32(&bid.to_bytes_be().1);
+  // let bid_256 = pad_32(&bid.to_bytes_be().1);
 
-  let ct: Vec<u8> = bid_256
-    .iter()
-    .zip(pad.iter())
-    .map(|(&x1, &x2)| x1 ^ x2)
-    .collect();
+  // let ct: Vec<u8> = bid_256
+  //   .iter()
+  //   .zip(pad.iter())
+  //   .map(|(&x1, &x2)| x1 ^ x2)
+  //   .collect();
 
   // Thus, the FKPS commitment is: (h_hat, ct)
 

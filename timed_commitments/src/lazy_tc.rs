@@ -18,14 +18,14 @@ use std::marker::PhantomData;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Comm<G: ProjectiveCurve, RsaP: RsaGroupParams> {
-    ped_comm: G,
-    tc_comm: TCComm<RsaP>,
+    pub ped_comm: G,
+    pub tc_comm: TCComm<RsaP>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Opening<RsaP: RsaGroupParams, H2P: HashToPrime> {
-    tc_opening: TCOpening<RsaP, H2P>,
-    tc_m: Option<Vec<u8>>,
+    pub tc_opening: TCOpening<RsaP, H2P>,
+    pub tc_m: Option<Vec<u8>>,
 }
 pub struct LazyTC<
     G: ProjectiveCurve,
@@ -146,7 +146,7 @@ mod tests {
     use once_cell::sync::Lazy;
     use rand::{rngs::StdRng, SeedableRng};
     use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
-    use sha3::Sha3_256;
+    use sha3::Keccak256;
     use std::str::FromStr;
 
     use rsa::hog::RsaHiddenOrderGroup;
@@ -188,8 +188,8 @@ mod tests {
         G,
         TestPoEParams,
         TestRsaParams,
-        Sha3_256,
-        PocklingtonHash<TestPocklingtonParams, Sha3_256>,
+        Keccak256,
+        PocklingtonHash<TestPocklingtonParams, Keccak256>,
     >;
 
     #[test]
