@@ -68,16 +68,16 @@ library FKPS {
 
     bool ret_value = h_hat.eq(comm.h_hat);
 
-    return ret_value;
+    // uint num_blocks = (message.length)/32;
+    // if (message.length % 32 != 0) {
+    //   num_blocks +=1;
+    // }
 
-    uint num_blocks = (message.length)/32;
-    if (message.length % 32 != 0) {
-      num_blocks +=1;
-    }
+    // for (uint i=0; i<num_blocks; i++) {
+    //   ret_value = ret_value && (bytesToBytes32(message, i*32) == pt[i]);
+    // }
 
-    for (uint i=0; i<num_blocks; i++) {
-      ret_value = ret_value && (bytesToBytes32(message, i*32) == pt[i]);
-    }
+    ret_value = ret_value && compare_arrays(pt, message);
     return ret_value;
   }
 
@@ -103,6 +103,27 @@ library FKPS {
     }
 
     return pt;
+  }
+
+  function compare_arrays(bytes32[] memory pt, bytes memory message) 
+  private pure returns (bool){
+    uint num_blocks = (message.length)/32;
+    if (message.length % 32 != 0) {
+      num_blocks +=1;
+    }
+    bool ret_value = true;
+    for (uint i=0; i<num_blocks-1; i++) {
+      ret_value = ret_value && (bytesToBytes32(message, i*32) == pt[i]);
+    }
+
+    // now compare last block
+    bytes memory lb = abi.encodePacked(pt[num_blocks-1]);
+    uint lb_offset = (num_blocks-1)*32;
+    for (uint j=0; j<(message.length % 32); j++) {
+      ret_value = ret_value && (lb[j] == message[lb_offset+j]);
+    }
+
+    return ret_value;
   }
 
   function bytesToBytes32(bytes memory b, uint offset) private pure returns (bytes32) {
