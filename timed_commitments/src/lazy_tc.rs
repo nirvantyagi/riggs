@@ -1,11 +1,11 @@
-use ark_ec::ProjectiveCurve;
-use ark_ff::{biginteger::BigInteger, PrimeField};
-
 use crate::{
     basic_tc::{BasicTC, Comm as TCComm, Opening as TCOpening, TimeParams},
     Error, PedersenComm, PedersenParams,
 };
+use ark_ec::ProjectiveCurve;
+use ark_ff::{biginteger::BigInteger, PrimeField};
 use digest::Digest;
+use hex::ToHex;
 use num_bigint::Sign;
 use rand::{CryptoRng, Rng};
 use rsa::{

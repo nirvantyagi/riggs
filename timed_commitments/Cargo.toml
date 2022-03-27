@@ -13,6 +13,8 @@ ark-snark = { version = "0.3" }
 ark-sponge = { version = "0.3", features = ["r1cs"] }
 ark-r1cs-std = { version = "0.3" }
 ark-relations = { version = "0.3" }
+primitive-types = { version = "0.10", features = ["rlp"] }
+hex = { version = "0.4" }
 
 # dev-dependencies (https://github.com/rust-lang/cargo/issues/6915)
 ark-groth16 = { version = "0.3" }

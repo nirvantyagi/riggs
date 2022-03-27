@@ -24,13 +24,16 @@ library TC {
   }
 
   // proof has b +  alpha for FKPS + r for PC  
-  function verOpen(Comm memory comm, uint256 alpha, uint b, uint r, 
+  function verOpen(Comm memory comm, uint256 alpha, bytes memory tc_m, uint bid, uint r, 
   Params memory pp) internal view returns (bool) {
     bool fkps_check = true;
     bool pc_check = true;
-    fkps_check = FKPS.verOpen(comm.fkps, alpha, b, pp.fkps_pp);
-    pc_check = Pedersen.verify(comm.ped, b, r, pp.ped_pp);
-    return fkps_check && pc_check;
+    
+    pc_check = Pedersen.verify(comm.ped, bid, r, pp.ped_pp);
+
+    fkps_check = FKPS.verOpen(comm.fkps, alpha, tc_m, pp.fkps_pp);
+    
+    return pc_check && fkps_check;
   }
   
 }

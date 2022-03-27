@@ -1,4 +1,5 @@
 use crate::Error;
+use hex::ToHex;
 use rsa::{
     bigint::BigInt,
     hash_to_prime::HashToPrime,
@@ -17,6 +18,8 @@ use num_bigint::RandBigInt;
 use rand::{CryptoRng, Rng};
 
 pub type Hog<P> = RsaHiddenOrderGroup<P>;
+
+use primitive_types::U256;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TimeParams<RsaP: RsaGroupParams> {
@@ -54,6 +57,12 @@ fn pad_32(input: &[u8]) -> [u8; 32] {
     return padded;
 }
 
+pub fn to_be_bytes(n: &U256) -> [u8; 32] {
+    let mut input_bytes: [u8; 32] = [0; 32];
+    n.to_big_endian(&mut input_bytes);
+    input_bytes
+}
+
 impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
     BasicTC<PoEP, RsaP, H, H2P>
 {
@@ -88,11 +97,9 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         let key = H::digest(&y.n.to_bytes_be().1).to_vec();
         // key.truncate(16);
 
-        let padded_msg = pad_32(m);
-
         let mut ad = ad.to_vec();
         ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
-        let ct = KeyCommittingAE::encrypt::<H>(&key, &ad, &padded_msg)?;
+        let ct = KeyCommittingAE::encrypt::<H>(&key, &ad, &m)?;
         //let ct = m.to_vec();
         Ok((Comm { x, ct }, Opening::SELF(r)))
     }
@@ -210,11 +217,17 @@ impl KeyCommittingAE {
     // }
 
     pub fn encrypt<H: Digest>(key: &[u8], ad: &[u8], pt: &[u8]) -> Result<Vec<u8>, Error> {
-        let pad = H::digest(&key.to_vec()).to_vec();
+        let mut pad = H::digest(&[key, &[00]].concat()).to_vec();
 
-        let ct: Vec<u8> = pad
+        let num_blocks = ((pt.len() as f64) / (32_f64)).ceil() as i32;
+
+        for blk in 1..num_blocks {
+            pad.append(&mut H::digest(&[key, &[blk as u8]].concat()).to_vec());
+        }
+
+        let ct: Vec<u8> = pt
             .iter()
-            .zip(pt.iter())
+            .zip(pad.iter())
             .map(|(&x1, &x2)| x1 ^ x2)
             .collect();
 

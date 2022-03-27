@@ -16,7 +16,7 @@ library FKPS {
 
   struct Comm {
     RSA2048.Element h_hat;    
-    bytes32 ct;
+    bytes ct;
   }
 
   // public parameters
@@ -46,16 +46,7 @@ library FKPS {
     pp.z.n.val = abi.encodePacked(z_u256_digits);
   }
 
-  function decrypt(bytes32 key, bytes32 ct) internal pure returns (bytes32, bytes32) {
-    // bytes32 pad = keccak256(bytes.concat(key, bytes32(0)));
-    bytes32 pad = keccak256(bytes.concat(key));
-    bytes32 pt = ct ^ pad;
-    bytes32 mac = keccak256(bytes.concat(key, pt));
-    // return (ct, mac);
-    return (pt, mac);
-  }
-
-  function verOpen(Comm memory comm, uint256 alpha, uint256 bid, Params memory pp) 
+    function verOpen(Comm memory comm, uint256 alpha, bytes memory message, Params memory pp) 
   internal view returns (bool) {
     // 1. compute z_hat = z ^ a
     RSA2048.Element memory z_hat = RSA2048.power_and_reduce(pp.z, alpha, pp.rsa_pp);
@@ -65,16 +56,65 @@ library FKPS {
     bytes32 k = keccak256(z_hat.n.val);
 
     // 3. decrypt ciphertext
-    bytes32 pt;
+    bytes32[] memory pt;
     bytes32 mac;
-    (pt, mac) = decrypt(k, comm.ct);
+    pt = decrypt(k, comm.ct);
 
     // 4. Check h^alpha
     RSA2048.Element memory h_hat = RSA2048.power_and_reduce(pp.h, alpha, pp.rsa_pp);
 
     // 4. Check equality
-    return bid == uint256(pt) && h_hat.eq(comm.h_hat);
-    // return z_hat.n.val;
+    // return bid == uint256(pt) && h_hat.eq(comm.h_hat);
+
+    bool ret_value = h_hat.eq(comm.h_hat);
+
+    return ret_value;
+
+    uint num_blocks = (message.length)/32;
+    if (message.length % 32 != 0) {
+      num_blocks +=1;
+    }
+
+    for (uint i=0; i<num_blocks; i++) {
+      ret_value = ret_value && (bytesToBytes32(message, i*32) == pt[i]);
+    }
+    return ret_value;
+  }
+
+  function decrypt(bytes32 key, bytes memory ct) internal pure 
+  returns (bytes32[] memory) {
+
+    uint num_blocks = ct.length/32;
+    if (ct.length % 32 != 0) {
+      num_blocks +=1;
+    }
+
+    bytes32[] memory pt = new bytes32[](num_blocks);
+
+    for (uint i=0; i<num_blocks; i++) {
+      bytes32 cur_ct_block = bytesToBytes32(ct, i*32);
+
+      bytes memory ctr = new bytes(1);
+      ctr[0] = bytes1(uint8(i));
+      bytes32 cur_pad = keccak256(bytes.concat(key, ctr));
+      bytes32 cur_pt = cur_pad ^ cur_ct_block;
+
+      pt[i] = cur_pt;
+    }
+
+    return pt;
+  }
+
+  function bytesToBytes32(bytes memory b, uint offset) private pure returns (bytes32) {
+    bytes32 out;
+    for (uint i = 0; i < 32; i++) {
+      if (b.length < offset+i+1) {
+        out |= bytes32(bytes1(0) & 0xFF) >> (i * 8);
+      } else {
+        out |= bytes32(b[offset + i] & 0xFF) >> (i * 8);
+      }
+    }
+    return out;
   }
 
 }

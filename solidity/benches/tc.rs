@@ -93,26 +93,25 @@ fn pad_256(input: &[u8]) -> [u8; 256] {
 fn main() {
   // cargo bench --bench poe_verifier --profile test
   let mut rng = StdRng::seed_from_u64(1u64);
-
   let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
 
-  let v = BigInt::from(10000);
-  let (comm, v_f, opening) =
-    PedersenComm::<G>::commit2(&mut rng, &ped_pp, &v.to_bytes_le().1).unwrap();
-
-  assert!(PedersenComm::<G>::ver_open(&ped_pp, &comm, &v.to_bytes_le().1, &opening).unwrap());
-
   // create sample bid and FKPS commitment
-  // 1. Sample alpha
+  // 1. Get bid
   let bid = BigInt::from(10000);
-  let alpha = BigInt::from(10000);
 
-  // CONNECT with BasicTC library
-  let (fkps_pp, fkps_pp_proof) = TC::gen_time_params(40).unwrap();
-  assert!(TC::ver_time_params(&fkps_pp, &fkps_pp_proof).unwrap());
+  let bid_bytes = [bid.to_bytes_be().1].concat();
+
+  let bid_f =
+    nat_to_f::<<G as ProjectiveCurve>::ScalarField>(&BigInt::from_bytes_le(Sign::Plus, &bid_bytes))
+      .unwrap();
+
+  // CONNECT with LazyTC library
+  let (tc_fkps_pp, tc_fkps_pp_proof) = TC::gen_time_params(40).unwrap();
+  assert!(TC::ver_time_params(&tc_fkps_pp, &tc_fkps_pp_proof).unwrap());
   let mut ad = [0u8; 32];
-  let (tc_comm, tc_opening) =
-    TC::commit(&mut rng, &fkps_pp, &ped_pp, &bid.to_bytes_be().1, &ad).unwrap();
+
+  // !!! Arasu: Looks like pederden needs the values to be send as _le
+  let (tc_comm, tc_opening) = TC::commit(&mut rng, &tc_fkps_pp, &ped_pp, &bid_bytes, &ad).unwrap();
 
   let open_alpha = match &tc_opening.tc_opening {
     basic_tc::Opening::SELF(r) => r.to_bytes_be().1,
@@ -120,22 +119,16 @@ fn main() {
   };
 
   let mut m_computed = tc_opening.tc_m.unwrap().to_vec();
-  // let f_bytes = < as PrimeField>::BigInt::NUM_LIMBS * 8;
-  let f_bytes = 32;
+
+  let tc_m = m_computed.clone();
+
+  let f_bytes = <<G as ProjectiveCurve>::ScalarField as PrimeField>::BigInt::NUM_LIMBS * 8;
+  //let f_bytes = 32;
   let ped_opening = nat_to_f(&BigInt::from_bytes_le(
     Sign::Plus,
     &m_computed.split_off(m_computed.len() - f_bytes),
   ))
   .unwrap();
-
-  // assert!(TC::ver_open(
-  //   &fkps_pp,
-  //   &fkps_comm,
-  //   &ad,
-  //   &Some(bid.to_bytes_be().1.to_vec()),
-  //   &fkps_opening
-  // )
-  // .unwrap());
 
   println!("Compiling contract...");
 
@@ -145,7 +138,7 @@ fn main() {
   let pedersen_lib_src = get_pedersen_library_src(&ped_pp);
   let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS);
   // let fkps_src = get_fkps_library_src(&h_bigint, &z_bigint, MOD_BITS);
-  let fkps_src = get_fkps_library_src(&fkps_pp.x.n, &fkps_pp.y.n, MOD_BITS);
+  let fkps_src = get_fkps_library_src(&tc_fkps_pp.x.n, &tc_fkps_pp.y.n, MOD_BITS);
   let tc_lib_src = get_filename_src("TC.sol");
   let tc_test_src = get_filename_src("TCTest.sol");
 
@@ -202,8 +195,10 @@ fn main() {
     encode_rsa_element(&tc_comm.tc_comm.x),
     encode_bytes(&tc_comm.tc_comm.ct),
     encode_group_element::<Bn254>(&tc_comm.ped_comm),
+    encode_bytes(&tc_m),
     encode_int_from_bytes(&open_alpha),
-    encode_int_from_bytes(&bid.to_bytes_be().1),
+    //encode_int_from_bytes(&bid_bytes),
+    encode_field_element::<Bn254>(&bid_f),
     encode_field_element::<Bn254>(&ped_opening),
   ];
 
@@ -218,5 +213,21 @@ fn main() {
     .unwrap();
 
   assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-  println!("TC verification costs {:?} gas", result.gas);
+  println!("TC verification succeeded");
+  println!("TC verification cost {:?} gas", result.gas);
+
+  // IGNORE MESS BELOW
+
+  // println!(
+  //   "ped comm x from solidity {:?}",
+  //   &result.out.encode_hex::<String>()
+  // );
+  // println!("ped opening: {:?}", &ped_opening.to_string());
+  // println!("ped opening from rust: {:?}", &ped_opening.to_string());
+  // println!(
+  //   "pad from rust {:?}",
+  //   &tc_comm.tc_comm.ct.encode_hex::<String>()
+  // );
+
+  // println!("tc_m from rust {:?}", &tc_m.encode_hex::<String>());
 }
