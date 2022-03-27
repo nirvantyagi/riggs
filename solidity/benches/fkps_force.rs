@@ -46,7 +46,7 @@ use hex::ToHex;
 pub struct TestPoEParams;
 
 impl PoEParams for TestPoEParams {
-  const HASH_TO_PRIME_ENTROPY: usize = 128; // TODO: This should be 256
+  const HASH_TO_PRIME_ENTROPY: usize = 256;
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -86,9 +86,7 @@ fn main() {
   let mut rng = StdRng::seed_from_u64(1u64);
 
   // create sample bid and FKPS commitment
-  // 1. Sample alpha
   let bid = BigInt::from(10000);
-
   let bid_bytes = [bid.to_bytes_be().1].concat();
 
   // CONNECT with BasicTC library
@@ -101,15 +99,6 @@ fn main() {
     basic_tc::Opening::SELF(r) => r.to_bytes_be().1,
     basic_tc::Opening::FORCE(y, _) => y.n.to_bytes_be().1,
   };
-
-  // assert!(TC::ver_open(
-  //   &fkps_pp,
-  //   &fkps_comm,
-  //   &ad,
-  //   &Some(bid.to_bytes_be().1.to_vec()),
-  //   &fkps_opening
-  // )
-  // .unwrap());
 
   println!("Compiling contract...");
 
@@ -165,125 +154,35 @@ fn main() {
   let contract_addr = create_result.addr.clone();
   println!("Contract deploy gas cost: {}", create_result.gas);
 
-  // Call verify function on contract
-  let input = vec![
-    encode_rsa_element(&fkps_comm.x),
-    encode_bytes(&fkps_comm.ct),
-    encode_int_from_bytes(&open_r),
-    encode_bytes(&bid_bytes),
-  ];
-
-  let result = evm
-    .call(
-      contract
-        .encode_call_contract_bytes("testVerOpen", &input)
-        .unwrap(),
-      &contract_addr,
-      &deployer,
-    )
-    .unwrap();
-
-  //assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-  println!("FKPS verification succeeded");
-  println!("FKPS verification costs {:?} gas", result.gas);
-
   // Part 2: TEST Force Open
-  // The part below is moved to a separate fkps_force bench file.
-  // To do it in this file, just uncomment what's below
-  // AND change the entropy parameter to 256 above.
+  let fkps_force_opening = TC::force_open(&fkps_pp, &fkps_comm, &ad).unwrap();
 
-  // let fkps_force_opening = TC::force_open(&fkps_pp, &fkps_comm, &ad).unwrap();
+  match &fkps_force_opening.1 {
+    basic_tc::Opening::SELF(r) => {}
+    basic_tc::Opening::FORCE(y, poe_proof) => {
+      let (force_z_hat, force_opening_proof) = (y, poe_proof);
+      // Call force verify function on contract;
+      let force_input = vec![
+        encode_rsa_element(&fkps_comm.x),
+        encode_bytes(&fkps_comm.ct),
+        encode_rsa_element(&y),
+        encode_poe_proof(&poe_proof),
+        encode_bytes(&bid_bytes),
+      ];
 
-  // match &fkps_force_opening.1 {
-  //   basic_tc::Opening::SELF(r) => {}
-  //   basic_tc::Opening::FORCE(y, poe_proof) => {
-  //     let (force_z_hat, force_opening_proof) = (y, poe_proof);
-  //     // Call force verify function on contract;
-  //     let force_input = vec![
-  //       encode_rsa_element(&fkps_comm.x),
-  //       encode_bytes(&fkps_comm.ct),
-  //       encode_rsa_element(&y),
-  //       encode_poe_proof(&poe_proof),
-  //       encode_bytes(&bid_bytes),
-  //     ];
+      let force_result = evm
+        .call(
+          contract
+            .encode_call_contract_bytes("testVerForceOpen", &force_input)
+            .unwrap(),
+          &contract_addr,
+          &deployer,
+        )
+        .unwrap();
 
-  //     let force_result = evm
-  //       .call(
-  //         contract
-  //           .encode_call_contract_bytes("testVerForceOpen", &force_input)
-  //           .unwrap(),
-  //         &contract_addr,
-  //         &deployer,
-  //       )
-  //       .unwrap();
-
-  //     println!("force result from {:?}", &force_result.out);
-  //   }
-  // };
+      // println!("force result {:?}", &force_result.out);
+      println!("FKPS Force verification succeeded");
+      println!("Force verification costs {:?} gas", force_result.gas);
+    }
+  };
 }
-
-// IGNORE MESS BELOW
-
-// println!("pad from solidity {:?}", &result.out.encode_hex::<String>());
-//   &pad_256(&z_hat.n.to_bytes_be().1).encode_hex::<String>()
-// println!(
-//   "h_hat: {:?}",
-//   &fkps_comm.x.n.to_bytes_be().1.encode_hex::<String>()
-// );
-
-// println!(
-//   "pad from rust is: {:?}",
-//   &fkps_comm.ct.encode_hex::<String>()
-// );
-
-// let mut zhasher = Keccak256::new();
-// let zero: &[u8] = &[0];
-// let z_hat_string_solidity = "0681af53be16307765407990ae6548f667f2f51ef63b17e7a674f6811fab13bd5cd3dac0d0ab68696d5a02ad0fafaf9453e0fd50691117ae580b056fb55a43616a57e35f8edd72973e03e413f561430b8abaa6db834fc81bfc34a087e878c654309c9da5723adb36b9732eb32f4c5107567b62d3ab21427fc1959e8169ab3a793ab19302b283404c2f36979ff6a8508bc98875440ed3f38b085c0c4d1dfd7344244fd16ff475c7bc03bc7e2775432477c80be9624428243243ab7cc55a4888f16afd34bb938d4db1a906d8a6581d5ddb1b72b12b95fea9fe430a3a7afd90f20cd55b541476391e626087be04b7267af2ffcc029474ffd7d41d7aa27285a87c57";
-// // zhasher.update(&fkps_comm.x.n.to_bytes_be().1.encode_hex::<String>());
-// zhasher.update(decode_hex(z_hat_string_solidity).unwrap());
-// let zhash = zhasher.finalize();
-// println!("key should be: {:?}", &zhash.encode_hex::<String>());
-// println!("key is: {:?}", &fkps_comm.ct.encode_hex::<String>());
-
-// println!(
-//   "try digest directly: {:?}",
-//   &Keccak256::digest(&zero).encode_hex::<String>()
-// );
-// // use the following beloe for extra decoding functionality
-// // use std::{fmt::Write, num::ParseIntError};
-// // pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
-// //   (0..s.len())
-// //     .step_by(2)
-// //     .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
-// //     .collect()
-// // }
-
-// // 2. Compute h^alpha, z^alpha
-// let h_hat = h.power(&alpha);
-// let z_hat = z.power(&alpha);
-
-// // 3. Compute k = Hash(z_hat, pp)
-// // TODO: add pp to the hash
-// let mut hasher = Keccak256::new();
-// let z_hat_bytes = pad_256(&z_hat.n.to_bytes_be().1);
-// hasher.update(&z_hat_bytes);
-// let key = hasher.finalize();
-
-// // 4. Compute ciphertext
-// // The cipher used here is hash-to-cipher
-// let mut pad_hasher = Keccak256::new();
-// let zeros = &[
-//   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-//   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-// ];
-// let concat: Vec<u8> = [key.to_vec(), zeros.to_vec()].concat();
-// pad_hasher.update(&concat);
-// let pad = pad_hasher.finalize();
-
-// let bid_256 = pad_32(&bid.to_bytes_be().1);
-
-// let ct: Vec<u8> = bid_256
-//   .iter()
-//   .zip(pad.iter())
-//   .map(|(&x1, &x2)| x1 ^ x2)
-//   .collect();

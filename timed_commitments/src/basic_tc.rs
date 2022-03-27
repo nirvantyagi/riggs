@@ -312,7 +312,7 @@ mod tests {
     impl PocklingtonCertParams for TestPocklingtonParams {
         const NONCE_SIZE: usize = 16;
         const MAX_STEPS: usize = 5;
-        const INCLUDE_SOLIDITY_WITNESSES: bool = false;
+        const INCLUDE_SOLIDITY_WITNESSES: bool = true;
     }
 
     pub type TC = BasicTC<
