@@ -35,5 +35,18 @@ library TC {
     
     return pc_check && fkps_check;
   }
+
+  function verForceOpen(Comm memory comm, RSA2048.Element memory z_hat, 
+  FKPS.Proof memory poe_proof, bytes memory tc_m, uint bid, uint r, 
+  Params memory pp) internal view returns (bool) {
+    bool fkps_check = true;
+    bool pc_check = true;
+    
+    pc_check = Pedersen.verify(comm.ped, bid, r, pp.ped_pp);
+
+    fkps_check = FKPS.verForceOpen(comm.fkps, z_hat, poe_proof, tc_m, pp.fkps_pp);
+    
+    return pc_check && fkps_check;
+  }
   
 }

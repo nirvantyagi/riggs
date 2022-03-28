@@ -183,7 +183,7 @@ fn main() {
     )
     .unwrap();
 
-  //assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
+  assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
   println!("FKPS verification succeeded");
   println!("FKPS verification costs {:?} gas", result.gas);
 
