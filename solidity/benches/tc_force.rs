@@ -24,8 +24,9 @@ use rsa::{
 };
 
 use solidity::{
-  encode_poe_proof, encode_rsa_element, get_bigint_library_src, get_bn254_library_src,
-  get_filename_src, get_fkps_library_src, get_pedersen_library_src, get_rsa_library_src,
+  encode_poe_proof, encode_rsa_element, encode_tc_comm, encode_tc_opening, get_bigint_library_src,
+  get_bn254_library_src, get_filename_src, get_fkps_library_src, get_pedersen_library_src,
+  get_rsa_library_src,
 };
 
 use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
@@ -93,9 +94,7 @@ fn pad_256(input: &[u8]) -> [u8; 256] {
 fn main() {
   // cargo bench --bench poe_verifier --profile test
   let mut rng = StdRng::seed_from_u64(1u64);
-  let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
 
-  // create sample bid and FKPS commitment
   // 1. Get bid
   let bid = BigInt::from(10000);
 
@@ -105,30 +104,16 @@ fn main() {
     nat_to_f::<<G as ProjectiveCurve>::ScalarField>(&BigInt::from_bytes_le(Sign::Plus, &bid_bytes))
       .unwrap();
 
-  // CONNECT with LazyTC library
+  // Generate parameters
   let (tc_fkps_pp, tc_fkps_pp_proof) = TC::gen_time_params(40).unwrap();
+  let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
   assert!(TC::ver_time_params(&tc_fkps_pp, &tc_fkps_pp_proof).unwrap());
+
+  // Create commitment
   let mut ad = [0u8; 32];
+  let (tc_comm, _) = TC::commit(&mut rng, &tc_fkps_pp, &ped_pp, &bid_bytes, &ad).unwrap();
 
-  // !!! Arasu: Looks like pederden needs the values to be send as _le
-  let (tc_comm, tc_opening) = TC::commit(&mut rng, &tc_fkps_pp, &ped_pp, &bid_bytes, &ad).unwrap();
-
-  let open_alpha = match &tc_opening.tc_opening {
-    basic_tc::Opening::SELF(r) => r.to_bytes_be().1,
-    basic_tc::Opening::FORCE(y, _) => y.n.to_bytes_be().1,
-  };
-
-  let mut m_computed = tc_opening.tc_m.unwrap().to_vec();
-
-  let tc_m = m_computed.clone();
-
-  let f_bytes = <<G as ProjectiveCurve>::ScalarField as PrimeField>::BigInt::NUM_LIMBS * 8;
-  //let f_bytes = 32;
-  let ped_opening = nat_to_f(&BigInt::from_bytes_le(
-    Sign::Plus,
-    &m_computed.split_off(m_computed.len() - f_bytes),
-  ))
-  .unwrap();
+  let tc_force_opening = TC::force_open(&tc_fkps_pp, &ped_pp, &tc_comm, &ad).unwrap();
 
   println!("Compiling contract...");
 
@@ -193,26 +178,13 @@ fn main() {
   let contract_addr = create_result.addr.clone();
   println!("Contract deploy gas cost: {}", create_result.gas);
 
-  let tc_force_opening = TC::force_open(&tc_fkps_pp, &ped_pp, &tc_comm, &ad).unwrap();
-
-  let fkps_force_opening = tc_force_opening.1.tc_opening;
-
-  match &fkps_force_opening {
+  match &tc_force_opening.1.tc_opening {
     basic_tc::Opening::SELF(r) => {}
     basic_tc::Opening::FORCE(y, poe_proof) => {
-      let (force_z_hat, force_opening_proof) = (y, poe_proof);
-      // Call force verify function on contract;
-      // Call verify function on contract
       let force_input = vec![
-        encode_rsa_element(&tc_comm.tc_comm.x),
-        encode_bytes(&tc_comm.tc_comm.ct),
-        encode_group_element::<Bn254>(&tc_comm.ped_comm),
-        encode_bytes(&tc_m),
-        encode_rsa_element(&y),
-        encode_poe_proof(&poe_proof),
-        // encode_int_from_bytes(&open_alpha),
+        encode_tc_comm::<Bn254, _>(&tc_comm),
+        encode_tc_opening(&tc_force_opening.1),
         encode_field_element::<Bn254>(&bid_f),
-        encode_field_element::<Bn254>(&ped_opening),
       ];
 
       let force_result = evm

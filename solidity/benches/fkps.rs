@@ -19,8 +19,8 @@ use rsa::{
 };
 
 use solidity::{
-  encode_fkps_opening, encode_poe_proof, encode_rsa_element, get_bigint_library_src,
-  get_filename_src, get_fkps_library_src, get_rsa_library_src,
+  encode_fkps_comm, encode_fkps_opening, encode_poe_proof, encode_rsa_element,
+  get_bigint_library_src, get_filename_src, get_fkps_library_src, get_rsa_library_src,
 };
 
 use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
@@ -86,30 +86,17 @@ fn main() {
   let mut rng = StdRng::seed_from_u64(1u64);
 
   // create sample bid and FKPS commitment
-  // 1. Sample alpha
+  // 1. Sample bid
   let bid = BigInt::from(10000);
-
   let bid_bytes = [bid.to_bytes_be().1].concat();
 
-  // CONNECT with BasicTC library
+  // Generate parameter
   let (fkps_pp, fkps_pp_proof) = TC::gen_time_params(40).unwrap();
   assert!(TC::ver_time_params(&fkps_pp, &fkps_pp_proof).unwrap());
+
+  // Create commitment, opening
   let mut ad = [0u8; 32];
   let (fkps_comm, fkps_opening) = TC::commit(&mut rng, &fkps_pp, &bid_bytes, &ad).unwrap();
-
-  let open_r = match &fkps_opening {
-    basic_tc::Opening::SELF(r) => r.to_bytes_be().1,
-    basic_tc::Opening::FORCE(y, _) => y.n.to_bytes_be().1,
-  };
-
-  // assert!(TC::ver_open(
-  //   &fkps_pp,
-  //   &fkps_comm,
-  //   &ad,
-  //   &Some(bid.to_bytes_be().1.to_vec()),
-  //   &fkps_opening
-  // )
-  // .unwrap());
 
   println!("Compiling contract...");
 
@@ -166,8 +153,7 @@ fn main() {
   println!("Contract deploy gas cost: {}", create_result.gas);
 
   let input = vec![
-    encode_rsa_element(&fkps_comm.x),
-    encode_bytes(&fkps_comm.ct),
+    encode_fkps_comm(&fkps_comm),
     encode_fkps_opening(&fkps_opening, &bid_bytes),
   ];
 

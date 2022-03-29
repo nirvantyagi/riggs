@@ -57,3 +57,15 @@ harness = false
 name = "tc"
 path = "benches/tc.rs"
 harness = false
+
+[[bench]]
+name = "fkps_force"
+path = "benches/fkps_force.rs"
+harness = false
+
+
+[[bench]]
+name = "tc_force"
+path = "benches/tc_force.rs"
+harness = false
+

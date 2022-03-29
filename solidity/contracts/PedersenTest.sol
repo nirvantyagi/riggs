@@ -15,4 +15,10 @@ contract PedersenTest {
     Pedersen.Params memory pp = Pedersen.publicParams();
     return Pedersen.verify(given, b, r, pp);
   }
+
+  function verify2(BN254.G1Point memory given, uint b, uint r) 
+  public view returns (bool) {
+    Pedersen.Params memory pp = Pedersen.publicParams();
+    return Pedersen.verify(given, b, r, pp);
+  }
 }

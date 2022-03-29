@@ -427,6 +427,22 @@ pub fn encode_poe_proof<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>
     Token::Tuple(tokens)
 }
 
+pub fn encode_fkps_comm<P: RsaGroupParams>(comm: &basic_tc::Comm<P>) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_rsa_element(&comm.x));
+    tokens.push(Token::Bytes(comm.ct.clone().to_vec()));
+    Token::Tuple(tokens)
+}
+
+pub fn encode_tc_comm<E: PairingEngine, P: RsaGroupParams>(
+    comm: &lazy_tc::Comm<E::G1Projective, P>,
+) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_group_element::<E>(&comm.ped_comm));
+    tokens.push(encode_fkps_comm(&comm.tc_comm));
+    Token::Tuple(tokens)
+}
+
 pub fn encode_fkps_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>(
     opening: &basic_tc::Opening<P, PocklingtonHash<HP, D>>,
     m: &[u8],

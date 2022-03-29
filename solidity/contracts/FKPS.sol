@@ -42,12 +42,61 @@ library FKPS {
     pp.z.n.val = abi.encodePacked(z_u256_digits);
   }
 
+  function verOpen(Comm memory comm, SelfOpening memory self_opening, Params memory pp) 
+  internal view returns (bool) {
+    uint alpha = self_opening.alpha;
+    bytes memory message = self_opening.message; 
+
+    // 1. compute z_hat = z ^ a
+    RSA2048.Element memory z_hat = RSA2048.power_and_reduce(pp.z, alpha, pp.rsa_pp);
+
+    // 2. obtain key as k = H(z, pp)
+    // TODO: add pp to the hash input
+    bytes32 k = keccak256(z_hat.n.val);
+
+    // 3. decrypt ciphertext
+    bytes32[] memory pt;
+    bytes32 mac;
+    pt = decrypt(k, comm.ct);
+
+     // 4. Check h^alpha
+    RSA2048.Element memory h_hat = RSA2048.power_and_reduce(pp.h, alpha, pp.rsa_pp);
+
+    // 4. Check equality
+    return h_hat.eq(comm.h_hat) && compare_arrays(pt, message);
+  }
+  
+  function verForceOpen(Comm memory comm, ForceOpening memory force_opening, Params memory pp) 
+  internal view returns (bool) {
+
+    // 1. z_hat is given 
+    RSA2048.Element memory z_hat = force_opening.z_hat;
+    Proof memory poe_proof = force_opening.poe_proof;
+    bytes memory message = force_opening.message; 
+
+    // 2. obtain key as k = H(z, pp)
+    // TODO: add pp to the hash input
+    bytes32 k = keccak256(z_hat.n.val);
+
+    // 3. decrypt ciphertext
+    bytes32[] memory pt;
+    bytes32 mac;
+    pt = decrypt(k, comm.ct);
+
+    // 4. Verify PoE and compare decryption
+    bool poe_check = verify(comm.h_hat, z_hat, uint32(40), poe_proof);
+    bool pt_check = compare_arrays(pt, message);
+
+    return poe_check && pt_check;
+  }
+
+
   function decrypt(bytes32 key, bytes memory ct) 
   internal pure returns (bytes32[] memory) {
 
     require(ct.length >= 1);
+    
     uint num_blocks = (ct.length-1)/32 + 1;
-
     bytes32[] memory pt = new bytes32[](num_blocks);
 
     for (uint i=0; i<num_blocks; i++) {
@@ -63,8 +112,10 @@ library FKPS {
     return pt;
   }
 
+  //////////////////////// Utility Functions /////////////////////
+
   function compare_arrays(bytes32[] memory pt, bytes memory message) 
-  private pure returns (bool){
+  private pure returns (bool) {
     uint num_blocks = (message.length)/32;
     if (message.length % 32 != 0) {
       num_blocks +=1;
@@ -84,7 +135,7 @@ library FKPS {
     return ret_value;
   }
 
-  function bytesToBytes32(bytes memory b, uint offset) private pure returns (bytes32) {
+  function bytesToBytes32(bytes memory b, uint offset) public pure returns (bytes32) {
     bytes32 out;
     for (uint i = 0; i < 32; i++) {
       if (b.length < offset+i+1) {
@@ -94,107 +145,6 @@ library FKPS {
       }
     }
     return out;
-  }
-
-
-  // function verOpen(Comm memory comm, uint256 alpha, bytes memory message, Params memory pp) 
-  // internal view returns (bool) {
-  //   // 1. compute z_hat = z ^ a
-  //   RSA2048.Element memory z_hat = RSA2048.power_and_reduce(pp.z, alpha, pp.rsa_pp);
-
-  //   // 2. obtain key as k = H(z, pp)
-  //   // TODO: add pp to the hash input
-  //   bytes32 k = keccak256(z_hat.n.val);
-
-  //   // 3. decrypt ciphertext
-  //   bytes32[] memory pt;
-  //   bytes32 mac;
-  //   pt = decrypt(k, comm.ct);
-  //    // 4. Check h^alpha
-  //   RSA2048.Element memory h_hat = RSA2048.power_and_reduce(pp.h, alpha, pp.rsa_pp);
-
-  //   // 4. Check equality
-  //   // return bid == uint256(pt) && h_hat.eq(comm.h_hat);
-
-  //   bool ret_value = h_hat.eq(comm.h_hat) && compare_arrays(pt, message);
-  //   return ret_value;
-  // }
-
-  function verOpen(Comm memory comm, SelfOpening memory self_opening, Params memory pp) 
-  internal view returns (bool) {
-    uint alpha = self_opening.alpha;
-    bytes memory message = self_opening.message; 
-
-    // 1. compute z_hat = z ^ a
-    RSA2048.Element memory z_hat = RSA2048.power_and_reduce(pp.z, alpha, pp.rsa_pp);
-
-    // 2. obtain key as k = H(z, pp)
-    // TODO: add pp to the hash input
-    bytes32 k = keccak256(z_hat.n.val);
-
-    // 3. decrypt ciphertext
-    bytes32[] memory pt;
-    bytes32 mac;
-    pt = decrypt(k, comm.ct);
-     // 4. Check h^alpha
-    RSA2048.Element memory h_hat = RSA2048.power_and_reduce(pp.h, alpha, pp.rsa_pp);
-
-    // 4. Check equality
-    // return bid == uint256(pt) && h_hat.eq(comm.h_hat);
-
-    bool ret_value = h_hat.eq(comm.h_hat) && compare_arrays(pt, message);
-    return ret_value;
-  }
-
-  function verForceOpen(Comm memory comm, RSA2048.Element memory z_hat, 
-  Proof memory poe_proof, bytes memory message, Params memory pp) 
-  internal view returns (bool) {
-    // 1. z_hat is already given 
-
-    // 2. obtain key as k = H(z, pp)
-    // TODO: add pp to the hash input
-    bytes32 k = keccak256(z_hat.n.val);
-
-    // 3. decrypt ciphertext
-    bytes32[] memory pt;
-    bytes32 mac;
-    pt = decrypt(k, comm.ct);
-
-    // 4. Verify PoE
-    bool poe_check = verify(comm.h_hat, z_hat, uint32(40), poe_proof);
-
-    // 5. Check equality
-    bool pt_check = compare_arrays(pt, message);
-
-
-    return poe_check && pt_check;
-  }
-
-  function verForceOpen(Comm memory comm, ForceOpening memory force_opening, Params memory pp) 
-  internal view returns (bool) {
-    RSA2048.Element memory z_hat = force_opening.z_hat;
-    Proof memory poe_proof = force_opening.poe_proof;
-    bytes memory message = force_opening.message;
-
-    // 1. z_hat is already given 
-
-    // 2. obtain key as k = H(z, pp)
-    // TODO: add pp to the hash input
-    bytes32 k = keccak256(z_hat.n.val);
-
-    // 3. decrypt ciphertext
-    bytes32[] memory pt;
-    bytes32 mac;
-    pt = decrypt(k, comm.ct);
-
-    // 4. Verify PoE
-    bool poe_check = verify(comm.h_hat, z_hat, uint32(40), poe_proof);
-
-    // 5. Check equality
-    bool pt_check = compare_arrays(pt, message);
-
-
-    return poe_check && pt_check;
   }
 
   //////////////////////// PoE Verifier stuff /////////////////////
