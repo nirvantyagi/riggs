@@ -155,7 +155,6 @@ mod tests {
     use rsa::{
         bigint::BigInt,
         hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash},
-        hog::RsaHiddenOrderGroup,
     };
 
     #[derive(Clone, PartialEq, Eq, Debug)]
@@ -228,7 +227,7 @@ mod tests {
         let (comm1, opening1) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid1).unwrap();
         let (comm2, opening2) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid2).unwrap();
         let (comm3, opening3) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid3).unwrap();
-        let (comm4, opening4) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid4).unwrap();
+        let (comm4, _) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid4).unwrap();
 
 
         // Create new auction
