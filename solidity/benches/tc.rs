@@ -110,7 +110,6 @@ fn main() {
   assert!(TC::ver_time_params(&tc_fkps_pp, &tc_fkps_pp_proof).unwrap());
   let mut ad = [0u8; 32];
 
-  // !!! Arasu: Looks like pederden needs the values to be send as _le
   let (tc_comm, tc_opening) = TC::commit(&mut rng, &tc_fkps_pp, &ped_pp, &bid_bytes, &ad).unwrap();
 
   let open_alpha = match &tc_opening.tc_opening {
@@ -124,7 +123,7 @@ fn main() {
 
   let f_bytes = <<G as ProjectiveCurve>::ScalarField as PrimeField>::BigInt::NUM_LIMBS * 8;
   //let f_bytes = 32;
-  let ped_opening = nat_to_f(&BigInt::from_bytes_le(
+  let ped_opening = nat_to_f(&BigInt::from_bytes_be(
     Sign::Plus,
     &m_computed.split_off(m_computed.len() - f_bytes),
   ))

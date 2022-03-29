@@ -76,7 +76,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
     ) -> Result<(Comm<G, RsaP>, Opening<RsaP, H2P>), Error> {
         let (ped_comm, ped_opening) = PedersenComm::<G>::commit(rng, ped_pp, m)?;
         let mut tc_m = m.to_vec();
-        tc_m.append(&mut ped_opening.into_repr().to_bytes_le());
+        tc_m.append(&mut ped_opening.into_repr().to_bytes_be());
         let (tc_comm, tc_opening) = BasicTC::<PoEP, RsaP, H, H2P>::commit(rng, time_pp, &tc_m, ad)?;
         Ok((
             Comm { ped_comm, tc_comm },
@@ -99,7 +99,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             Some(tc_m_inner) => {
                 let mut m = tc_m_inner.to_vec();
                 let f_bytes = <G::ScalarField as PrimeField>::BigInt::NUM_LIMBS * 8;
-                let ped_opening = nat_to_f(&BigInt::from_bytes_le(
+                let ped_opening = nat_to_f(&BigInt::from_bytes_be(
                     Sign::Plus,
                     &m.split_off(m.len() - f_bytes),
                 ))?;
@@ -134,7 +134,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             Some(tc_m) => {
                 let mut m_computed = tc_m.to_vec();
                 let f_bytes = <G::ScalarField as PrimeField>::BigInt::NUM_LIMBS * 8;
-                let ped_opening = nat_to_f(&BigInt::from_bytes_le(
+                let ped_opening = nat_to_f(&BigInt::from_bytes_be(
                     Sign::Plus,
                     &m_computed.split_off(m_computed.len() - f_bytes),
                 ))?;
