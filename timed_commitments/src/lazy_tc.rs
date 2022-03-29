@@ -14,7 +14,10 @@ use rsa::{
     hog::RsaGroupParams,
     poe::{PoEParams, Proof as PoEProof},
 };
-use std::marker::PhantomData;
+use std::{
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Comm<G: ProjectiveCurve, RsaP: RsaGroupParams> {
@@ -27,6 +30,14 @@ pub struct Opening<RsaP: RsaGroupParams, H2P: HashToPrime> {
     pub tc_opening: TCOpening<RsaP, H2P>,
     pub tc_m: Option<Vec<u8>>,
 }
+
+impl<G: ProjectiveCurve, P: RsaGroupParams> Hash for Comm<G, P> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.ped_comm.hash(state);
+        self.tc_comm.hash(state);
+    }
+}
+
 pub struct LazyTC<
     G: ProjectiveCurve,
     PoEP: PoEParams,

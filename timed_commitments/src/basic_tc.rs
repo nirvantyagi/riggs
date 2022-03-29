@@ -9,6 +9,7 @@ use rsa::{
 use std::{
     error::Error as ErrorTrait,
     fmt::{self, Debug},
+    hash::{Hash, Hasher},
     marker::PhantomData,
 };
 
@@ -38,6 +39,13 @@ pub struct Comm<RsaP: RsaGroupParams> {
 pub enum Opening<RsaP: RsaGroupParams, H2P: HashToPrime> {
     SELF(BigInt),
     FORCE(Hog<RsaP>, PoEProof<RsaP, H2P>),
+}
+
+impl<P: RsaGroupParams> Hash for Comm<P> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.x.hash(state);
+        self.ct.hash(state);
+    }
 }
 
 /// Non-malleable timed commitment using key-committing authenticated encryption

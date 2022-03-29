@@ -7,4 +7,5 @@ members = [
   "solidity_test_utils",
   "solidity",
   "pari_factor",
+  "auction_house",
 ]

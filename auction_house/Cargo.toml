@@ -1,0 +1,25 @@
+[package]
+name = "auction_house"
+version = "0.1.0"
+authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
+edition = "2021"
+
+
+[dependencies]
+ark-ff = { version = "0.3" }
+ark-ec = { version = "0.3" }
+
+rand = { version = "0.8" }
+digest = { version = "0.9" }
+
+rsa = { path = "../rsa" }
+timed_commitments = { path = "../timed_commitments" }
+range_proofs = { path = "../range_proofs" }
+
+[dev-dependencies]
+ark-bls12-381 = { version = "0.3", features = [ "curve" ] }
+
+sha3 = { version = "0.9" }
+once_cell = { version = "1.9" }
+
+[features]
