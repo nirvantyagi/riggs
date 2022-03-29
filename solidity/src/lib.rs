@@ -12,6 +12,7 @@ use std::{fs::File, io::Read};
 use range_proofs::bulletproofs::{serialize_group_elem, Params, PedersenParams, Proof};
 use rsa::{
     bigint::BigInt,
+    hash_to_prime::HashToPrime,
     hash_to_prime::{
         hash_to_variable_output_length,
         pocklington::{PocklingtonCert, PocklingtonCertParams, PocklingtonHash, StepCert},
@@ -20,14 +21,14 @@ use rsa::{
     poe::Proof as PoEProof,
 };
 use solidity_test_utils::{
-    encode_field_element, encode_group_element, parse_bytes_to_solidity_string,
-    parse_g1_to_solidity_string,
+    encode_field_element, encode_group_element, encode_int_from_bytes,
+    parse_bytes_to_solidity_string, parse_g1_to_solidity_string,
 };
 
 // use rsa::hog::TestRsaParams;
 use once_cell::sync::Lazy;
 use std::{ops::Deref, str::FromStr};
-use timed_commitments::basic_tc;
+use timed_commitments::{basic_tc, lazy_tc};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
@@ -423,6 +424,36 @@ pub fn encode_poe_proof<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>
     let mut tokens = Vec::new();
     tokens.push(encode_rsa_element(&proof.q));
     tokens.push(encode_pocklington_certificate(&proof.cert));
+    Token::Tuple(tokens)
+}
+
+pub fn encode_fkps_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>(
+    opening: &basic_tc::Opening<P, PocklingtonHash<HP, D>>,
+    m: &[u8],
+) -> Token {
+    let mut tokens = Vec::new();
+
+    match &opening {
+        basic_tc::Opening::SELF(alpha) => {
+            tokens.push(encode_int_from_bytes(&alpha.to_bytes_be().1));
+        }
+        basic_tc::Opening::FORCE(y, poe_proof) => {
+            tokens.push(encode_rsa_element(&y));
+            tokens.push(encode_poe_proof::<P, HP, D>(poe_proof));
+        }
+    };
+    tokens.push(Token::Bytes(m.to_vec()));
+    Token::Tuple(tokens)
+}
+
+pub fn encode_tc_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>(
+    opening: &lazy_tc::Opening<P, PocklingtonHash<HP, D>>,
+) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_fkps_opening(
+        &opening.tc_opening,
+        opening.tc_m.as_ref().unwrap(),
+    ));
     Token::Tuple(tokens)
 }
 

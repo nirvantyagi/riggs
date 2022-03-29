@@ -19,8 +19,8 @@ use rsa::{
 };
 
 use solidity::{
-  encode_poe_proof, encode_rsa_element, get_bigint_library_src, get_filename_src,
-  get_fkps_library_src, get_rsa_library_src,
+  encode_fkps_opening, encode_poe_proof, encode_rsa_element, get_bigint_library_src,
+  get_filename_src, get_fkps_library_src, get_rsa_library_src,
 };
 
 use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
@@ -165,12 +165,10 @@ fn main() {
   let contract_addr = create_result.addr.clone();
   println!("Contract deploy gas cost: {}", create_result.gas);
 
-  // Call verify function on contract
   let input = vec![
     encode_rsa_element(&fkps_comm.x),
     encode_bytes(&fkps_comm.ct),
-    encode_int_from_bytes(&open_r),
-    encode_bytes(&bid_bytes),
+    encode_fkps_opening(&fkps_opening, &bid_bytes),
   ];
 
   let result = evm

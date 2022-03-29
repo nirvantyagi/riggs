@@ -18,20 +18,42 @@ library TC {
     Pedersen.Params ped_pp;
   }
   
+  struct SelfOpening {
+    FKPS.SelfOpening fkps_so;
+    // bytes tc_m;
+  }
+
+  struct ForceOpening {
+    FKPS.ForceOpening fkps_fo;
+    // bytes tc_m;
+  }
+
   function publicParams() internal pure returns (Params memory pp) {
     pp.fkps_pp = FKPS.publicParams();
     pp.ped_pp = Pedersen.publicParams();
   }
 
-  // proof has b +  alpha for FKPS + r for PC  
-  function verOpen(Comm memory comm, uint256 alpha, bytes memory tc_m, uint bid, uint r, 
+  // // proof has b +  alpha for FKPS + r for PC  
+  // function verOpen(Comm memory comm, uint256 alpha, bytes memory tc_m, uint bid, uint r, 
+  // Params memory pp) internal view returns (bool) {
+  //   bool fkps_check = true;
+  //   bool pc_check = true;
+    
+  //   pc_check = Pedersen.verify(comm.ped, bid, r, pp.ped_pp);
+
+  //   fkps_check = FKPS.verOpen(comm.fkps, alpha, tc_m, pp.fkps_pp);
+    
+  //   return pc_check && fkps_check;
+  // }
+
+  function verOpen(Comm memory comm, SelfOpening memory so, uint bid, uint r, 
   Params memory pp) internal view returns (bool) {
     bool fkps_check = true;
     bool pc_check = true;
     
     pc_check = Pedersen.verify(comm.ped, bid, r, pp.ped_pp);
 
-    fkps_check = FKPS.verOpen(comm.fkps, alpha, tc_m, pp.fkps_pp);
+    fkps_check = FKPS.verOpen(comm.fkps, so.fkps_so, pp.fkps_pp);
     
     return pc_check && fkps_check;
   }

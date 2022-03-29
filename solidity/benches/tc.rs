@@ -24,8 +24,8 @@ use rsa::{
 };
 
 use solidity::{
-  encode_rsa_element, get_bigint_library_src, get_bn254_library_src, get_filename_src,
-  get_fkps_library_src, get_pedersen_library_src, get_rsa_library_src,
+  encode_rsa_element, encode_tc_opening, get_bigint_library_src, get_bn254_library_src,
+  get_filename_src, get_fkps_library_src, get_pedersen_library_src, get_rsa_library_src,
 };
 
 use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
@@ -118,7 +118,7 @@ fn main() {
     basic_tc::Opening::FORCE(y, _) => y.n.to_bytes_be().1,
   };
 
-  let mut m_computed = tc_opening.tc_m.unwrap().to_vec();
+  let mut m_computed = tc_opening.tc_m.clone().unwrap().to_vec();
 
   let tc_m = m_computed.clone();
 
@@ -191,13 +191,32 @@ fn main() {
   println!("Contract deploy gas cost: {}", create_result.gas);
 
   // Call verify function on contract
+  // let input = vec![
+  //   encode_rsa_element(&tc_comm.tc_comm.x),
+  //   encode_bytes(&tc_comm.tc_comm.ct),
+  //   encode_group_element::<Bn254>(&tc_comm.ped_comm),
+  //   encode_bytes(&tc_m),
+  //   encode_int_from_bytes(&open_alpha),
+  //   //encode_int_from_bytes(&bid_bytes),
+  //   encode_field_element::<Bn254>(&bid_f),
+  //   encode_field_element::<Bn254>(&ped_opening),
+  // ];
+
+  // let result = evm
+  //   .call(
+  //     contract
+  //       .encode_call_contract_bytes("testVerOpen", &input)
+  //       .unwrap(),
+  //     &contract_addr,
+  //     &deployer,
+  //   )
+  //   .unwrap();
+
   let input = vec![
     encode_rsa_element(&tc_comm.tc_comm.x),
     encode_bytes(&tc_comm.tc_comm.ct),
     encode_group_element::<Bn254>(&tc_comm.ped_comm),
-    encode_bytes(&tc_m),
-    encode_int_from_bytes(&open_alpha),
-    //encode_int_from_bytes(&bid_bytes),
+    encode_tc_opening(&tc_opening),
     encode_field_element::<Bn254>(&bid_f),
     encode_field_element::<Bn254>(&ped_opening),
   ];

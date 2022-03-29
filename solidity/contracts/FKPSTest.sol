@@ -5,10 +5,11 @@ import "./FKPS.sol";
 contract FKPSTest {
     using FKPS for *; 
 
-    function testVerOpen(RSA2048.Element memory h_hat, bytes memory ct, uint alpha, 
-    bytes memory bid) public view returns (bool) {
+    function testVerOpen(RSA2048.Element memory h_hat, bytes memory ct, 
+    FKPS.SelfOpening memory sopen) 
+    public view returns (bool) {
       FKPS.Params memory pp = FKPS.publicParams();
-      return FKPS.verOpen(FKPS.Comm(h_hat, ct), alpha, bid, pp);
+      return FKPS.verOpen(FKPS.Comm(h_hat, ct), sopen, pp);
     }
 
     function testVerForceOpen(RSA2048.Element memory h_hat, bytes memory ct,
