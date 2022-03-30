@@ -26,15 +26,29 @@ pub struct Comm<G: ProjectiveCurve, RsaP: RsaGroupParams> {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Opening<RsaP: RsaGroupParams, H2P: HashToPrime> {
+pub struct Opening<G: ProjectiveCurve, RsaP: RsaGroupParams, H2P: HashToPrime> {
     pub tc_opening: TCOpening<RsaP, H2P>,
     pub tc_m: Option<Vec<u8>>,
+    _ped_g: PhantomData<G>,
 }
 
 impl<G: ProjectiveCurve, P: RsaGroupParams> Hash for Comm<G, P> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ped_comm.hash(state);
         self.tc_comm.hash(state);
+    }
+}
+
+impl<G: ProjectiveCurve, RsaP: RsaGroupParams, H2P: HashToPrime> Opening<G, RsaP, H2P> {
+    // Parses Pedersen opening from opening and panics if invalid
+    pub fn get_ped_opening(&self) -> G::ScalarField {
+        let mut m = self.tc_m.as_ref().unwrap().to_vec();
+        let f_bytes = <G::ScalarField as PrimeField>::BigInt::NUM_LIMBS * 8;
+        let ped_opening = nat_to_f(&BigInt::from_bytes_be(
+            Sign::Plus,
+            &m.split_off(m.len() - f_bytes),
+        )).unwrap();
+        ped_opening
     }
 }
 
@@ -73,7 +87,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         ped_pp: &PedersenParams<G>,
         m: &[u8],
         ad: &[u8],
-    ) -> Result<(Comm<G, RsaP>, Opening<RsaP, H2P>), Error> {
+    ) -> Result<(Comm<G, RsaP>, Opening<G, RsaP, H2P>), Error> {
         let (ped_comm, ped_opening) = PedersenComm::<G>::commit(rng, ped_pp, m)?;
         let mut tc_m = m.to_vec();
         tc_m.append(&mut ped_opening.into_repr().to_bytes_be());
@@ -83,6 +97,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             Opening {
                 tc_opening,
                 tc_m: Some(tc_m),
+                _ped_g: PhantomData,
             },
         ))
     }
@@ -92,26 +107,30 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         ped_pp: &PedersenParams<G>,
         comm: &Comm<G, RsaP>,
         ad: &[u8],
-    ) -> Result<(Option<Vec<u8>>, Opening<RsaP, H2P>), Error> {
+    ) -> Result<(Option<Vec<u8>>, Opening<G, RsaP, H2P>), Error> {
         let (tc_m, tc_opening) =
             BasicTC::<PoEP, RsaP, H, H2P>::force_open(time_pp, &comm.tc_comm, ad)?;
         match &tc_m {
             Some(tc_m_inner) => {
                 let mut m = tc_m_inner.to_vec();
                 let f_bytes = <G::ScalarField as PrimeField>::BigInt::NUM_LIMBS * 8;
-                let ped_opening = nat_to_f(&BigInt::from_bytes_be(
+                match nat_to_f(&BigInt::from_bytes_be(
                     Sign::Plus,
                     &m.split_off(m.len() - f_bytes),
-                ))?;
-                let ped_valid =
-                    PedersenComm::<G>::ver_open(ped_pp, &comm.ped_comm, &m, &ped_opening)?;
-                if ped_valid {
-                    Ok((Some(m), Opening { tc_opening, tc_m }))
-                } else {
-                    Ok((None, Opening { tc_opening, tc_m }))
+                )) {
+                    Ok(ped_opening) => {
+                        let ped_valid =
+                            PedersenComm::<G>::ver_open(ped_pp, &comm.ped_comm, &m, &ped_opening)?;
+                        if ped_valid {
+                            Ok((Some(m), Opening { tc_opening, tc_m, _ped_g: PhantomData }))
+                        } else {
+                            Ok((None, Opening { tc_opening, tc_m, _ped_g: PhantomData }))
+                        }
+                    },
+                    Err(_) => Ok((None, Opening { tc_opening, tc_m, _ped_g: PhantomData })),
                 }
             }
-            None => Ok((None, Opening { tc_opening, tc_m })),
+            None => Ok((None, Opening { tc_opening, tc_m, _ped_g: PhantomData })),
         }
     }
 
@@ -121,7 +140,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         comm: &Comm<G, RsaP>,
         ad: &[u8],
         m: &Option<Vec<u8>>,
-        opening: &Opening<RsaP, H2P>,
+        opening: &Opening<G, RsaP, H2P>,
     ) -> Result<bool, Error> {
         let tc_valid = BasicTC::<PoEP, RsaP, H, H2P>::ver_open(
             time_pp,

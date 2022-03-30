@@ -20,6 +20,7 @@ use timed_commitments::{
 };
 use crate::{Error, AuctionError};
 
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AuctionParams<G: ProjectiveCurve, RsaP: RsaGroupParams> {
     pub t_bid_collection: Duration,
     pub t_bid_self_open: Duration,
@@ -71,11 +72,11 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         }
     }
 
-    pub fn client_create_bid<R: CryptoRng + Rng>(rng: &mut R, pp: &AuctionParams<G, RsaP>, bid: u32) -> Result<(TCComm<G, RsaP>, TCOpening<RsaP, H2P>), Error> {
+    pub fn client_create_bid<R: CryptoRng + Rng>(rng: &mut R, pp: &AuctionParams<G, RsaP>, bid: u32) -> Result<(TCComm<G, RsaP>, TCOpening<G, RsaP, H2P>), Error> {
         LazyTC::<G, PoEP, RsaP, H, H2P>::commit(rng, &pp.time_pp, &pp.ped_pp, &bid.to_be_bytes(), &[])
     }
 
-    pub fn force_open_bid<R: CryptoRng + Rng>(&self, pp: &AuctionParams<G, RsaP>, bid_index: usize) -> Result<(Option<u32>, TCOpening<RsaP, H2P>), Error> {
+    pub fn force_open_bid<R: CryptoRng + Rng>(&self, pp: &AuctionParams<G, RsaP>, bid_index: usize) -> Result<(Option<u32>, TCOpening<G, RsaP, H2P>), Error> {
         let (bid_bytes, opening) = LazyTC::<G, PoEP, RsaP, H, H2P>::force_open(
             &pp.time_pp,
             &pp.ped_pp,
@@ -99,7 +100,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         }
     }
 
-    pub fn accept_self_opening(&mut self, pp: &AuctionParams<G, RsaP>, bid: Option<u32>, bid_opening: &TCOpening<RsaP, H2P>, bid_index: usize) -> Result<(), Error> {
+    pub fn accept_self_opening(&mut self, pp: &AuctionParams<G, RsaP>, bid: Option<u32>, bid_opening: &TCOpening<G, RsaP, H2P>, bid_index: usize) -> Result<(), Error> {
         if self.phase(pp) != AuctionPhase::BidSelfOpening {
             Err(Box::new(AuctionError::InvalidPhase))
         } else {
@@ -108,7 +109,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         }
     }
 
-    pub fn accept_force_opening(&mut self, pp: &AuctionParams<G, RsaP>, bid: Option<u32>, bid_opening: &TCOpening<RsaP, H2P>, bid_index: usize) -> Result<(), Error> {
+    pub fn accept_force_opening(&mut self, pp: &AuctionParams<G, RsaP>, bid: Option<u32>, bid_opening: &TCOpening<G, RsaP, H2P>, bid_index: usize) -> Result<(), Error> {
         if self.phase(pp) != AuctionPhase::BidForceOpening {
             Err(Box::new(AuctionError::InvalidPhase))
         } else {
@@ -117,7 +118,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         }
     }
 
-    fn accept_opening(&mut self, pp: &AuctionParams<G, RsaP>, bid: Option<u32>, bid_opening: &TCOpening<RsaP, H2P>, bid_index: usize) -> Result<(), Error> {
+    fn accept_opening(&mut self, pp: &AuctionParams<G, RsaP>, bid: Option<u32>, bid_opening: &TCOpening<G, RsaP, H2P>, bid_index: usize) -> Result<(), Error> {
         if self.bid_openings.contains_key(&bid_index) {
             return Err(Box::new(AuctionError::InvalidBid));
         }

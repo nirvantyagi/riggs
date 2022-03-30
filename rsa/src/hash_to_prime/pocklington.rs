@@ -26,7 +26,6 @@ pub trait PocklingtonCertParams: Clone + Eq + Debug + Send + Sync {
     const INCLUDE_SOLIDITY_WITNESSES: bool;  // flag to include witnesses for solidity verification
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PocklingtonHash<P: PocklingtonCertParams, D: Digest>{
     _params: PhantomData<P>,
     _hash: PhantomData<D>,
@@ -55,6 +54,20 @@ pub struct StepCert{
 pub struct PocklingtonCert{
     pub step_certificates: Vec<StepCert>,
     pub nonce: u32,
+}
+
+impl<P: PocklingtonCertParams, D: Digest> Clone for PocklingtonHash<P, D> {
+    fn clone(&self) -> Self {
+        Self { _params: PhantomData, _hash: PhantomData }
+    }
+}
+
+impl<P: PocklingtonCertParams, D: Digest> Eq for PocklingtonHash<P, D> {}
+
+impl<P: PocklingtonCertParams, D: Digest> PartialEq<Self> for PocklingtonHash<P, D> {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
 }
 
 impl<P: PocklingtonCertParams, D: Digest> HashToPrime for PocklingtonHash<P, D> {

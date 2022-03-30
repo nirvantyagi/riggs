@@ -11,7 +11,7 @@ use num_integer::Integer;
 
 pub mod pocklington;
 
-pub trait HashToPrime {
+pub trait HashToPrime: Clone + Eq {
     type Certificate: Clone + Eq + Debug;
 
     fn hash_to_prime(entropy: usize, input: &[u8]) -> Result<(BigInt, Self::Certificate), Error>;
@@ -19,10 +19,23 @@ pub trait HashToPrime {
     fn verify_hash_to_prime(entropy: usize, input: &[u8], p: &BigInt, cert: &Self::Certificate) -> Result<bool, Error>;
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct MillerRabinRejectionSample<D: Digest>{
     _hash: PhantomData<D>,
 }
+
+impl<D: Digest> Clone for MillerRabinRejectionSample<D> {
+    fn clone(&self) -> Self {
+        Self { _hash: PhantomData }
+    }
+}
+
+impl<D: Digest> PartialEq<Self> for MillerRabinRejectionSample<D> {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl<D: Digest> Eq for MillerRabinRejectionSample<D> {}
 
 impl<D: Digest> HashToPrime for MillerRabinRejectionSample<D> {
     type Certificate = u32;
