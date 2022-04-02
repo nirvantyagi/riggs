@@ -19,8 +19,8 @@ use rsa::{
 };
 
 use solidity::{
-  encode_fkps_comm, encode_fkps_opening, encode_poe_proof, encode_rsa_element,
-  get_bigint_library_src, get_filename_src, get_fkps_library_src, get_rsa_library_src,
+  encode_fkps_comm, encode_fkps_opening, encode_fkps_pp, encode_poe_proof, encode_rsa_element,
+  get_bigint_library_src, get_filename_src, get_fkps_src, get_rsa_library_src,
 };
 
 use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
@@ -103,11 +103,9 @@ fn main() {
 
   // Compile contract from template
   let bigint_src = get_bigint_library_src();
-  let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS);
+  let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
   let poe_src = get_filename_src("PoElib.sol");
-  // let fkps_src = get_fkps_library_src(&h_bigint, &z_bigint, MOD_BITS);
-  let fkps_src = get_fkps_library_src(&fkps_pp.x.n, &fkps_pp.y.n, MOD_BITS);
-  let fkps_test_src = get_filename_src("FKPSTest.sol");
+  let fkps_src = get_fkps_src(&fkps_pp.x.n, &fkps_pp.y.n, MOD_BITS, true);
 
   let solc_config = r#"
             {
@@ -116,8 +114,7 @@ fn main() {
                     "input.sol": { "content": "<%src%>" },
                     "BigInt.sol": { "content": "<%bigint_src%>" },
                     "RSA2048.sol": { "content": "<%rsa_lib_src%>" },
-                    "PoElib.sol": { "content": "<%poe_lib_src%>" },
-                    "FKPS.sol": { "content": "<%fkps_lib_src%>" }
+                    "PoElib.sol": { "content": "<%poe_lib_src%>" }
                 },
                 "settings": {
                     "optimizer": { "enabled": <%opt%> },
@@ -133,10 +130,9 @@ fn main() {
     .replace("<%bigint_src%>", &bigint_src)
     .replace("<%rsa_lib_src%>", &rsa_src)
     .replace("<%poe_lib_src%>", &poe_src)
-    .replace("<%fkps_lib_src%>", &fkps_src)
-    .replace("<%src%>", &fkps_test_src);
+    .replace("<%src%>", &fkps_src);
 
-  let contract = Contract::compile_from_config(&solc_config, "FKPSTest").unwrap();
+  let contract = Contract::compile_from_config(&solc_config, "FKPS").unwrap();
 
   // Setup EVM
   let mut evm = Evm::new();
@@ -159,12 +155,13 @@ fn main() {
       let force_input = vec![
         encode_fkps_comm(&fkps_comm),
         encode_fkps_opening(&fkps_force_opening.1, &fkps_force_opening.0.unwrap()),
+        encode_fkps_pp(TestRsaParams::M.deref(), &fkps_pp),
       ];
 
       let force_result = evm
         .call(
           contract
-            .encode_call_contract_bytes("testVerForceOpen", &force_input)
+            .encode_call_contract_bytes("verForceOpen", &force_input)
             .unwrap(),
           &contract_addr,
           &deployer,

@@ -4,7 +4,7 @@ pragma solidity ^0.8.10;
 import "./RSA2048.sol";
 // import "./PoElib.sol";
 
-library FKPS {
+<%con_or_lib%> FKPS {
   using RSA2048 for *; 
   // using PoElib for *; 
 
@@ -43,7 +43,7 @@ library FKPS {
   }
 
   function verOpen(Comm memory comm, SelfOpening memory self_opening, Params memory pp) 
-  internal view returns (bool) {
+  <%visibility%> view returns (bool) {
     uint alpha = self_opening.alpha;
     bytes memory message = self_opening.message; 
 
@@ -67,7 +67,7 @@ library FKPS {
   }
   
   function verForceOpen(Comm memory comm, ForceOpening memory force_opening, Params memory pp) 
-  internal view returns (bool) {
+  <%visibility%> view returns (bool) {
 
     // 1. z_hat is given 
     RSA2048.Element memory z_hat = force_opening.z_hat;

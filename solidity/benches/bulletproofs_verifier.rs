@@ -1,30 +1,15 @@
-use ark_bn254::{
-    Bn254,
-    G1Projective as G,
-};
+use ark_bn254::{Bn254, G1Projective as G};
 
+use primitive_types::U256;
 use rand::{rngs::StdRng, SeedableRng};
-use primitive_types::{U256};
 
 use solidity_test_utils::{
-    contract::Contract,
-    evm::Evm,
-    address::Address,
-    encode_group_element,
-    to_be_bytes,
+    address::Address, contract::Contract, encode_group_element, evm::Evm, to_be_bytes,
 };
 
-use rsa::{
-    bigint::BigInt,
-};
-use range_proofs::bulletproofs::{
-    Bulletproofs, PedersenComm,
-};
-use solidity::{
-    get_bn254_library_src,
-    get_bulletproofs_verifier_contract_src,
-    encode_bulletproof,
-};
+use range_proofs::bulletproofs::{Bulletproofs, PedersenComm};
+use rsa::bigint::BigInt;
+use solidity::{encode_bulletproof, get_bn254_library_src, get_bulletproofs_verifier_contract_src};
 
 const NUM_BITS: u64 = 64;
 const LOG_NUM_BITS: u64 = 6;
@@ -35,16 +20,20 @@ fn main() {
     let pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, NUM_BITS);
 
     let v = BigInt::from(1000);
-    let (comm, opening) =
-        PedersenComm::<G>::commit(&mut rng, &ped_pp, &v.to_bytes_le().1).unwrap();
+    let (comm, opening) = PedersenComm::<G>::commit(&mut rng, &ped_pp, &v.to_bytes_le().1).unwrap();
     let proof = Bulletproofs::<G, sha3::Keccak256>::prove_range(
         &mut rng, &pp, &ped_pp, &comm, &v, &opening, NUM_BITS,
-    ).unwrap();
-    assert!(Bulletproofs::<G, sha3::Keccak256>::verify_range(&pp, &ped_pp, &comm, NUM_BITS, &proof).unwrap());
+    )
+    .unwrap();
+    assert!(Bulletproofs::<G, sha3::Keccak256>::verify_range(
+        &pp, &ped_pp, &comm, NUM_BITS, &proof
+    )
+    .unwrap());
 
     // Compile contract from template
     let bn254_src = get_bn254_library_src();
-    let bulletproofs_src = get_bulletproofs_verifier_contract_src(&pp, &ped_pp, NUM_BITS, LOG_NUM_BITS);
+    let bulletproofs_src =
+        get_bulletproofs_verifier_contract_src(&pp, &ped_pp, NUM_BITS, LOG_NUM_BITS);
 
     let solc_config = r#"
             {
@@ -63,9 +52,9 @@ fn main() {
                         "": [ "*" ] } }
                 }
             }"#
-        .replace("<%opt%>", &true.to_string())
-        .replace("<%bn254_src%>", &bn254_src)
-        .replace("<%src%>", &bulletproofs_src);
+    .replace("<%opt%>", &true.to_string())
+    .replace("<%bn254_src%>", &bn254_src)
+    .replace("<%src%>", &bulletproofs_src);
 
     let contract = Contract::compile_from_config(&solc_config, "BulletproofsVerifier").unwrap();
 
@@ -75,20 +64,29 @@ fn main() {
     evm.create_account(&deployer, 0);
 
     // Deploy contract
-    let create_result = evm.deploy(contract.encode_create_contract_bytes(&[]).unwrap(), &deployer).unwrap();
+    let create_result = evm
+        .deploy(
+            contract.encode_create_contract_bytes(&[]).unwrap(),
+            &deployer,
+        )
+        .unwrap();
     let contract_addr = create_result.addr.clone();
     println!("Contract deploy gas cost: {}", create_result.gas);
 
     // Call verify function on contract
     let input = vec![
         encode_group_element::<Bn254>(&comm),
-        encode_bulletproof::<Bn254>(&proof)
+        encode_bulletproof::<Bn254>(&proof),
     ];
-    let result = evm.call(contract.encode_call_contract_bytes("verify", &input).unwrap(), &contract_addr, &deployer).unwrap();
+    let result = evm
+        .call(
+            contract
+                .encode_call_contract_bytes("verify", &input)
+                .unwrap(),
+            &contract_addr,
+            &deployer,
+        )
+        .unwrap();
     assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
     println!("{:?}", result);
-
-
-
-
 }

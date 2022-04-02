@@ -1,38 +1,25 @@
-use rand::{rngs::StdRng, SeedableRng, distributions::Distribution};
-use primitive_types::{U256};
 use ethabi::Token;
+use num_bigint::{RandomBits, Sign};
 use once_cell::sync::Lazy;
+use primitive_types::U256;
+use rand::{distributions::Distribution, rngs::StdRng, SeedableRng};
 use sha3::Keccak256;
-use num_bigint::{Sign, RandomBits};
 
-use std::{
-    str::FromStr,
-    ops::Deref,
-};
+use std::{ops::Deref, str::FromStr};
 
-use solidity_test_utils::{
-    contract::Contract,
-    evm::Evm,
-    address::Address,
-    to_be_bytes,
-};
+use solidity_test_utils::{address::Address, contract::Contract, evm::Evm, to_be_bytes};
 
 use rsa::{
     bigint::BigInt,
-    hog::{RsaHiddenOrderGroup, RsaGroupParams},
-    hash_to_prime::pocklington::{PocklingtonHash, PocklingtonCertParams},
+    hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash},
+    hog::{RsaGroupParams, RsaHiddenOrderGroup},
     poe::{PoE, PoEParams},
 };
 
 use solidity::{
-    get_bigint_library_src,
+    encode_poe_proof, encode_rsa_element, get_bigint_library_src, get_poe_library_src,
     get_rsa_library_src,
-    get_poe_library_src,
-    encode_rsa_element,
-    encode_poe_proof,
 };
-
-
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
@@ -66,17 +53,20 @@ impl PocklingtonCertParams for TestPocklingtonParams {
     const INCLUDE_SOLIDITY_WITNESSES: bool = true;
 }
 
-
 pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
-pub type TestWesolowski = PoE<TestPoEParams, TestRsaParams, PocklingtonHash<TestPocklingtonParams, Keccak256>>;
-
+pub type TestWesolowski =
+    PoE<TestPoEParams, TestRsaParams, PocklingtonHash<TestPocklingtonParams, Keccak256>>;
 
 const MOD_BITS: usize = 2048;
 const T: u32 = 160;
 
-fn main() { // cargo bench --bench poe_verifier --profile test
+fn main() {
+    // cargo bench --bench poe_verifier --profile test
     let mut rng = StdRng::seed_from_u64(1u64);
-    let x = Hog::from_nat(BigInt::from_biguint(Sign::Plus, RandomBits::new(2048).sample(&mut rng)));
+    let x = Hog::from_nat(BigInt::from_biguint(
+        Sign::Plus,
+        RandomBits::new(2048).sample(&mut rng),
+    ));
     let y = x.power(&BigInt::from(2).pow(T));
 
     println!("Proving PoE...");
@@ -89,7 +79,7 @@ fn main() { // cargo bench --bench poe_verifier --profile test
 
     // Compile contract from template
     let bigint_src = get_bigint_library_src();
-    let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS);
+    let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
     let poe_src = get_poe_library_src();
 
     let solc_config = r#"
@@ -110,10 +100,10 @@ fn main() { // cargo bench --bench poe_verifier --profile test
                         "": [ "*" ] } }
                 }
             }"#
-        .replace("<%opt%>", &false.to_string())
-        .replace("<%bigint_src%>", &bigint_src)
-        .replace("<%rsa_src%>", &rsa_src)
-        .replace("<%src%>", &poe_src);
+    .replace("<%opt%>", &false.to_string())
+    .replace("<%bigint_src%>", &bigint_src)
+    .replace("<%rsa_src%>", &rsa_src)
+    .replace("<%src%>", &poe_src);
 
     let contract = Contract::compile_from_config(&solc_config, "PoEVerifier").unwrap();
 
@@ -123,7 +113,12 @@ fn main() { // cargo bench --bench poe_verifier --profile test
     evm.create_account(&deployer, 0);
 
     // Deploy contract
-    let create_result = evm.deploy(contract.encode_create_contract_bytes(&[]).unwrap(), &deployer).unwrap();
+    let create_result = evm
+        .deploy(
+            contract.encode_create_contract_bytes(&[]).unwrap(),
+            &deployer,
+        )
+        .unwrap();
     let contract_addr = create_result.addr.clone();
     println!("Contract deploy gas cost: {}", create_result.gas);
 
@@ -132,9 +127,17 @@ fn main() { // cargo bench --bench poe_verifier --profile test
         encode_rsa_element(&x),
         encode_rsa_element(&y),
         Token::Uint(U256::from(T)),
-        encode_poe_proof(&proof)
+        encode_poe_proof(&proof),
     ];
-    let result = evm.call(contract.encode_call_contract_bytes("verify", &input).unwrap(), &contract_addr, &deployer).unwrap();
+    let result = evm
+        .call(
+            contract
+                .encode_call_contract_bytes("verify", &input)
+                .unwrap(),
+            &contract_addr,
+            &deployer,
+        )
+        .unwrap();
     assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
     println!("{:?}", result);
 }

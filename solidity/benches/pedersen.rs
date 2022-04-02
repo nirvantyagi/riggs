@@ -10,7 +10,7 @@ use solidity_test_utils::{
 
 use range_proofs::bulletproofs::PedersenComm;
 use rsa::bigint::BigInt;
-use solidity::{get_bn254_library_src, get_filename_src, get_pedersen_library_src};
+use solidity::{encode_ped_pp, get_bn254_library_src, get_filename_src, get_pedersen_library_src};
 
 fn main() {
     let mut rng = StdRng::seed_from_u64(0u64);
@@ -24,20 +24,15 @@ fn main() {
 
     // Compile contract from template
     let bn254_src = get_bn254_library_src();
-
-    // let pedersen_lib_src = get_filename_src("Pedersen.sol");
-    // let pedersen_test_src = get_pedersen_test_src(&ped_pp);
-
-    let pedersen_lib_src = get_pedersen_library_src(&ped_pp);
-    let pedersen_test_src = get_filename_src("PedersenTest.sol");
+    let pedersen_src = get_pedersen_library_src(&ped_pp, true);
+    // let pedersen_test_src = get_filename_src("PedersenTest.sol");
 
     let solc_config = r#"
             {
                 "language": "Solidity",
                 "sources": {
                     "input.sol": { "content": "<%src%>" },
-                    "BN254.sol": { "content": "<%bn254_src%>" },
-                    "Pedersen.sol": { "content": "<%pedersen_lib_src%>" }
+                    "BN254.sol": { "content": "<%bn254_src%>" }
                 },
                 "settings": {
                     "optimizer": { "enabled": <%opt%> },
@@ -51,10 +46,10 @@ fn main() {
             }"#
     .replace("<%opt%>", &true.to_string())
     .replace("<%bn254_src%>", &bn254_src)
-    .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
-    .replace("<%src%>", &pedersen_test_src);
+    .replace("<%src%>", &pedersen_src);
+    //.replace("<%src%>", &pedersen_test_src);
 
-    let contract = Contract::compile_from_config(&solc_config, "PedersenTest").unwrap();
+    let contract = Contract::compile_from_config(&solc_config, "Pedersen").unwrap();
 
     // Setup EVM
     let mut evm = Evm::new();
@@ -76,6 +71,7 @@ fn main() {
         encode_group_element::<Bn254>(&comm),
         encode_field_element::<Bn254>(&v_f),
         encode_field_element::<Bn254>(&opening),
+        encode_ped_pp::<Bn254>(&ped_pp),
     ];
     let result = evm
         .call(

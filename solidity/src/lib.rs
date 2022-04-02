@@ -132,55 +132,6 @@ pub fn get_bigint_library_src() -> String {
     src
 }
 
-// pub fn get_fkps_library_src(fkps_pp: &basic_tc::TimeParams<TestRsaParams>, m_len: usize) -> String {
-//     let contract_path = format!("{}/contracts/FKPS.sol", env!("CARGO_MANIFEST_DIR"));
-
-//     let h: BigInt = fkps_pp.x.n.clone();
-//     let z: BigInt = fkps_pp.y.n.clone();
-
-//     let mut src_file = File::open(contract_path).unwrap();
-//     let mut src = String::new();
-//     src_file.read_to_string(&mut src).unwrap();
-//     src = src
-//         .replace("\"", "\\\"")
-//         .replace("<%pp_m_len%>", &format!("{}", m_len / 256))
-//         .replace("<%pp_h_populate%>", &{
-//             let mut populate_h = String::new();
-//             for (i, u256digit) in h.to_u64_digits().1.chunks(4).rev().enumerate() {
-//                 populate_h.push_str(&format!(
-//                     "h_u256_digits[{}] = 0x{}{}{}{};",
-//                     i,
-//                     hex::encode(&u256digit[3].to_be_bytes()),
-//                     hex::encode(&u256digit[2].to_be_bytes()),
-//                     hex::encode(&u256digit[1].to_be_bytes()),
-//                     hex::encode(&u256digit[0].to_be_bytes()),
-//                 ));
-//                 if i < h.to_u64_digits().1.len() / 4 - 1 {
-//                     populate_h.push_str("\n        ");
-//                 }
-//             }
-//             populate_h
-//         })
-//         .replace("<%pp_z_populate%>", &{
-//             let mut populate_z = String::new();
-//             for (i, u256digit) in z.to_u64_digits().1.chunks(4).rev().enumerate() {
-//                 populate_z.push_str(&format!(
-//                     "z_u256_digits[{}] = 0x{}{}{}{};",
-//                     i,
-//                     hex::encode(&u256digit[3].to_be_bytes()),
-//                     hex::encode(&u256digit[2].to_be_bytes()),
-//                     hex::encode(&u256digit[1].to_be_bytes()),
-//                     hex::encode(&u256digit[0].to_be_bytes()),
-//                 ));
-//                 if i < h.to_u64_digits().1.len() / 4 - 1 {
-//                     populate_z.push_str("\n        ");
-//                 }
-//             }
-//             populate_z
-//         });
-//     src
-// }
-
 pub fn get_fkps_library_src(h: &BigInt, z: &BigInt, m_len: usize) -> String {
     let contract_path = format!("{}/contracts/FKPS.sol", env!("CARGO_MANIFEST_DIR"));
 
@@ -227,7 +178,61 @@ pub fn get_fkps_library_src(h: &BigInt, z: &BigInt, m_len: usize) -> String {
     src
 }
 
-pub fn get_rsa_library_src(m: &BigInt, m_len: usize) -> String {
+pub fn get_fkps_src(h: &BigInt, z: &BigInt, m_len: usize, as_contract: bool) -> String {
+    let contract_path = format!("{}/contracts/FKPS.sol", env!("CARGO_MANIFEST_DIR"));
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src
+        .replace("\"", "\\\"")
+        .replace(
+            "<%con_or_lib%>",
+            if as_contract { "contract" } else { "library" },
+        )
+        .replace(
+            "<%visibility%>",
+            if as_contract { "public" } else { "internal" },
+        )
+        .replace("<%pp_m_len%>", &format!("{}", m_len / 256))
+        .replace("<%pp_h_populate%>", &{
+            let mut populate_h = String::new();
+            for (i, u256digit) in h.to_u64_digits().1.chunks(4).rev().enumerate() {
+                populate_h.push_str(&format!(
+                    "h_u256_digits[{}] = 0x{}{}{}{};",
+                    i,
+                    hex::encode(&u256digit[3].to_be_bytes()),
+                    hex::encode(&u256digit[2].to_be_bytes()),
+                    hex::encode(&u256digit[1].to_be_bytes()),
+                    hex::encode(&u256digit[0].to_be_bytes()),
+                ));
+                if i < h.to_u64_digits().1.len() / 4 - 1 {
+                    populate_h.push_str("\n        ");
+                }
+            }
+            populate_h
+        })
+        .replace("<%pp_z_populate%>", &{
+            let mut populate_z = String::new();
+            for (i, u256digit) in z.to_u64_digits().1.chunks(4).rev().enumerate() {
+                populate_z.push_str(&format!(
+                    "z_u256_digits[{}] = 0x{}{}{}{};",
+                    i,
+                    hex::encode(&u256digit[3].to_be_bytes()),
+                    hex::encode(&u256digit[2].to_be_bytes()),
+                    hex::encode(&u256digit[1].to_be_bytes()),
+                    hex::encode(&u256digit[0].to_be_bytes()),
+                ));
+                if i < h.to_u64_digits().1.len() / 4 - 1 {
+                    populate_z.push_str("\n        ");
+                }
+            }
+            populate_z
+        });
+    src
+}
+
+pub fn get_rsa_library_src(m: &BigInt, m_len: usize, as_contract: bool) -> String {
     let contract_path = format!("{}/contracts/RSA2048.sol", env!("CARGO_MANIFEST_DIR"));
 
     let mut src_file = File::open(contract_path).unwrap();
@@ -235,6 +240,14 @@ pub fn get_rsa_library_src(m: &BigInt, m_len: usize) -> String {
     src_file.read_to_string(&mut src).unwrap();
     src = src
         .replace("\"", "\\\"")
+        .replace(
+            "<%con_or_lib%>",
+            if as_contract { "contract" } else { "library" },
+        )
+        .replace(
+            "<%visibility%>",
+            if as_contract { "public" } else { "internal" },
+        )
         .replace("<%pp_m_len%>", &format!("{}", m_len / 256))
         .replace("<%pp_m_populate%>", &{
             let mut populate_m = String::new();
@@ -266,7 +279,7 @@ pub fn get_poe_library_src() -> String {
     src
 }
 
-pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>) -> String {
+pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>, as_contract: bool) -> String {
     let contract_path = format!("{}/contracts/Pedersen.sol", env!("CARGO_MANIFEST_DIR"));
 
     let mut src_file = File::open(contract_path).unwrap();
@@ -274,6 +287,14 @@ pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>) -> String {
     src_file.read_to_string(&mut src).unwrap();
     src = src
         .replace("\"", "\\\"")
+        .replace(
+            "<%con_or_lib%>",
+            if as_contract { "contract" } else { "library" },
+        )
+        .replace(
+            "<%visibility%>",
+            if as_contract { "public" } else { "internal" },
+        )
         .replace(
             "<%ped_pp_g%>",
             &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()),
@@ -346,6 +367,26 @@ pub fn get_filename_src(filename: &str) -> String {
     let mut src = String::new();
     src_file.read_to_string(&mut src).unwrap();
     src = src.replace("\"", "\\\"");
+    src
+}
+
+pub fn get_filename_src_contract(filename: &str, as_contract: bool) -> String {
+    let contract_path = format!("{}/contracts/", env!("CARGO_MANIFEST_DIR"));
+    let full_path: String = contract_path + filename;
+
+    let mut src_file = File::open(full_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src
+        .replace("\"", "\\\"")
+        .replace(
+            "<%con_or_lib%>",
+            if as_contract { "contract" } else { "library" },
+        )
+        .replace(
+            "<%visibility%>",
+            if as_contract { "public" } else { "internal" },
+        );
     src
 }
 
@@ -427,6 +468,8 @@ pub fn encode_poe_proof<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>
     Token::Tuple(tokens)
 }
 
+// Commitments
+
 pub fn encode_fkps_comm<P: RsaGroupParams>(comm: &basic_tc::Comm<P>) -> Token {
     let mut tokens = Vec::new();
     tokens.push(encode_rsa_element(&comm.x));
@@ -442,6 +485,8 @@ pub fn encode_tc_comm<E: PairingEngine, P: RsaGroupParams>(
     tokens.push(encode_fkps_comm(&comm.tc_comm));
     Token::Tuple(tokens)
 }
+
+// Openings
 
 pub fn encode_fkps_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>(
     opening: &basic_tc::Opening<P, PocklingtonHash<HP, D>>,
@@ -463,13 +508,50 @@ pub fn encode_fkps_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Dige
 }
 
 pub fn encode_tc_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>(
-    opening: &lazy_tc::Opening<P, PocklingtonHash<HP, D>>,
+    opening: &lazy_tc::Opening<G, P, PocklingtonHash<HP, D>>,
 ) -> Token {
     let mut tokens = Vec::new();
     tokens.push(encode_fkps_opening(
         &opening.tc_opening,
         opening.tc_m.as_ref().unwrap(),
     ));
+    Token::Tuple(tokens)
+}
+
+// Public Params
+
+pub fn encode_ped_pp<E: PairingEngine>(ped_pp: &PedersenParams<E::G1Projective>) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_group_element::<E>(&ped_pp.g));
+    tokens.push(encode_group_element::<E>(&ped_pp.h));
+    Token::Tuple(tokens)
+}
+
+pub fn encode_rsa_pp<P: RsaGroupParams>(m: &BigInt) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_rsa_element::<P>(&RsaHiddenOrderGroup::from_nat(
+        BigInt::from(2),
+    )));
+    tokens.push(encode_bigint(&m));
+    Token::Tuple(tokens)
+}
+
+pub fn encode_fkps_pp<P: RsaGroupParams>(m: &BigInt, fkps_pp: &basic_tc::TimeParams<P>) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_rsa_pp::<P>(&m)); // needed in solidity code
+    tokens.push(encode_rsa_element(&fkps_pp.x));
+    tokens.push(encode_rsa_element(&fkps_pp.y));
+    Token::Tuple(tokens)
+}
+
+pub fn encode_tc_pp<E: PairingEngine, P: RsaGroupParams>(
+    m: &BigInt,
+    fkps_pp: &basic_tc::TimeParams<P>,
+    ped_pp: &PedersenParams<E::G1Projective>,
+) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_ped_pp::<E>(&ped_pp));
+    tokens.push(encode_fkps_pp(&m, &fkps_pp));
     Token::Tuple(tokens)
 }
 

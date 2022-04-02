@@ -3,7 +3,7 @@ pragma solidity ^0.8.10;
 
 import "./BN254.sol";
 
-library Pedersen  {
+<%con_or_lib%> Pedersen  {
   using BN254 for *;
 
   struct Params {
@@ -21,7 +21,7 @@ library Pedersen  {
   }
 
   function verify(BN254.G1Point memory given, uint b, uint r, Params memory pp) 
-  internal view returns (bool) {
+  <%visibility%>  view returns (bool) {
     BN254.G1Point memory calc = commit(b, r, pp);
     return given.X==calc.X && given.Y==calc.Y; 
   }

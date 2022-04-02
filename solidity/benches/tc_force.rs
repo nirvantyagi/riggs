@@ -24,9 +24,9 @@ use rsa::{
 };
 
 use solidity::{
-  encode_poe_proof, encode_rsa_element, encode_tc_comm, encode_tc_opening, get_bigint_library_src,
-  get_bn254_library_src, get_filename_src, get_fkps_library_src, get_pedersen_library_src,
-  get_rsa_library_src,
+  encode_rsa_element, encode_tc_comm, encode_tc_opening, encode_tc_pp, get_bigint_library_src,
+  get_bn254_library_src, get_filename_src, get_filename_src_contract, get_fkps_library_src,
+  get_fkps_src, get_pedersen_library_src, get_rsa_library_src,
 };
 
 use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
@@ -120,13 +120,12 @@ fn main() {
   // Compile contract from template
   let bn254_src = get_bn254_library_src();
   let bigint_src = get_bigint_library_src();
-  let pedersen_lib_src = get_pedersen_library_src(&ped_pp);
-  let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS);
+  let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
+  let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
   let poe_src = get_filename_src("PoElib.sol");
-  // let fkps_src = get_fkps_library_src(&h_bigint, &z_bigint, MOD_BITS);
-  let fkps_src = get_fkps_library_src(&tc_fkps_pp.x.n, &tc_fkps_pp.y.n, MOD_BITS);
-  let tc_lib_src = get_filename_src("TC.sol");
-  let tc_test_src = get_filename_src("TCTest.sol");
+  let fkps_src = get_fkps_src(&tc_fkps_pp.x.n, &tc_fkps_pp.y.n, MOD_BITS, false);
+  let tc_src = get_filename_src_contract("TC.sol", true);
+  // let tc_test_src = get_filename_src("TCTest.sol");
 
   let solc_config = r#"
             {
@@ -138,8 +137,7 @@ fn main() {
                     "BigInt.sol": { "content": "<%bigint_src%>" },
                     "RSA2048.sol": { "content": "<%rsa_lib_src%>" },
                     "PoElib.sol": { "content": "<%poe_lib_src%>" },
-                    "FKPS.sol": { "content": "<%fkps_lib_src%>" },
-                    "TC.sol": { "content": "<%tc_lib_src%>" }
+                    "FKPS.sol": { "content": "<%fkps_lib_src%>" }
                 },
                 "settings": {
                     "optimizer": { "enabled": <%opt%> },
@@ -158,10 +156,10 @@ fn main() {
     .replace("<%rsa_lib_src%>", &rsa_src)
     .replace("<%poe_lib_src%>", &poe_src)
     .replace("<%fkps_lib_src%>", &fkps_src)
-    .replace("<%tc_lib_src%>", &tc_lib_src)
-    .replace("<%src%>", &tc_test_src);
+    // .replace("<%tc_lib_src%>", &tc_lib_src)
+    .replace("<%src%>", &tc_src);
 
-  let contract = Contract::compile_from_config(&solc_config, "TCTest").unwrap();
+  let contract = Contract::compile_from_config(&solc_config, "TC").unwrap();
 
   // Setup EVM
   let mut evm = Evm::new();
@@ -185,12 +183,13 @@ fn main() {
         encode_tc_comm::<Bn254, _>(&tc_comm),
         encode_tc_opening(&tc_force_opening.1),
         encode_field_element::<Bn254>(&bid_f),
+        encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &tc_fkps_pp, &ped_pp),
       ];
 
       let force_result = evm
         .call(
           contract
-            .encode_call_contract_bytes("testVerForceOpen", &force_input)
+            .encode_call_contract_bytes("verForceOpen", &force_input)
             .unwrap(),
           &contract_addr,
           &deployer,

@@ -17,7 +17,10 @@ use rsa::{
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
 };
 
-use solidity::{encode_rsa_element, get_bigint_library_src, get_filename_src, get_rsa_library_src};
+use solidity::{
+    encode_rsa_element, encode_rsa_pp, get_bigint_library_src, get_filename_src,
+    get_rsa_library_src,
+};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
@@ -57,16 +60,14 @@ fn main() {
 
     // Compile contract from template
     let bigint_src = get_bigint_library_src();
-    let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS);
-    let rsa_test_src = get_filename_src("RSATest.sol");
+    let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, true);
 
     let solc_config = r#"
             {
                 "language": "Solidity",
                 "sources": {
                     "input.sol": { "content": "<%src%>" },
-                    "BigInt.sol": { "content": "<%bigint_src%>" },
-                    "RSA2048.sol": { "content": "<%rsa_src%>" }
+                    "BigInt.sol": { "content": "<%bigint_src%>" }
                 },
                 "settings": {
                     "optimizer": { "enabled": <%opt%> },
@@ -80,10 +81,9 @@ fn main() {
             }"#
     .replace("<%opt%>", &false.to_string())
     .replace("<%bigint_src%>", &bigint_src)
-    .replace("<%rsa_src%>", &rsa_src)
-    .replace("<%src%>", &rsa_test_src);
+    .replace("<%src%>", &rsa_src);
 
-    let contract = Contract::compile_from_config(&solc_config, "RSATest").unwrap();
+    let contract = Contract::compile_from_config(&solc_config, "RSA2048").unwrap();
 
     // Setup EVM
     let mut evm = Evm::new();
@@ -105,11 +105,12 @@ fn main() {
         encode_rsa_element(&x),
         encode_int_from_bytes(&exponent.to_bytes_be().1),
         encode_rsa_element(&y),
+        encode_rsa_pp::<TestRsaParams>(TestRsaParams::M.deref()),
     ];
     let result = evm
         .call(
             contract
-                .encode_call_contract_bytes("testVerify", &input)
+                .encode_call_contract_bytes("verify", &input)
                 .unwrap(),
             &contract_addr,
             &deployer,

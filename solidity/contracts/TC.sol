@@ -4,7 +4,7 @@ pragma solidity ^0.8.10;
 import "./FKPS.sol";
 import "./Pedersen.sol";
 
-library TC {
+<%con_or_lib%> TC {
   using FKPS for *; 
   using Pedersen for *; 
 
@@ -33,7 +33,7 @@ library TC {
   
 
   function verOpen(Comm memory comm, SelfOpening memory so, uint bid, 
-  Params memory pp) internal view returns (bool) {
+  Params memory pp) <%visibility%> view returns (bool) {
     bool fkps_check = true;
     bool pc_check = true;
 
@@ -46,7 +46,7 @@ library TC {
   }
 
   function verForceOpen(Comm memory comm, ForceOpening memory tc_fo, uint bid, 
-  Params memory pp) internal view returns (bool) {
+  Params memory pp) <%visibility%> view returns (bool) {
     bool fkps_check = true;
     bool pc_check = true;
 

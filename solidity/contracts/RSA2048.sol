@@ -3,7 +3,7 @@ pragma solidity ^0.8.10;
 
 import "./BigInt.sol";
 
-library RSA2048 {
+<%con_or_lib%> RSA2048 {
 
     struct Element {
         BigInt.BigInt n;
@@ -59,6 +59,12 @@ library RSA2048 {
     function eq(Element memory a, Element memory b)
     internal view returns (bool) {
         return BigInt.cmp(a.n, b.n, false) == 0;
+    }
+
+    // function to test if X^e == Y
+    function verify(RSA2048.Element memory X, uint256 e, RSA2048.Element memory Y, Params memory pp)
+    <%visibility%> view returns (bool) {
+      return RSA2048.eq(Y, RSA2048.reduce(RSA2048.power(X, BigInt.from_uint256(e), pp), pp));
     }
 
 }
