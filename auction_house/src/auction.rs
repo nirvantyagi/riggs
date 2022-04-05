@@ -32,7 +32,7 @@ pub struct Auction<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H:
     t_start: Instant,
     bid_comms_i: HashMap<usize, TCComm<G, RsaP>>,  // index -> commitment
     bid_comms_set: HashSet<TCComm<G, RsaP>>,  // commitments
-    bid_openings: HashMap<usize, Option<u32>>,  // index -> bid
+    pub bid_openings: HashMap<usize, Option<u32>>,  // index -> bid
     _poe_params: PhantomData<PoEP>,
     _hash: PhantomData<H>,
     _hash_to_prime: PhantomData<H2P>,

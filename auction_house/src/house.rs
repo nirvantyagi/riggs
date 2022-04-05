@@ -366,13 +366,38 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         Ok(())
     }
 
-    // Completes auction and returns (winner_id, refund_map<user_id, refund_amt>)
-    pub fn complete_second_price_auction(
+    // Completes auction and returns (price, winners, refund_map<user_id, refund_amt>)
+    pub fn complete_kplusone_price_auction(
         &mut self,
-        house_pp: &HouseParams<G>,
+        _house_pp: &HouseParams<G>,
         auction_pp: &HouseAuctionParams<G, RsaP>,
         auction_id: u32,
-    ) -> Result<(u32, HashMap<u32, u32>), Error> {
-        unimplemented!()
+        k: usize,
+    ) -> Result<(u32, Vec<u32>, HashMap<u32, u32>), Error> {
+        let (auction, bid_map) = self.active_auctions.get(&auction_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
+            return Err(Box::new(AuctionError::InvalidPhase));
+        }
+        let mut bids = bid_map.iter()
+            .map(|(uid, bid_id)| (*uid, auction.bid_openings.get(&(*bid_id as usize)).unwrap()))
+            .filter(|(_uid, bid)| bid.is_some())
+            .map(|(uid, bid)| (uid, bid.unwrap()))
+            .collect::<Vec<_>>();
+
+        assert!(bids.len() > k as usize);
+
+        // TODO: Does not handle tie bids. Currently tie is broken by unstable selection algo.
+        let k1_index = bids.len() - (k + 1);
+        bids.select_nth_unstable_by_key(k1_index, |(_, bid)| *bid);
+        let price = bids[k1_index].1;
+        let winners = bids[k1_index + 1..].iter()
+            .map(|(uid, _)| *uid)
+            .collect::<Vec<_>>();
+        let refunds = bids[..k1_index + 1].to_vec().into_iter()
+            .collect::<HashMap<u32, u32>>();
+
+        self.active_auctions.remove(&auction_id);
+        Ok((price, winners, refunds))
     }
 }
