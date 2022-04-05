@@ -154,7 +154,7 @@ fn main() {
     basic_tc::Opening::FORCE(y, poe_proof) => {
       let force_input = vec![
         encode_fkps_comm(&fkps_comm),
-        encode_fkps_opening(&fkps_force_opening.1, &fkps_force_opening.0.unwrap()),
+        encode_fkps_opening(&fkps_force_opening.1, &fkps_force_opening.0),
         encode_fkps_pp(TestRsaParams::M.deref(), &fkps_pp),
       ];
 

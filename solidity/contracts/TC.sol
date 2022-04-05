@@ -37,9 +37,11 @@ import "./Pedersen.sol";
     bool fkps_check = true;
     bool pc_check = true;
 
-    bytes32 ped_r = bytesToBytes32(so.fkps_so.message, so.fkps_so.message.length-uint(32));
+    if (so.fkps_so.message.length >= 32) {
+      bytes32 ped_r = bytesToBytes32(so.fkps_so.message, so.fkps_so.message.length-uint(32));
+      pc_check = Pedersen.verify(comm.ped, bid, uint(ped_r), pp.ped_pp);
+    }
 
-    pc_check = Pedersen.verify(comm.ped, bid, uint(ped_r), pp.ped_pp);
     fkps_check = FKPS.verOpen(comm.fkps, so.fkps_so, pp.fkps_pp);
 
     return pc_check && fkps_check;
@@ -50,9 +52,11 @@ import "./Pedersen.sol";
     bool fkps_check = true;
     bool pc_check = true;
 
-    bytes32 ped_r = bytesToBytes32(tc_fo.fkps_fo.message, tc_fo.fkps_fo.message.length-uint(32));
-
-    pc_check = Pedersen.verify(comm.ped, bid, uint(ped_r), pp.ped_pp);
+    if (tc_fo.fkps_fo.message.length >= 32) {
+      bytes32 ped_r = bytesToBytes32(tc_fo.fkps_fo.message, tc_fo.fkps_fo.message.length-uint(32));
+      pc_check = Pedersen.verify(comm.ped, bid, uint(ped_r), pp.ped_pp);
+    }
+    
     fkps_check = FKPS.verForceOpen(comm.fkps, tc_fo.fkps_fo, pp.fkps_pp);
     
     return pc_check && fkps_check;

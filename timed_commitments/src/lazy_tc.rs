@@ -47,7 +47,8 @@ impl<G: ProjectiveCurve, RsaP: RsaGroupParams, H2P: HashToPrime> Opening<G, RsaP
         let ped_opening = nat_to_f(&BigInt::from_bytes_be(
             Sign::Plus,
             &m.split_off(m.len() - f_bytes),
-        )).unwrap();
+        ))
+        .unwrap();
         ped_opening
     }
 }
@@ -122,15 +123,43 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
                         let ped_valid =
                             PedersenComm::<G>::ver_open(ped_pp, &comm.ped_comm, &m, &ped_opening)?;
                         if ped_valid {
-                            Ok((Some(m), Opening { tc_opening, tc_m, _ped_g: PhantomData }))
+                            Ok((
+                                Some(m),
+                                Opening {
+                                    tc_opening,
+                                    tc_m,
+                                    _ped_g: PhantomData,
+                                },
+                            ))
                         } else {
-                            Ok((None, Opening { tc_opening, tc_m, _ped_g: PhantomData }))
+                            Ok((
+                                None,
+                                Opening {
+                                    tc_opening,
+                                    tc_m,
+                                    _ped_g: PhantomData,
+                                },
+                            ))
                         }
-                    },
-                    Err(_) => Ok((None, Opening { tc_opening, tc_m, _ped_g: PhantomData })),
+                    }
+                    Err(_) => Ok((
+                        None,
+                        Opening {
+                            tc_opening,
+                            tc_m,
+                            _ped_g: PhantomData,
+                        },
+                    )),
                 }
             }
-            None => Ok((None, Opening { tc_opening, tc_m, _ped_g: PhantomData })),
+            None => Ok((
+                None,
+                Opening {
+                    tc_opening,
+                    tc_m,
+                    _ped_g: PhantomData,
+                },
+            )),
         }
     }
 

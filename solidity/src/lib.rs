@@ -490,7 +490,7 @@ pub fn encode_tc_comm<E: PairingEngine, P: RsaGroupParams>(
 
 pub fn encode_fkps_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>(
     opening: &basic_tc::Opening<P, PocklingtonHash<HP, D>>,
-    m: &[u8],
+    mut m: &Option<Vec<u8>>,
 ) -> Token {
     let mut tokens = Vec::new();
 
@@ -503,7 +503,11 @@ pub fn encode_fkps_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Dige
             tokens.push(encode_poe_proof::<P, HP, D>(poe_proof));
         }
     };
-    tokens.push(Token::Bytes(m.to_vec()));
+    if m.is_none() {
+        tokens.push(Token::Bytes([].to_vec()));
+    } else {
+        tokens.push(Token::Bytes(m.as_ref().unwrap().to_vec()));
+    }
     Token::Tuple(tokens)
 }
 
@@ -513,7 +517,8 @@ pub fn encode_tc_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest
     let mut tokens = Vec::new();
     tokens.push(encode_fkps_opening(
         &opening.tc_opening,
-        opening.tc_m.as_ref().unwrap(),
+        &opening.tc_m,
+        // &opening.tc_m.as_ref().get_or_insert(&[].to_vec()),
     ));
     Token::Tuple(tokens)
 }

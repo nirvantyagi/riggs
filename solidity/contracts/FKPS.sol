@@ -63,7 +63,7 @@ import "./RSA2048.sol";
     RSA2048.Element memory h_hat = RSA2048.power_and_reduce(pp.h, alpha, pp.rsa_pp);
 
     // 4. Check equality
-    return h_hat.eq(comm.h_hat) && compare_arrays(pt, message);
+    return h_hat.eq(comm.h_hat) && compare_bytes_bytes32(pt, message);
   }
   
   function verForceOpen(Comm memory comm, ForceOpening memory force_opening, Params memory pp) 
@@ -85,7 +85,7 @@ import "./RSA2048.sol";
 
     // 4. Verify PoE and compare decryption
     bool poe_check = verify(comm.h_hat, z_hat, uint32(40), poe_proof);
-    bool pt_check = compare_arrays(pt, message);
+    bool pt_check = compare_bytes_bytes32(pt, message);
 
     return poe_check && pt_check;
   }
@@ -114,8 +114,9 @@ import "./RSA2048.sol";
 
   //////////////////////// Utility Functions /////////////////////
 
-  function compare_arrays(bytes32[] memory pt, bytes memory message) 
+  function compare_bytes_bytes32(bytes32[] memory pt, bytes memory message) 
   private pure returns (bool) {
+    if (message.length == 0) {return true;}
     uint num_blocks = (message.length)/32;
     if (message.length % 32 != 0) {
       num_blocks +=1;

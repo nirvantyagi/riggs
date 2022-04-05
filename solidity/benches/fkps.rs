@@ -156,7 +156,7 @@ fn main() {
 
   let input = vec![
     encode_fkps_comm(&fkps_comm),
-    encode_fkps_opening(&fkps_opening, &bid_bytes),
+    encode_fkps_opening(&fkps_opening, &Some(bid_bytes)),
     encode_fkps_pp(TestRsaParams::M.deref(), &fkps_pp),
   ];
 
