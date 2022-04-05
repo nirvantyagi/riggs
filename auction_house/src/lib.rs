@@ -12,6 +12,7 @@ pub type Error = Box<dyn ErrorTrait>;
 pub enum AuctionError {
     InvalidPhase,
     InvalidBid,
+    InvalidID,
 }
 
 impl ErrorTrait for AuctionError {
@@ -25,6 +26,7 @@ impl fmt::Display for AuctionError {
         let msg = match self {
             AuctionError::InvalidBid => format!("invalid bid"),
             AuctionError::InvalidPhase => format!("invalid phase"),
+            AuctionError::InvalidID => format!("invalid id"),
         };
         write!(f, "{}", msg)
     }

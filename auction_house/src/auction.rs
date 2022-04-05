@@ -100,11 +100,11 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         }
     }
 
-    pub fn accept_self_opening(&mut self, pp: &AuctionParams<G, RsaP>, bid: Option<u32>, bid_opening: &TCOpening<G, RsaP, H2P>, bid_index: usize) -> Result<(), Error> {
+    pub fn accept_self_opening(&mut self, pp: &AuctionParams<G, RsaP>, bid: u32, bid_opening: &TCOpening<G, RsaP, H2P>, bid_index: usize) -> Result<(), Error> {
         if self.phase(pp) != AuctionPhase::BidSelfOpening {
             Err(Box::new(AuctionError::InvalidPhase))
         } else {
-            self.accept_opening(pp, bid, bid_opening, bid_index)?;
+            self.accept_opening(pp, Some(bid), bid_opening, bid_index)?;
             Ok(())
         }
     }
@@ -241,7 +241,7 @@ mod tests {
         let index3 = auction.accept_bid(&auction_pp, &comm3).unwrap();
 
         assert!(auction.accept_bid(&auction_pp, &comm3).is_err());
-        assert!(auction.accept_self_opening(&auction_pp, Some(bid1), &opening1, index1).is_err());
+        assert!(auction.accept_self_opening(&auction_pp, bid1, &opening1, index1).is_err());
         assert!(auction.accept_force_opening(&auction_pp, Some(bid1), &opening1, index1).is_err());
 
         // Self opening phase
@@ -250,17 +250,17 @@ mod tests {
 
         assert!(auction.accept_bid(&auction_pp, &comm4).is_err());
 
-        auction.accept_self_opening(&auction_pp, Some(bid1), &opening1, index1).unwrap();
-        assert!(auction.accept_self_opening(&auction_pp, Some(bid1), &opening1, index1).is_err());
-        assert!(auction.accept_self_opening(&auction_pp, Some(bid2), &opening2, index3).is_err());
+        auction.accept_self_opening(&auction_pp, bid1, &opening1, index1).unwrap();
+        assert!(auction.accept_self_opening(&auction_pp, bid1, &opening1, index1).is_err());
+        assert!(auction.accept_self_opening(&auction_pp, bid2, &opening2, index3).is_err());
 
-        auction.accept_self_opening(&auction_pp, Some(bid2), &opening2, index2).unwrap();
+        auction.accept_self_opening(&auction_pp, bid2, &opening2, index2).unwrap();
         assert!(auction.accept_force_opening(&auction_pp, Some(bid3), &opening3, index3).is_err());
 
         // Force opening phase
         thread::sleep(auction_pp.t_bid_self_open);
         assert_eq!(auction.phase(&auction_pp), AuctionPhase::BidForceOpening);
-        assert!(auction.accept_self_opening(&auction_pp, Some(bid3), &opening3, index3).is_err());
+        assert!(auction.accept_self_opening(&auction_pp, bid3, &opening3, index3).is_err());
         assert!(auction.accept_bid(&auction_pp, &comm4).is_err());
         auction.accept_force_opening(&auction_pp, Some(bid3), &opening3, index3).unwrap();
 
@@ -301,9 +301,9 @@ mod tests {
         // Self opening phase
         thread::sleep(auction_pp.t_bid_collection);
 
-        auction.accept_self_opening(&auction_pp, Some(bid1), &opening1, index1).unwrap();
-        auction.accept_self_opening(&auction_pp, Some(bid2), &opening2, index2).unwrap();
-        auction.accept_self_opening(&auction_pp, Some(bid3), &opening3, index3).unwrap();
+        auction.accept_self_opening(&auction_pp, bid1, &opening1, index1).unwrap();
+        auction.accept_self_opening(&auction_pp, bid2, &opening2, index2).unwrap();
+        auction.accept_self_opening(&auction_pp, bid3, &opening3, index3).unwrap();
 
         // Auction complete - skip force opening
         assert_eq!(auction.phase(&auction_pp), AuctionPhase::Complete);

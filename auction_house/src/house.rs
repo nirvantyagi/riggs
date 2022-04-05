@@ -4,11 +4,10 @@ use num_traits::{Zero};
 use digest::Digest;
 use rand::{CryptoRng, Rng};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap},
     marker::PhantomData,
-    time::{Duration, Instant},
 };
-use std::ops::Neg;
+use std::ops::{Neg};
 use ark_ff::PrimeField;
 
 use rsa::{
@@ -19,8 +18,7 @@ use rsa::{
 };
 use timed_commitments::{
     PedersenParams,
-    basic_tc::{TimeParams},
-    lazy_tc::{LazyTC, Comm as TCComm, Opening as TCOpening},
+    lazy_tc::{Comm as TCComm, Opening as TCOpening},
 };
 use range_proofs::bulletproofs::{
     Bulletproofs, Params as RangeProofParams, Proof as RangeProof,
@@ -32,10 +30,11 @@ use crate::{
 
 const BID_BITS: u32 = 32;
 
-//TODO: PedersenParams should be here instead of in per-auction params
+//TODO: PedersenParams should be here instead of in per-auction params (currently duplicated)
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct HouseParams<G: ProjectiveCurve> {
     range_proof_pp: RangeProofParams<G>,
+    ped_pp: PedersenParams<G>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -52,8 +51,11 @@ pub struct AccountSummary<G: ProjectiveCurve> {
 }
 
 pub struct AuctionHouse<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> {
-    active_auctions: HashMap<u32, Auction<G, PoEP, RsaP, H, H2P>>,
-    accounts: HashMap<u32, AccountSummary<G>>,
+    active_auctions: HashMap<u32, (Auction<G, PoEP, RsaP, H, H2P>, HashMap<u32, u32>)>,  // auction_id -> (auction, (user_id -> bid_id))
+    accounts: HashMap<u32, AccountSummary<G>>,  // user_id -> account_info
+    //TODO: Will eventually overflow, use hash or replace finished auction ids
+    ctr_auction: u32,
+    ctr_account: u32,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -143,5 +145,234 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         self.public_summary.comm_active_bids += proposal.comm_bid.ped_comm;
         self.active_bids.insert(auction_id, (bid, opening.clone()));
         Ok(())
+    }
+
+    pub fn confirm_bid_self_open(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        auction_pp: &HouseAuctionParams<G, RsaP>,
+    ) -> Result<(), Error> {
+        self.public_summary.balance += auction_pp.reward_self_open + auction_pp.reward_force_open;
+        Ok(())
+    }
+
+    pub fn confirm_bid_force_open(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        auction_pp: &HouseAuctionParams<G, RsaP>,
+    ) -> Result<(), Error> {
+        self.public_summary.balance += auction_pp.reward_force_open;
+        Ok(())
+    }
+
+    pub fn confirm_deposit(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        amt: u32,
+    ) -> Result<(), Error> {
+        self.public_summary.balance += amt;
+        Ok(())
+    }
+
+    pub fn propose_withdrawal<R: CryptoRng + Rng>(
+        &self,
+        rng: &mut R,
+        house_pp: &HouseParams<G>,
+        amt: u32,
+    ) -> Result<RangeProof<G>, Error> {
+        if self.sum_active_bids > self.public_summary.balance - amt {
+            return Err(Box::new(AuctionError::InvalidBid))
+        }
+        // Prove balance - amt - active_bids > 0
+        let balance_less_amt = self.public_summary.balance - amt;
+        let f_balance_less_amt = nat_to_f::<G::ScalarField>(&BigInt::from(balance_less_amt))?;
+        let comm_balance = house_pp.ped_pp.g.mul(&f_balance_less_amt.into_repr()) - &self.public_summary.comm_active_bids;
+        let range_proof_balance = Bulletproofs::<G, H>::prove_range(
+            rng,
+            &house_pp.range_proof_pp,
+            &house_pp.ped_pp,
+            &comm_balance,
+            &BigInt::from(balance_less_amt - self.sum_active_bids),
+            &self.opening_active_bids.neg(),
+            BID_BITS as u64,
+        )?;
+        Ok(range_proof_balance)
+    }
+
+    pub fn confirm_withdrawal(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        amt: u32,
+    ) -> Result<(), Error> {
+        self.public_summary.balance -= amt;
+        Ok(())
+    }
+}
+
+
+impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> AuctionHouse<G, PoEP, RsaP, H, H2P> {
+    pub fn new(_house_pp: &HouseParams<G>) -> Self {
+        Self {
+            active_auctions: HashMap::new(),
+            accounts: HashMap::new(),
+            ctr_auction: 0,
+            ctr_account: 0
+        }
+    }
+
+    pub fn new_account(&mut self, _house_pp: &HouseParams<G>) -> (u32, AccountSummary<G>) {
+        let user_id = self.ctr_account;
+        let user_summary = AccountSummary {
+            balance: 0,
+            comm_active_bids: G::zero(),
+        };
+        self.accounts.insert(user_id, user_summary.clone());
+        self.ctr_account += 1;
+        (user_id, user_summary)
+    }
+
+    pub fn account_deposit(&mut self, _house_pp: &HouseParams<G>, user_id: u32, amt: u32) -> Result<(), Error> {
+        let summary = self.accounts.get_mut(&user_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        summary.balance += amt;
+        Ok(())
+    }
+
+    pub fn account_withdrawal(
+        &mut self,
+        house_pp: &HouseParams<G>,
+        user_id: u32,
+        amt: u32,
+        proof: &RangeProof<G>,
+    ) -> Result<(), Error> {
+        let user_summary = self.accounts.get_mut(&user_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        let balance_less_amt = user_summary.balance - amt;
+        let f_balance_less_amt = nat_to_f::<G::ScalarField>(&BigInt::from(balance_less_amt))?;
+        let comm_balance = house_pp.ped_pp.g.mul(&f_balance_less_amt.into_repr()) - &user_summary.comm_active_bids;
+        if !Bulletproofs::<G, H>::verify_range(
+            &house_pp.range_proof_pp,
+            &house_pp.ped_pp,
+            &comm_balance,
+            BID_BITS as u64,
+            proof,
+        )? {
+            return Err(Box::new(AuctionError::InvalidBid));
+        }
+        user_summary.balance -= amt;
+        Ok(())
+    }
+
+    pub fn new_auction(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        auction_pp: &HouseAuctionParams<G, RsaP>,
+    ) -> u32 {
+        let auction_id = self.ctr_auction;
+        //TODO: Assert Pedersen parameters between auction and house are the same
+        self.active_auctions.insert(
+            auction_id,
+            (Auction::new(&auction_pp.auction_pp), HashMap::new()),
+        );
+        self.ctr_auction += 1;
+        auction_id
+    }
+
+    pub fn account_bid(
+        &mut self,
+        house_pp: &HouseParams<G>,
+        auction_pp: &HouseAuctionParams<G, RsaP>,
+        auction_id: u32,
+        user_id: u32,
+        bid: &BidProposal<G, RsaP>,
+    ) -> Result<(), Error> {
+        let user_summary = self.accounts.get_mut(&user_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        let (auction, bid_map) = self.active_auctions.get_mut(&auction_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        // TODO: Allow multiple bids from a single user
+        if bid_map.contains_key(&user_id) {
+            return Err(Box::new(AuctionError::InvalidBid));
+        }
+        // Verify bid > 0
+        if !Bulletproofs::<G, H>::verify_range(
+            &house_pp.range_proof_pp,
+            &house_pp.ped_pp,
+            &bid.comm_bid.ped_comm,
+            BID_BITS as u64,
+            &bid.range_proof_bid,
+        )? {
+            return Err(Box::new(AuctionError::InvalidBid));
+        }
+        // Verify balance - reward - bid - active_bids > 0
+        let balance_less_reward = user_summary.balance - auction_pp.reward_self_open - auction_pp.reward_force_open;
+        let f_balance_less_reward = nat_to_f::<G::ScalarField>(&BigInt::from(balance_less_reward))?;
+        let comm_balance = house_pp.ped_pp.g.mul(&f_balance_less_reward.into_repr()) - &bid.comm_bid.ped_comm - &user_summary.comm_active_bids;
+        if !Bulletproofs::<G, H>::verify_range(
+            &house_pp.range_proof_pp,
+            &house_pp.ped_pp,
+            &comm_balance,
+            BID_BITS as u64,
+            &bid.range_proof_balance,
+        )? {
+            return Err(Box::new(AuctionError::InvalidBid));
+        }
+        // Update state
+        let bid_id = auction.accept_bid(&auction_pp.auction_pp, &bid.comm_bid)?;
+        bid_map.insert(user_id, bid_id as u32);
+        user_summary.balance -= auction_pp.reward_self_open + auction_pp.reward_force_open;
+        user_summary.comm_active_bids += &bid.comm_bid.ped_comm;
+        Ok(())
+    }
+
+    pub fn account_self_open(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        auction_pp: &HouseAuctionParams<G, RsaP>,
+        auction_id: u32,
+        user_id: u32,
+        bid: u32,
+        opening: &TCOpening<G, RsaP, H2P>,
+    ) -> Result<(), Error> {
+        let user_summary = self.accounts.get_mut(&user_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        let (auction, bid_map) = self.active_auctions.get_mut(&auction_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        let bid_id = bid_map.get(&user_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        // Update state
+        auction.accept_self_opening(&auction_pp.auction_pp, bid, opening, *bid_id as usize)?;
+        user_summary.balance += auction_pp.reward_self_open + auction_pp.reward_force_open;
+        Ok(())
+    }
+
+    pub fn account_force_open(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        auction_pp: &HouseAuctionParams<G, RsaP>,
+        auction_id: u32,
+        user_id: u32,
+        bid_id: u32,
+        bid: Option<u32>,
+        opening: &TCOpening<G, RsaP, H2P>,
+    ) -> Result<(), Error> {
+        let user_summary = self.accounts.get_mut(&user_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        let (auction, _) = self.active_auctions.get_mut(&auction_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        // Update state
+        auction.accept_force_opening(&auction_pp.auction_pp, bid, opening, bid_id as usize)?;
+        user_summary.balance += auction_pp.reward_force_open;
+        Ok(())
+    }
+
+    // Completes auction and returns (winner_id, refund_map<user_id, refund_amt>)
+    pub fn complete_second_price_auction(
+        &mut self,
+        house_pp: &HouseParams<G>,
+        auction_pp: &HouseAuctionParams<G, RsaP>,
+        auction_id: u32,
+    ) -> Result<(u32, HashMap<u32, u32>), Error> {
+        unimplemented!()
     }
 }
