@@ -30,7 +30,7 @@ pub struct AuctionParams<G: ProjectiveCurve, RsaP: RsaGroupParams> {
 
 pub struct Auction<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> {
     t_start: Instant,
-    bid_comms_i: HashMap<usize, TCComm<G, RsaP>>,  // index -> commitment
+    pub bid_comms_i: HashMap<usize, TCComm<G, RsaP>>,  // index -> commitment
     bid_comms_set: HashSet<TCComm<G, RsaP>>,  // commitments
     pub bid_openings: HashMap<usize, Option<u32>>,  // index -> bid
     _poe_params: PhantomData<PoEP>,
@@ -73,10 +73,10 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
     }
 
     pub fn client_create_bid<R: CryptoRng + Rng>(rng: &mut R, pp: &AuctionParams<G, RsaP>, bid: u32) -> Result<(TCComm<G, RsaP>, TCOpening<G, RsaP, H2P>), Error> {
-        LazyTC::<G, PoEP, RsaP, H, H2P>::commit(rng, &pp.time_pp, &pp.ped_pp, &bid.to_be_bytes(), &[])
+        LazyTC::<G, PoEP, RsaP, H, H2P>::commit(rng, &pp.time_pp, &pp.ped_pp, &bid.to_le_bytes(), &[])
     }
 
-    pub fn force_open_bid<R: CryptoRng + Rng>(&self, pp: &AuctionParams<G, RsaP>, bid_index: usize) -> Result<(Option<u32>, TCOpening<G, RsaP, H2P>), Error> {
+    pub fn force_open_bid(&self, pp: &AuctionParams<G, RsaP>, bid_index: usize) -> Result<(Option<u32>, TCOpening<G, RsaP, H2P>), Error> {
         let (bid_bytes, opening) = LazyTC::<G, PoEP, RsaP, H, H2P>::force_open(
             &pp.time_pp,
             &pp.ped_pp,
@@ -84,7 +84,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             &[],
         )?;
         //TODO: Not robust. Will be enforced to be true with range proof
-        Ok((bid_bytes.map(|bytes| u32::from_be_bytes(bytes[bytes.len() - 4..].try_into().unwrap())), opening))
+        Ok((bid_bytes.map(|bytes| u32::from_le_bytes(bytes[..4].try_into().unwrap())), opening))
     }
 
     pub fn accept_bid(&mut self, pp: &AuctionParams<G, RsaP>, bid_comm: &TCComm<G, RsaP>) -> Result<usize, Error> {
@@ -129,7 +129,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             &pp.ped_pp,
             comm,
             &[],
-            &bid.map(|b| b.to_be_bytes().to_vec()),
+            &bid.map(|b| b.to_le_bytes().to_vec()),
             bid_opening,
         )? {
             self.bid_openings.insert(bid_index, bid);
