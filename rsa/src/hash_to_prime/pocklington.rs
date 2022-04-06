@@ -136,7 +136,7 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
         let factors = factor(&(p - BigInt::one()));
         debug_assert_eq!(factors[0].0, BigInt::from(2));
         let n2 = factors[0].1;
-        let (f, n, u, v, s, expr_sqrt) = factors.iter().find_map(|(f, n)| Self::test_pocklington_f(p, f, *n, n2))?;
+        let (f, n, u, v, s, expr_sqrt) = factors.iter().skip(1).find_map(|(f, n)| Self::test_pocklington_f(p, f, *n, n2))?;
         let ((bu, bv), gcd) = extended_euclidean_gcd(&u, &v);
         debug_assert_eq!(gcd, BigInt::one());
         let (a, (p_less_one_div_f, p_less_one_div_two, b_p_div_f1, b_p_div_f2, b_p_div_two1, b_p_div_two2)) = {

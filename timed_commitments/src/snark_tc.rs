@@ -318,7 +318,7 @@ where
             })?;
         debug_assert_eq!(self.m.len(), P::M_LEN);
         let m =
-            <Vec<UInt8<F>>>::new_witness(ark_relations::ns!(cs, "tc_randomizer"), || Ok(self.m))?;
+            <Vec<UInt8<F>>>::new_witness(ark_relations::ns!(cs, "m"), || Ok(self.m))?;
 
         // Generate constraints
         let computed_ped_comm =
