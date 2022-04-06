@@ -321,6 +321,7 @@ where
             <Vec<UInt8<F>>>::new_witness(ark_relations::ns!(cs, "m"), || Ok(self.m))?;
 
         // Generate constraints
+        // Note: encoding of message must match PedersenComm encoding in src/lib.rs
         let computed_ped_comm =
             g.scalar_mul_le(m.to_bits_le()?.iter())? + h.scalar_mul_le(ped_opening.iter())?;
         comm_ped.enforce_equal(&computed_ped_comm)?;
