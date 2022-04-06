@@ -524,6 +524,7 @@ mod tests {
     >;
 
     #[test]
+    #[ignore] // Expensive test, run with ``cargo test basic_auction_house_test -- --ignored --nocapture``
     fn basic_auction_house_test() {
         let mut rng = StdRng::seed_from_u64(0u64);
 
