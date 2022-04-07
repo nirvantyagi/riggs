@@ -74,6 +74,14 @@ pub fn encode_bytes(b: &[u8]) -> Token {
     Token::Bytes(b.to_vec())
 }
 
+pub fn encode_bytes_option(m: &Option<Vec<u8>>) -> Token {
+    if m.is_none() {
+        Token::Bytes([].to_vec())
+    } else {
+        Token::Bytes(m.as_ref().unwrap().to_vec())
+    }
+}
+
 pub fn encode_group_element<E: PairingEngine>(g: &E::G1Projective) -> Token {
     let (x, y) = parse_g1::<E>(&g.into_affine());
     Token::Tuple(vec![

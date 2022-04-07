@@ -9,12 +9,11 @@ use primitive_types::U256;
 use rand::{distributions::Distribution, rngs::StdRng, SeedableRng};
 use sha3::{Digest, Keccak256};
 
-use std::{ops::Deref, str::FromStr};
-
 use solidity_test_utils::{
-  address::Address, contract::Contract, encode_bytes, encode_field_element, encode_group_element,
-  encode_int_from_bytes, evm::Evm, to_be_bytes,
+  address::Address, contract::Contract, encode_bytes, encode_bytes_option, encode_field_element,
+  encode_group_element, encode_int_from_bytes, evm::Evm, to_be_bytes,
 };
+use std::{ops::Deref, str::FromStr};
 
 use rsa::{
   bigint::{nat_to_f, BigInt},
@@ -96,7 +95,7 @@ fn main() {
   let mut rng = StdRng::seed_from_u64(1u64);
 
   // 1. Get bid
-  let bid = BigInt::from(10000);
+  let bid = BigInt::from(10001);
 
   let bid_bytes = [bid.to_bytes_be().1].concat();
 
@@ -112,8 +111,51 @@ fn main() {
   // Create commitment
   let mut ad = [0u8; 32];
   let (tc_comm, _) = TC::commit(&mut rng, &tc_fkps_pp, &ped_pp, &bid_bytes, &ad).unwrap();
+  let (mut m, mut tc_force_opening) = TC::force_open(&tc_fkps_pp, &ped_pp, &tc_comm, &ad).unwrap();
 
-  let tc_force_opening = TC::force_open(&tc_fkps_pp, &ped_pp, &tc_comm, &ad).unwrap();
+  let tamper_method = 1; // 0 means no tamper
+  match tamper_method {
+    1 => {
+      let mut tc_input_group_element_bad = tc_comm.clone();
+      tc_input_group_element_bad.tc_comm.x = RsaHiddenOrderGroup::from_nat(BigInt::from(2));
+      let (force_m_bad, force_opening_bad) =
+        TC::force_open(&tc_fkps_pp, &ped_pp, &tc_input_group_element_bad, &ad).unwrap();
+      assert!(force_m_bad.is_none());
+      assert!(TC::ver_open(
+        &tc_fkps_pp,
+        &ped_pp,
+        &tc_input_group_element_bad,
+        &ad,
+        &force_m_bad,
+        &force_opening_bad
+      )
+      .unwrap());
+
+      tc_force_opening = force_opening_bad;
+      m = force_m_bad;
+    }
+    2 => {
+      let mut tc_ae_ct_bad = tc_comm.clone();
+      tc_ae_ct_bad.tc_comm.ct[0] += 1u8;
+      let (force_m_bad, force_opening_bad) =
+        TC::force_open(&tc_fkps_pp, &ped_pp, &tc_ae_ct_bad, &ad).unwrap();
+      assert!(force_m_bad.is_none());
+
+      tc_force_opening = force_opening_bad;
+      m = force_m_bad;
+    }
+    3 => {
+      let mut ped_comm_bad = tc_comm.clone();
+      ped_comm_bad.ped_comm = ped_pp.g.clone();
+      let (force_m_bad, force_opening_bad) =
+        TC::force_open(&tc_fkps_pp, &ped_pp, &ped_comm_bad, &ad).unwrap();
+      assert!(force_m_bad.is_none());
+
+      tc_force_opening = force_opening_bad;
+      m = force_m_bad;
+    }
+    _ => {}
+  }
 
   println!("Compiling contract...");
 
@@ -176,12 +218,13 @@ fn main() {
   let contract_addr = create_result.addr.clone();
   println!("Contract deploy gas cost: {}", create_result.gas);
 
-  match &tc_force_opening.1.tc_opening {
-    basic_tc::Opening::SELF(r) => {}
-    basic_tc::Opening::FORCE(y, poe_proof) => {
+  match &tc_force_opening.tc_opening {
+    basic_tc::Opening::SELF(_) => {}
+    basic_tc::Opening::FORCE(_, _) => {
       let force_input = vec![
         encode_tc_comm::<Bn254, _>(&tc_comm),
-        encode_tc_opening(&tc_force_opening.1),
+        encode_tc_opening(&tc_force_opening),
+        encode_bytes_option(&m),
         encode_field_element::<Bn254>(&bid_f),
         encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &tc_fkps_pp, &ped_pp),
       ];

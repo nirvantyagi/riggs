@@ -35,31 +35,43 @@ import "./Pedersen.sol";
   function verOpen(Comm memory comm, SelfOpening memory so, uint bid, 
   Params memory pp) <%visibility%> view returns (bool) {
     bool fkps_check = true;
-    bool pc_check = true;
+    bool ped_valid = true;
 
     if (so.fkps_so.message.length >= 32) {
       bytes32 ped_r = bytesToBytes32(so.fkps_so.message, so.fkps_so.message.length-uint(32));
-      pc_check = Pedersen.verify(comm.ped, bid, uint(ped_r), pp.ped_pp);
+      ped_valid = Pedersen.verify(comm.ped, bid, uint(ped_r), pp.ped_pp);
     }
 
     fkps_check = FKPS.verOpen(comm.fkps, so.fkps_so, pp.fkps_pp);
 
-    return pc_check && fkps_check;
+    return ped_valid && fkps_check;
   }
 
-  function verForceOpen(Comm memory comm, ForceOpening memory tc_fo, uint bid, 
+  function verForceOpen(Comm memory comm, ForceOpening memory force, bytes memory m, uint bid, 
   Params memory pp) <%visibility%> view returns (bool) {
     bool fkps_check = true;
-    bool pc_check = true;
 
-    if (tc_fo.fkps_fo.message.length >= 32) {
-      bytes32 ped_r = bytesToBytes32(tc_fo.fkps_fo.message, tc_fo.fkps_fo.message.length-uint(32));
-      pc_check = Pedersen.verify(comm.ped, bid, uint(ped_r), pp.ped_pp);
+    fkps_check = FKPS.verForceOpen(comm.fkps, force.fkps_fo, pp.fkps_pp);
+
+    if (fkps_check == false) return false;
+
+    bool ped_valid = true;
+
+    bytes memory tc_m = force.fkps_fo.message;
+    if (tc_m.length >= 32) {
+      bytes32 ped_r = bytesToBytes32(tc_m, tc_m.length-uint(32));
+      ped_valid = Pedersen.verify(comm.ped, bid, uint(ped_r), pp.ped_pp);
+
+      if (m.length > 0) {
+        bool m_compare = bytesCompare(m, tc_m); // compares the prefixes
+        return ped_valid && m_compare;
+      } else {
+        return !ped_valid;
+      }
+    } 
+    else {
+      return m.length == 0;
     }
-    
-    fkps_check = FKPS.verForceOpen(comm.fkps, tc_fo.fkps_fo, pp.fkps_pp);
-    
-    return pc_check && fkps_check;
   }
 
   // Utility function
@@ -73,6 +85,14 @@ import "./Pedersen.sol";
       }
     }
     return out;
+  }
+
+  function bytesCompare(bytes memory a, bytes memory b) private pure returns (bool) {
+    if (a.length > b.length) return false;
+    for (uint i=0; i<a.length; i++) {
+      if (a[i] != b[i]) return false; 
+    }
+    return true;
   }
   
 }
