@@ -1,5 +1,4 @@
 use crate::Error;
-use hex::ToHex;
 use rsa::{
     bigint::BigInt,
     hash_to_prime::HashToPrime,
@@ -13,14 +12,11 @@ use std::{
     marker::PhantomData,
 };
 
-use aes_gcm::{AeadInPlace, Aes128Gcm, NewAead, Nonce};
 use digest::Digest;
 use num_bigint::RandBigInt;
 use rand::{CryptoRng, Rng};
 
 pub type Hog<P> = RsaHiddenOrderGroup<P>;
-
-use primitive_types::U256;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TimeParams<RsaP: RsaGroupParams> {
@@ -56,21 +52,6 @@ pub struct BasicTC<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashTo
     _hash_to_prime: PhantomData<H2P>,
 }
 
-fn pad_32(input: &[u8]) -> [u8; 32] {
-    let mut padded: [u8; 32] = [0; 32];
-    let m = std::cmp::min(32, input.len());
-    for i in 0..m {
-        padded[31 - i] = input[input.len() - 1 - i];
-    }
-    return padded;
-}
-
-pub fn to_be_bytes(n: &U256) -> [u8; 32] {
-    let mut input_bytes: [u8; 32] = [0; 32];
-    n.to_big_endian(&mut input_bytes);
-    input_bytes
-}
-
 impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
     BasicTC<PoEP, RsaP, H, H2P>
 {
@@ -93,7 +74,6 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         rng: &mut R,
         pp: &TimeParams<RsaP>,
         m: &[u8],
-        ad: &[u8],
     ) -> Result<(Comm<RsaP>, Opening<RsaP, H2P>), Error> {
         // Sample randomizing factor
         let r = BigInt::from(rng.gen_biguint(128));
@@ -101,34 +81,26 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         let y = pp.y.power(&r);
 
         // Derive key from repeated square
-        assert!(H::output_size() >= 32);
+        debug_assert_eq!(H::output_size(), 32);
         let key = H::digest(&y.n.to_bytes_be().1).to_vec();
-        // key.truncate(16);
-
-        let mut ad = ad.to_vec();
-        ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
-        let ct = KeyCommittingAE::encrypt::<H>(&key, &ad, &m)?;
-        //let ct = m.to_vec();
+        let ad = pp.t.to_be_bytes(); // Time parameter as associated data
+        let ct = OneTimeKeyDeterministicAE::encrypt::<H>(&key, &m, &ad)?;
         Ok((Comm { x, ct }, Opening::SELF(r)))
     }
 
     pub fn force_open(
         pp: &TimeParams<RsaP>,
         comm: &Comm<RsaP>,
-        ad: &[u8],
     ) -> Result<(Option<Vec<u8>>, Opening<RsaP, H2P>), Error> {
         // Compute and prove repeated square
         let y = comm.x.power(&BigInt::from(2).pow(pp.t));
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&comm.x, &y, pp.t)?;
 
         // Derive key from repeated square
-        assert!(H::output_size() >= 32);
+        debug_assert_eq!(H::output_size(), 32);
         let key = H::digest(&y.n.to_bytes_be().1).to_vec();
-        // key.truncate(16);
-
-        let mut ad = ad.to_vec();
-        ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
-        let m = KeyCommittingAE::decrypt::<H>(&key, &ad, &comm.ct);
+        let ad = pp.t.to_be_bytes(); // Time parameter as associated data
+        let m = OneTimeKeyDeterministicAE::decrypt::<H>(&key, &comm.ct, &ad);
 
         let opening = Opening::FORCE(y, proof);
         match m {
@@ -140,19 +112,17 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
     pub fn ver_open(
         pp: &TimeParams<RsaP>,
         comm: &Comm<RsaP>,
-        ad: &[u8],
         m: &Option<Vec<u8>>,
         opening: &Opening<RsaP, H2P>,
     ) -> Result<bool, Error> {
+        debug_assert_eq!(H::output_size(), 32);
         match opening {
             Opening::SELF(r) => {
                 let x_valid = pp.x.power(r) == comm.x;
                 let y = pp.y.power(r);
-                let mut key = H::digest(&y.n.to_bytes_be().1).to_vec();
-                // key.truncate(16);
-                let mut ad = ad.to_vec();
-                ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
-                let dec_m = KeyCommittingAE::decrypt::<H>(&key, &ad, &comm.ct);
+                let key = H::digest(&y.n.to_bytes_be().1).to_vec();
+                let ad = pp.t.to_be_bytes(); // Time parameter as associated data
+                let dec_m = OneTimeKeyDeterministicAE::decrypt::<H>(&key, &comm.ct, &ad);
                 match (m, dec_m) {
                     (Some(m), Ok(dec_m)) => Ok(x_valid && m == &dec_m),
                     (None, Err(_)) => Ok(x_valid),
@@ -161,11 +131,9 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
             }
             Opening::FORCE(y, proof) => {
                 let proof_valid = PoE::<PoEP, RsaP, H2P>::verify(&comm.x, y, pp.t, proof)?;
-                let mut key = H::digest(&y.n.to_bytes_be().1).to_vec();
-                // key.truncate(16);
-                let mut ad = ad.to_vec();
-                ad.extend_from_slice(&pp.t.to_le_bytes()); // Append time parameter to associated data
-                let dec_m = KeyCommittingAE::decrypt::<H>(&key, &ad, &comm.ct);
+                let key = H::digest(&y.n.to_bytes_be().1).to_vec();
+                let ad = pp.t.to_be_bytes(); // Time parameter as associated data
+                let dec_m = OneTimeKeyDeterministicAE::decrypt::<H>(&key, &comm.ct, &ad);
                 match (m, dec_m) {
                     (Some(m), Ok(dec_m)) => Ok(proof_valid && m == &dec_m),
                     (None, Err(_)) => Ok(proof_valid),
@@ -176,105 +144,70 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
     }
 }
 
-pub struct KeyCommittingAE;
+pub struct OneTimeKeyDeterministicAE;
 
-impl KeyCommittingAE {
-    // pub fn encrypt<R: CryptoRng + Rng>(
-    //     rng: &mut R,
-    //     key: &[u8],
-    //     ad: &[u8],
-    //     pt: &[u8],
-    // ) -> Result<Vec<u8>, Error> {
-    //     let ae = Aes128Gcm::new_from_slice(key)
-    //         .or(Err(Box::new(KeyCommittingAEError::InvalidKeyFormat)))?;
-    //     let mut nonce = [0u8; 12]; // 96-bit nonce
-    //     rng.fill(&mut nonce);
-
-    //     // Build up plaintext to encrypt in place
-    //     let mut ct = Vec::new();
-    //     // Prepend 128-bit zero block for key committing
-    //     // - https://eprint.iacr.org/2020/1491.pdf
-    //     // - https://www.usenix.org/system/files/sec22summer_albertini.pdf
-    //     ct.extend_from_slice(&[0u8; 16]);
-    //     ct.extend_from_slice(pt);
-    //     ae.encrypt_in_place(&nonce.into(), ad, &mut ct)
-    //         .map_err(|_| Box::new(KeyCommittingAEError::EncryptionFailed))?;
-
-    //     // Append nonce to end
-    //     ct.extend_from_slice(&nonce);
-    //     Ok(ct)
-    // }
-
-    // // TODO: Fix timing side channel of decryption error
-    // pub fn decrypt(key: &[u8], ad: &[u8], ct: &[u8]) -> Result<Vec<u8>, Error> {
-    //     let ae = Aes128Gcm::new_from_slice(key)
-    //         .or(Err(Box::new(KeyCommittingAEError::InvalidKeyFormat)))?;
-    //     let mut pt_zero_preprend = ct.to_vec();
-    //     // Parse nonce from end
-    //     let nonce = pt_zero_preprend.split_off(pt_zero_preprend.len() - 12);
-    //     ae.decrypt_in_place(Nonce::from_slice(&nonce), ad, &mut pt_zero_preprend)
-    //         .map_err(|_| Box::new(KeyCommittingAEError::DecryptionFailed))?;
-
-    //     // Verify key-committing 0-block
-    //     let pt = pt_zero_preprend.split_off(16);
-    //     if (pt_zero_preprend.len() != 16) || (pt_zero_preprend.iter().any(|b| *b != 0)) {
-    //         Err(Box::new(KeyCommittingAEError::DecryptionFailed))
-    //     } else {
-    //         Ok(pt)
-    //     }
-    // }
-
-    pub fn encrypt<H: Digest>(key: &[u8], ad: &[u8], pt: &[u8]) -> Result<Vec<u8>, Error> {
-        let mut pad = H::digest(&[key, &[00]].concat()).to_vec();
-
-        let num_blocks = ((pt.len() as f64) / (32_f64)).ceil() as i32;
-
-        for blk in 1..num_blocks {
-            pad.append(&mut H::digest(&[key, &[blk as u8]].concat()).to_vec());
-        }
-
-        let ct: Vec<u8> = pt
-            .iter()
-            .zip(pad.iter())
-            .map(|(&x1, &x2)| x1 ^ x2)
-            .collect();
-
-        // let ct_key = [ct.clone(), key.to_vec()].concat();
-        // let mac = H::digest(&ct_key).to_vec();
-        // Ok(key.to_vec())
-
+impl OneTimeKeyDeterministicAE {
+    pub fn encrypt<H: Digest>(key: &[u8], pt: &[u8], ad: &[u8]) -> Result<Vec<u8>, Error> {
+        debug_assert_eq!(key.len(), 32);
+        debug_assert_eq!(H::output_size(), 32);
+        let enc_key = &key[..16];
+        let mac_key = &key[16..];
+        let mut ct = Self::one_time_pad::<H>(enc_key, pt);
+        let mut mac = H::digest(&[mac_key, &ct, ad].concat()).to_vec();
+        ct.append(&mut mac);
         Ok(ct)
     }
 
     // TODO: Fix timing side channel of decryption error
-    pub fn decrypt<H: Digest>(key: &[u8], ad: &[u8], ct: &[u8]) -> Result<Vec<u8>, Error> {
-        assert!(H::output_size() >= 16);
+    pub fn decrypt<H: Digest>(key: &[u8], ct: &[u8], ad: &[u8]) -> Result<Vec<u8>, Error> {
+        debug_assert_eq!(key.len(), 32);
+        debug_assert_eq!(H::output_size(), 32);
+        let enc_key = &key[..16];
+        let mac_key = &key[16..];
 
-        let pt = KeyCommittingAE::encrypt::<H>(key, ad, ct).unwrap();
+        let mac = &ct[ct.len() - 32..];
+        let ct = &ct[..ct.len() - 32];
+        let computed_mac = H::digest(&[mac_key, ct, ad].concat()).to_vec();
+        let pt = Self::one_time_pad::<H>(enc_key, ct);
+        if mac == &computed_mac[..] {
+            Ok(pt)
+        } else {
+            Err(Box::new(AEError::DecryptionFailed))
+        }
+    }
 
-        Ok(pt)
+    fn one_time_pad<H: Digest>(key: &[u8], bytes: &[u8]) -> Vec<u8> {
+        debug_assert_eq!(H::output_size(), 32);
+        let num_blocks = (bytes.len() - 1) / 32 + 1;
+        let pad = (0..num_blocks)
+            .map(|i| H::digest(&[key, &[i as u8]].concat()).to_vec())
+            .flatten()
+            .collect::<Vec<_>>();
+        bytes.iter().zip(pad.iter())
+            .map(|(pt_byte, pad_byte)| pt_byte ^ pad_byte)
+            .collect::<Vec<_>>()
     }
 }
 
 #[derive(Debug)]
-pub enum KeyCommittingAEError {
+pub enum AEError {
     InvalidKeyFormat,
     EncryptionFailed,
     DecryptionFailed,
 }
 
-impl ErrorTrait for KeyCommittingAEError {
+impl ErrorTrait for AEError {
     fn source(self: &Self) -> Option<&(dyn ErrorTrait + 'static)> {
         None
     }
 }
 
-impl fmt::Display for KeyCommittingAEError {
+impl fmt::Display for AEError {
     fn fmt(self: &Self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let msg = match self {
-            KeyCommittingAEError::InvalidKeyFormat => format!("invalid key format"),
-            KeyCommittingAEError::EncryptionFailed => format!("encryption failed"),
-            KeyCommittingAEError::DecryptionFailed => format!("decryption failed"),
+            AEError::InvalidKeyFormat => format!("invalid key format"),
+            AEError::EncryptionFailed => format!("encryption failed"),
+            AEError::DecryptionFailed => format!("decryption failed"),
         };
         write!(f, "{}", msg)
     }
@@ -331,57 +264,47 @@ mod tests {
     >;
 
     #[test]
-    fn key_committing_ae_test() {
+    fn ae_test() {
         let mut rng = StdRng::seed_from_u64(0u64);
         let mut pt = [1u8; 32];
         rng.fill(&mut pt);
-        let mut key = [0u8; 16];
+        let mut key = [0u8; 32];
         rng.fill(&mut key);
         let mut ad = [0u8; 32];
         rng.fill(&mut ad);
 
-        let ct = KeyCommittingAE::encrypt::<Keccak256>(&key, &ad, &pt).unwrap();
-        let dec_ct = KeyCommittingAE::decrypt::<Keccak256>(&key, &ad, &ct).unwrap();
+        let ct = OneTimeKeyDeterministicAE::encrypt::<Keccak256>(&key, &pt, &ad).unwrap();
+        let dec_ct = OneTimeKeyDeterministicAE::decrypt::<Keccak256>(&key, &ct, &ad).unwrap();
         assert!(pt.iter().eq(dec_ct.iter()));
 
-        // TODO: add "bad" tests when incorporating ad
+        let mut mac_key_bad = key.to_vec();
+        mac_key_bad[17] = mac_key_bad[17] + 1u8;
+        assert!(OneTimeKeyDeterministicAE::decrypt::<Keccak256>(&mac_key_bad, &ct, &ad).is_err());
 
-        // let mut key_bad = key.to_vec();
-        // key_bad[0] = key_bad[0] + 1u8;
-        // assert!(KeyCommittingAE::decrypt::<Keccak256>(&key_bad, &ad, &ct).is_err());
+        let mut ad_bad = ad.to_vec();
+        ad_bad[0] = ad_bad[0] + 1u8;
+        assert!(OneTimeKeyDeterministicAE::decrypt::<Keccak256>(&key, &ct, &ad_bad).is_err());
 
-        // let mut ad_bad = ad.to_vec();
-        // ad_bad[0] = ad_bad[0] + 1u8;
-        // assert!(KeyCommittingAE::decrypt::<Keccak256>(&key, &ad_bad, &ct).is_err());
-
-        // let mut nonce_bad = ct.to_vec();
-        // let l = nonce_bad.len();
-        // nonce_bad[l - 1] = nonce_bad[l - 1] + 1u8;
-        // assert!(KeyCommittingAE::decrypt::<Keccak256>(&key, &ad, &nonce_bad).is_err());
+        let mut ct_bad = ct.to_vec();
+        let l = ct_bad.len();
+        ct_bad[l - 1] = ct_bad[l - 1] + 1u8;
+        assert!(OneTimeKeyDeterministicAE::decrypt::<Keccak256>(&key, &ct_bad, &ad).is_err());
     }
 
     #[test]
-    fn key_committing_tc_test() {
+    fn basic_tc_test() {
         let mut rng = StdRng::seed_from_u64(0u64);
         let mut m = [1u8; 32];
         rng.fill(&mut m);
-        let mut ad = [0u8; 32];
-        rng.fill(&mut ad);
 
         let (pp, pp_proof) = TC::gen_time_params(40).unwrap();
         assert!(TC::ver_time_params(&pp, &pp_proof).unwrap());
 
-        let (comm, self_opening) = TC::commit(&mut rng, &pp, &m, &ad).unwrap();
-        assert!(TC::ver_open(&pp, &comm, &ad, &Some(m.to_vec()), &self_opening).unwrap());
+        let (comm, self_opening) = TC::commit(&mut rng, &pp, &m).unwrap();
+        assert!(TC::ver_open(&pp, &comm, &Some(m.to_vec()), &self_opening).unwrap());
 
-        let (force_m, force_opening) = TC::force_open(&pp, &comm, &ad).unwrap();
-        assert!(TC::ver_open(&pp, &comm, &ad, &force_m, &force_opening).unwrap());
+        let (force_m, force_opening) = TC::force_open(&pp, &comm).unwrap();
+        assert!(TC::ver_open(&pp, &comm, &force_m, &force_opening).unwrap());
         assert_eq!(force_m, Some(m.to_vec()));
-
-        // TODO: add "bad" tests when incorporating ad
-        // let mut ad_bad = ad.to_vec();
-        // ad_bad[0] = ad_bad[0] + 1u8;
-        // assert!(!TC::ver_open(&pp, &comm, &ad_bad, &Some(m.to_vec()), &self_opening).unwrap());
-        // assert!(!TC::ver_open(&pp, &comm, &ad_bad, &force_m, &force_opening).unwrap());
     }
 }

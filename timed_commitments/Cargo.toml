@@ -25,7 +25,6 @@ num-integer = { version = "0.1" }
 num-traits = { version = "0.2" }
 rand = { version = "0.8" }
 digest = { version = "0.9" }
-aes-gcm = { version = "0.9" }
 once_cell = { version = "1.9" }
 
 tracing = { version = "0.1", default-features = false, features = [ "attributes" ] }

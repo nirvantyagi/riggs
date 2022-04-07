@@ -5,7 +5,6 @@ use crate::{
 use ark_ec::ProjectiveCurve;
 use ark_ff::{biginteger::BigInteger, PrimeField};
 use digest::Digest;
-use hex::ToHex;
 use num_bigint::Sign;
 use rand::{CryptoRng, Rng};
 use rsa::{
@@ -87,12 +86,11 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         time_pp: &TimeParams<RsaP>,
         ped_pp: &PedersenParams<G>,
         m: &[u8],
-        ad: &[u8],
     ) -> Result<(Comm<G, RsaP>, Opening<G, RsaP, H2P>), Error> {
         let (ped_comm, ped_opening) = PedersenComm::<G>::commit(rng, ped_pp, m)?;
         let mut tc_m = m.to_vec();
         tc_m.append(&mut ped_opening.into_repr().to_bytes_be());
-        let (tc_comm, tc_opening) = BasicTC::<PoEP, RsaP, H, H2P>::commit(rng, time_pp, &tc_m, ad)?;
+        let (tc_comm, tc_opening) = BasicTC::<PoEP, RsaP, H, H2P>::commit(rng, time_pp, &tc_m)?;
         Ok((
             Comm { ped_comm, tc_comm },
             Opening {
@@ -107,10 +105,9 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         time_pp: &TimeParams<RsaP>,
         ped_pp: &PedersenParams<G>,
         comm: &Comm<G, RsaP>,
-        ad: &[u8],
     ) -> Result<(Option<Vec<u8>>, Opening<G, RsaP, H2P>), Error> {
         let (tc_m, tc_opening) =
-            BasicTC::<PoEP, RsaP, H, H2P>::force_open(time_pp, &comm.tc_comm, ad)?;
+            BasicTC::<PoEP, RsaP, H, H2P>::force_open(time_pp, &comm.tc_comm)?;
         match &tc_m {
             Some(tc_m_inner) => {
                 let mut m = tc_m_inner.to_vec();
@@ -167,14 +164,12 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         time_pp: &TimeParams<RsaP>,
         ped_pp: &PedersenParams<G>,
         comm: &Comm<G, RsaP>,
-        ad: &[u8],
         m: &Option<Vec<u8>>,
         opening: &Opening<G, RsaP, H2P>,
     ) -> Result<bool, Error> {
         let tc_valid = BasicTC::<PoEP, RsaP, H, H2P>::ver_open(
             time_pp,
             &comm.tc_comm,
-            ad,
             &opening.tc_m,
             &opening.tc_opening,
         )?;
@@ -256,26 +251,23 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0u64);
         let mut m = [1u8; 8];
         rng.fill(&mut m);
-        let mut ad = [0u8; 32];
-        rng.fill(&mut ad);
 
         let (time_pp, _) = TC::gen_time_params(40).unwrap();
 
         let ped_pp = TC::gen_pedersen_params(&mut rng);
 
-        let (comm, self_opening) = TC::commit(&mut rng, &time_pp, &ped_pp, &m, &ad).unwrap();
+        let (comm, self_opening) = TC::commit(&mut rng, &time_pp, &ped_pp, &m).unwrap();
         assert!(TC::ver_open(
             &time_pp,
             &ped_pp,
             &comm,
-            &ad,
             &Some(m.to_vec()),
             &self_opening
         )
         .unwrap());
 
-        let (force_m, force_opening) = TC::force_open(&time_pp, &ped_pp, &comm, &ad).unwrap();
-        assert!(TC::ver_open(&time_pp, &ped_pp, &comm, &ad, &force_m, &force_opening).unwrap());
+        let (force_m, force_opening) = TC::force_open(&time_pp, &ped_pp, &comm).unwrap();
+        assert!(TC::ver_open(&time_pp, &ped_pp, &comm, &force_m, &force_opening).unwrap());
         assert_eq!(force_m, Some(m.to_vec()));
 
         // Bad message
@@ -285,7 +277,6 @@ mod tests {
             &time_pp,
             &ped_pp,
             &comm,
-            &ad,
             &Some(m_bad.to_vec()),
             &self_opening
         )
@@ -294,41 +285,23 @@ mod tests {
             &time_pp,
             &ped_pp,
             &comm,
-            &ad,
             &Some(m_bad.to_vec()),
             &force_opening
         )
         .unwrap());
-        assert!(!TC::ver_open(&time_pp, &ped_pp, &comm, &ad, &None, &self_opening).unwrap());
-        assert!(!TC::ver_open(&time_pp, &ped_pp, &comm, &ad, &None, &force_opening).unwrap());
-
-        // Bad associated data
-        let mut ad_bad = ad.to_vec();
-        ad_bad[0] = ad_bad[0] + 1u8;
-        assert!(!TC::ver_open(
-            &time_pp,
-            &ped_pp,
-            &comm,
-            &ad_bad,
-            &Some(m.to_vec()),
-            &self_opening
-        )
-        .unwrap());
-        assert!(
-            !TC::ver_open(&time_pp, &ped_pp, &comm, &ad_bad, &force_m, &force_opening).unwrap()
-        );
+        assert!(!TC::ver_open(&time_pp, &ped_pp, &comm, &None, &self_opening).unwrap());
+        assert!(!TC::ver_open(&time_pp, &ped_pp, &comm, &None, &force_opening).unwrap());
 
         // Bad commitment
         let mut tc_input_group_element_bad = comm.clone();
         tc_input_group_element_bad.tc_comm.x = RsaHiddenOrderGroup::from_nat(BigInt::from(2));
         let (force_m_bad, force_opening_bad) =
-            TC::force_open(&time_pp, &ped_pp, &tc_input_group_element_bad, &ad).unwrap();
+            TC::force_open(&time_pp, &ped_pp, &tc_input_group_element_bad).unwrap();
         assert!(force_m_bad.is_none());
         assert!(TC::ver_open(
             &time_pp,
             &ped_pp,
             &tc_input_group_element_bad,
-            &ad,
             &force_m_bad,
             &force_opening_bad
         )
@@ -337,13 +310,12 @@ mod tests {
         let mut tc_ae_ct_bad = comm.clone();
         tc_ae_ct_bad.tc_comm.ct[0] += 1u8;
         let (force_m_bad, force_opening_bad) =
-            TC::force_open(&time_pp, &ped_pp, &tc_ae_ct_bad, &ad).unwrap();
+            TC::force_open(&time_pp, &ped_pp, &tc_ae_ct_bad).unwrap();
         assert!(force_m_bad.is_none());
         assert!(TC::ver_open(
             &time_pp,
             &ped_pp,
             &tc_ae_ct_bad,
-            &ad,
             &force_m_bad,
             &force_opening_bad
         )
@@ -352,13 +324,12 @@ mod tests {
         let mut ped_comm_bad = comm.clone();
         ped_comm_bad.ped_comm = ped_pp.g.clone();
         let (force_m_bad, force_opening_bad) =
-            TC::force_open(&time_pp, &ped_pp, &ped_comm_bad, &ad).unwrap();
+            TC::force_open(&time_pp, &ped_pp, &ped_comm_bad).unwrap();
         assert!(force_m_bad.is_none());
         assert!(TC::ver_open(
             &time_pp,
             &ped_pp,
             &ped_comm_bad,
-            &ad,
             &force_m_bad,
             &force_opening_bad
         )

@@ -12,6 +12,7 @@ import "./RSA2048.sol";
     RSA2048.Params rsa_pp;
     RSA2048.Element h;
     RSA2048.Element z;
+    uint32 t;
   }
 
   struct Comm {
@@ -32,6 +33,7 @@ import "./RSA2048.sol";
 
   function publicParams() internal pure returns (Params memory pp) {
     pp.rsa_pp = RSA2048.publicParams();
+    pp.t = <%pp_time%>;
 
     uint256[] memory h_u256_digits = new uint256[](<%pp_m_len%>);
     <%pp_h_populate%>
@@ -47,105 +49,95 @@ import "./RSA2048.sol";
     uint alpha = self_opening.alpha;
     bytes memory message = self_opening.message; 
 
-    // 1. compute z_hat = z ^ a
+    // Compute z_hat = z ^ a
     RSA2048.Element memory z_hat = RSA2048.power_and_reduce(pp.z, alpha, pp.rsa_pp);
 
-    // 2. obtain key as k = H(z, pp)
-    // TODO: add pp to the hash input
+    // Obtain key as k = H(z_hat)
     bytes32 k = keccak256(z_hat.n.val);
 
-    // 3. decrypt ciphertext
-    bytes32[] memory pt;
-    bytes32 mac;
-    pt = decrypt(k, comm.ct);
+    // Decrypt ciphertext
+    //(bool ok, bytes memory pt) = decrypt(k, comm.ct, pp.t);
+    (bool ok, bytes memory pt) = decrypt(k, comm.ct, pp.t);
 
-     // 4. Check h^alpha
+    // Check h^alpha
     RSA2048.Element memory h_hat = RSA2048.power_and_reduce(pp.h, alpha, pp.rsa_pp);
 
-    // 4. Check equality
-    return h_hat.eq(comm.h_hat) && compare_bytes_bytes32(pt, message);
-  }
+    // Check equality
+    return ok && h_hat.eq(comm.h_hat) && keccak256(message) == keccak256(pt);
+}
   
-  function verForceOpen(Comm memory comm, ForceOpening memory force_opening, Params memory pp) 
-  <%visibility%> view returns (bool) {
+  //function verForceOpen(Comm memory comm, ForceOpening memory force_opening, Params memory pp)
+  //<%visibility%> view returns (bool) {
 
-    // 1. z_hat is given 
-    RSA2048.Element memory z_hat = force_opening.z_hat;
-    Proof memory poe_proof = force_opening.poe_proof;
-    bytes memory message = force_opening.message; 
+  //  RSA2048.Element memory z_hat = force_opening.z_hat;
+  //  Proof memory poe_proof = force_opening.poe_proof;
+  //  bytes memory message = force_opening.message;
 
-    // 2. obtain key as k = H(z, pp)
-    // TODO: add pp to the hash input
-    bytes32 k = keccak256(z_hat.n.val);
+  //  // Obtain key as k = H(z_hat)
+  //  bytes32 k = keccak256(z_hat.n.val);
 
-    // 3. decrypt ciphertext
-    bytes32[] memory pt;
-    bytes32 mac;
-    pt = decrypt(k, comm.ct);
+  //  // Decrypt ciphertext
+  //  (bool ok, bytes memory pt) = decrypt(k, comm.ct, pp.t);
 
-    // 4. Verify PoE and compare decryption
-    bool poe_check = verify(comm.h_hat, z_hat, uint32(40), poe_proof);
-    bool pt_check = compare_bytes_bytes32(pt, message);
+  //  // Verify PoE and compare decryption
+  //  bool poe_check = verify(comm.h_hat, z_hat, pp.t, poe_proof);
+  //  bool pt_check = keccak256(pt) == keccak256(message);
 
-    return poe_check && pt_check;
-  }
+  //  return poe_check && pt_check;
+  //}
 
 
-  function decrypt(bytes32 key, bytes memory ct) 
-  internal pure returns (bytes32[] memory) {
+  function decrypt(bytes32 key, bytes memory ct, uint32 ad) internal pure returns (bool mac_valid, bytes memory pt) {
+    require(ct.length > 32);
+    // (enc_key, mac_key)
+    bytes16[2] memory keys = split_bytes32(key);
 
-    require(ct.length >= 1);
-    
-    uint num_blocks = (ct.length-1)/32 + 1;
-    bytes32[] memory pt = new bytes32[](num_blocks);
-
-    for (uint i=0; i<num_blocks; i++) {
-      bytes32 cur_ct_block = bytesToBytes32(ct, i*32);
-
-      bytes memory ctr = new bytes(1);
-      ctr[0] = bytes1(uint8(i));
-      bytes32 cur_pad = keccak256(bytes.concat(key, ctr));
-      bytes32 cur_pt = cur_pad ^ cur_ct_block;
-      pt[i] = cur_pt;
+    uint num_blocks = (ct.length - 32 - 1) / 32 + 1;
+    bytes32[] memory pad_blocks = new bytes32[](num_blocks);
+    for (uint i=0; i < num_blocks; i++) {
+      pad_blocks[i] = keccak256(abi.encodePacked(keys[0], uint8(i)));
     }
+    bytes memory ct_ct = bytes_slice(ct, 0, ct.length - 32);
+    bytes memory ct_mac = bytes_slice(ct, ct.length - 32, ct.length);
+    pt = bytes_xor(ct_ct, bytes_slice(abi.encodePacked(pad_blocks), 0, ct.length - 32));
 
-    return pt;
+    // Check MAC
+    mac_valid = bytes_to_bytes32(ct_mac) == keccak256(abi.encodePacked(keys[1], ct_ct, ad));
   }
 
   //////////////////////// Utility Functions /////////////////////
 
-  function compare_bytes_bytes32(bytes32[] memory pt, bytes memory message) 
-  private pure returns (bool) {
-    if (message.length == 0) {return true;}
-    uint num_blocks = (message.length)/32;
-    if (message.length % 32 != 0) {
-      num_blocks +=1;
+  function split_bytes32(bytes32 x) private pure returns (bytes16[2] memory y)  {
+    assembly {
+      mstore(y, x)
+      mstore(add(y, 16), x)
     }
-    bool ret_value = true;
-    for (uint i=0; i<num_blocks-1; i++) {
-      ret_value = ret_value && (bytesToBytes32(message, i*32) == pt[i]);
-    }
-
-    // now compare last block
-    bytes memory lb = abi.encodePacked(pt[num_blocks-1]);
-    uint lb_offset = (num_blocks-1)*32;
-    for (uint j=0; j<(message.length % 32); j++) {
-      ret_value = ret_value && (lb[j] == message[lb_offset+j]);
-    }
-
-    return ret_value;
   }
 
-  function bytesToBytes32(bytes memory b, uint offset) public pure returns (bytes32) {
-    bytes32 out;
+  function bytes_to_bytes32(bytes memory b) public pure returns (bytes32 out) {
+    require(b.length == 32);
     for (uint i = 0; i < 32; i++) {
-      if (b.length < offset+i+1) {
-        out |= bytes32(bytes1(0) & 0xFF) >> (i * 8);
-      } else {
-        out |= bytes32(b[offset + i] & 0xFF) >> (i * 8);
-      }
+      out |= bytes32(b[i]) >> (i * 8);
+    }
+    out |= bytes32(b[0]);
+    return out;
+  }
+
+  function bytes_xor(bytes memory b1, bytes memory b2) public pure returns (bytes memory) {
+    require(b1.length == b2.length);
+    bytes memory out = new bytes(b1.length);
+    for (uint i = 0; i < b1.length; i++) {
+      out[i] = b1[i] ^ b2[i];
     }
     return out;
+  }
+
+function bytes_slice(bytes memory arr, uint256 begin, uint256 end) public pure returns (bytes memory) {
+    bytes memory slice = new bytes(end - begin);
+    for(uint i=0; i < end-begin; i++){
+      slice[i] = arr[i + begin];
+    }
+    return slice;
   }
 
   //////////////////////// PoE Verifier stuff /////////////////////

@@ -73,7 +73,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
     }
 
     pub fn client_create_bid<R: CryptoRng + Rng>(rng: &mut R, pp: &AuctionParams<G, RsaP>, bid: u32) -> Result<(TCComm<G, RsaP>, TCOpening<G, RsaP, H2P>), Error> {
-        LazyTC::<G, PoEP, RsaP, H, H2P>::commit(rng, &pp.time_pp, &pp.ped_pp, &bid.to_le_bytes(), &[])
+        LazyTC::<G, PoEP, RsaP, H, H2P>::commit(rng, &pp.time_pp, &pp.ped_pp, &bid.to_le_bytes())
     }
 
     pub fn force_open_bid(&self, pp: &AuctionParams<G, RsaP>, bid_index: usize) -> Result<(Option<u32>, TCOpening<G, RsaP, H2P>), Error> {
@@ -81,7 +81,6 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             &pp.time_pp,
             &pp.ped_pp,
             self.bid_comms_i.get(&bid_index).ok_or(Box::new(AuctionError::InvalidBid))?,
-            &[],
         )?;
         //TODO: Not robust. Will be enforced to be true with range proof
         Ok((bid_bytes.map(|bytes| u32::from_le_bytes(bytes[..4].try_into().unwrap())), opening))
@@ -128,7 +127,6 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             &pp.time_pp,
             &pp.ped_pp,
             comm,
-            &[],
             &bid.map(|b| b.to_le_bytes().to_vec()),
             bid_opening,
         )? {

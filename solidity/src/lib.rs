@@ -2,12 +2,16 @@ use ark_bn254::{Bn254, G1Projective as G};
 use ark_ec::{PairingEngine, ProjectiveCurve};
 
 use digest::Digest;
+use hex::ToHex;
 use ethabi::Token;
 use num_bigint::{RandomBits, Sign};
 use num_traits::Signed;
 use primitive_types::U256;
 use sha3::digest;
-use std::{fs::File, io::Read};
+use std::{
+    fs::File, io::Read,
+    ops::Deref, str::FromStr,
+};
 
 use range_proofs::bulletproofs::{serialize_group_elem, Params, PedersenParams, Proof};
 use rsa::{
@@ -20,15 +24,13 @@ use rsa::{
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
     poe::Proof as PoEProof,
 };
+use timed_commitments::{basic_tc, lazy_tc};
 use solidity_test_utils::{
     encode_field_element, encode_group_element, encode_int_from_bytes,
     parse_bytes_to_solidity_string, parse_g1_to_solidity_string,
 };
 
-// use rsa::hog::TestRsaParams;
 use once_cell::sync::Lazy;
-use std::{ops::Deref, str::FromStr};
-use timed_commitments::{basic_tc, lazy_tc};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
@@ -132,53 +134,7 @@ pub fn get_bigint_library_src() -> String {
     src
 }
 
-pub fn get_fkps_library_src(h: &BigInt, z: &BigInt, m_len: usize) -> String {
-    let contract_path = format!("{}/contracts/FKPS.sol", env!("CARGO_MANIFEST_DIR"));
-
-    let mut src_file = File::open(contract_path).unwrap();
-    let mut src = String::new();
-    src_file.read_to_string(&mut src).unwrap();
-    src = src
-        .replace("\"", "\\\"")
-        .replace("<%pp_m_len%>", &format!("{}", m_len / 256))
-        .replace("<%pp_h_populate%>", &{
-            let mut populate_h = String::new();
-            for (i, u256digit) in h.to_u64_digits().1.chunks(4).rev().enumerate() {
-                populate_h.push_str(&format!(
-                    "h_u256_digits[{}] = 0x{}{}{}{};",
-                    i,
-                    hex::encode(&u256digit[3].to_be_bytes()),
-                    hex::encode(&u256digit[2].to_be_bytes()),
-                    hex::encode(&u256digit[1].to_be_bytes()),
-                    hex::encode(&u256digit[0].to_be_bytes()),
-                ));
-                if i < h.to_u64_digits().1.len() / 4 - 1 {
-                    populate_h.push_str("\n        ");
-                }
-            }
-            populate_h
-        })
-        .replace("<%pp_z_populate%>", &{
-            let mut populate_z = String::new();
-            for (i, u256digit) in z.to_u64_digits().1.chunks(4).rev().enumerate() {
-                populate_z.push_str(&format!(
-                    "z_u256_digits[{}] = 0x{}{}{}{};",
-                    i,
-                    hex::encode(&u256digit[3].to_be_bytes()),
-                    hex::encode(&u256digit[2].to_be_bytes()),
-                    hex::encode(&u256digit[1].to_be_bytes()),
-                    hex::encode(&u256digit[0].to_be_bytes()),
-                ));
-                if i < h.to_u64_digits().1.len() / 4 - 1 {
-                    populate_z.push_str("\n        ");
-                }
-            }
-            populate_z
-        });
-    src
-}
-
-pub fn get_fkps_src(h: &BigInt, z: &BigInt, m_len: usize, as_contract: bool) -> String {
+pub fn get_fkps_src(h: &BigInt, z: &BigInt, m_len: usize, t: u32, as_contract: bool) -> String {
     let contract_path = format!("{}/contracts/FKPS.sol", env!("CARGO_MANIFEST_DIR"));
 
     let mut src_file = File::open(contract_path).unwrap();
@@ -194,6 +150,8 @@ pub fn get_fkps_src(h: &BigInt, z: &BigInt, m_len: usize, as_contract: bool) -> 
             "<%visibility%>",
             if as_contract { "public" } else { "internal" },
         )
+        //.replace("<%pp_time%>", &format!("{}", t))
+        .replace("<%pp_time%>", &format!("{}", 28u32))
         .replace("<%pp_m_len%>", &format!("{}", m_len / 256))
         .replace("<%pp_h_populate%>", &{
             let mut populate_h = String::new();
@@ -295,59 +253,6 @@ pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>, as_contract: bool) -
             "<%visibility%>",
             if as_contract { "public" } else { "internal" },
         )
-        .replace(
-            "<%ped_pp_g%>",
-            &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()),
-        )
-        .replace(
-            "<%ped_pp_h%>",
-            &parse_g1_to_solidity_string::<Bn254>(&ped_pp.h.into_affine()),
-        );
-    src
-}
-
-// pub fn get_pedersen_test_src(ped_pp: &PedersenParams<G>) -> String {
-//     let contract_path = format!("{}/contracts/PedersenTest.sol", env!("CARGO_MANIFEST_DIR"));
-
-//     let mut src_file = File::open(contract_path).unwrap();
-//     let mut src = String::new();
-//     src_file.read_to_string(&mut src).unwrap();
-//     src = src
-//         .replace("\"", "\\\"")
-//         .replace(
-//             "<%ped_pp_g%>",
-//             &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()),
-//         )
-//         .replace(
-//             "<%ped_pp_h%>",
-//             &parse_g1_to_solidity_string::<Bn254>(&ped_pp.h.into_affine()),
-//         );
-//     src
-// }
-
-pub fn get_fkps_test_src(fkps_pp: &[&[u8; 256]; 4]) -> String {
-    let contract_path = format!("{}/contracts/FKPSTest.sol", env!("CARGO_MANIFEST_DIR"));
-
-    let mut src_file = File::open(contract_path).unwrap();
-    let mut src = String::new();
-    src_file.read_to_string(&mut src).unwrap();
-    src = src
-        .replace("\"", "\\\"")
-        .replace("<%rsa_n%>", &parse_bytes_to_solidity_string(fkps_pp[0]))
-        .replace("<%rsa_g%>", &parse_bytes_to_solidity_string(fkps_pp[1]))
-        .replace("<%rsa_h%>", &parse_bytes_to_solidity_string(fkps_pp[2]))
-        .replace("<%rsa_z%>", &parse_bytes_to_solidity_string(fkps_pp[3]));
-    src
-}
-
-pub fn get_tc_test_src(ped_pp: &PedersenParams<G>) -> String {
-    let contract_path = format!("{}/contracts/TCTest.sol", env!("CARGO_MANIFEST_DIR"));
-
-    let mut src_file = File::open(contract_path).unwrap();
-    let mut src = String::new();
-    src_file.read_to_string(&mut src).unwrap();
-    src = src
-        .replace("\"", "\\\"")
         .replace(
             "<%ped_pp_g%>",
             &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()),
@@ -546,6 +451,7 @@ pub fn encode_fkps_pp<P: RsaGroupParams>(m: &BigInt, fkps_pp: &basic_tc::TimePar
     tokens.push(encode_rsa_pp::<P>(&m)); // needed in solidity code
     tokens.push(encode_rsa_element(&fkps_pp.x));
     tokens.push(encode_rsa_element(&fkps_pp.y));
+    tokens.push(Token::Uint(U256::from(fkps_pp.t)));
     Token::Tuple(tokens)
 }
 
