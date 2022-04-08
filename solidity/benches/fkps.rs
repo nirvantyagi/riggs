@@ -92,7 +92,7 @@ fn main() {
   // Compile contract from template
   let bigint_src = get_bigint_library_src();
   let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
-  let poe_src = get_filename_src("PoElib.sol");
+  let poe_src = get_filename_src("PoEVerifier.sol", false);
   let fkps_src = get_fkps_src(&fkps_pp.x.n, &fkps_pp.y.n, MOD_BITS, TIME_PARAM, true);
 
   let solc_config = r#"
@@ -102,7 +102,7 @@ fn main() {
                     "input.sol": { "content": "<%src%>" },
                     "BigInt.sol": { "content": "<%bigint_src%>" },
                     "RSA2048.sol": { "content": "<%rsa_lib_src%>" },
-                    "PoElib.sol": { "content": "<%poe_lib_src%>" }
+                    "PoEVerifier.sol": { "content": "<%poe_lib_src%>" }
                 },
                 "settings": {
                     "optimizer": { "enabled": <%opt%> },

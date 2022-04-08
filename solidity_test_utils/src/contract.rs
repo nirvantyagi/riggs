@@ -91,6 +91,7 @@ impl Contract {
                 .replace("\"", "");
             let binary = hex::decode(&hex_code)
                 .map_err(|_| Box::new(EvmTestError("decode hex binary failed".to_string())))?;
+                //.map_err(|e| Box::new(e))?;
             binary
         };
         let abi = {

@@ -227,16 +227,6 @@ pub fn get_rsa_library_src(m: &BigInt, m_len: usize, as_contract: bool) -> Strin
     src
 }
 
-pub fn get_poe_library_src() -> String {
-    let contract_path = format!("{}/contracts/PoEVerifier.sol", env!("CARGO_MANIFEST_DIR"));
-
-    let mut src_file = File::open(contract_path).unwrap();
-    let mut src = String::new();
-    src_file.read_to_string(&mut src).unwrap();
-    src = src.replace("\"", "\\\"");
-    src
-}
-
 pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>, as_contract: bool) -> String {
     let contract_path = format!("{}/contracts/Pedersen.sol", env!("CARGO_MANIFEST_DIR"));
 
@@ -264,18 +254,7 @@ pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>, as_contract: bool) -
     src
 }
 
-pub fn get_filename_src(filename: &str) -> String {
-    let contract_path = format!("{}/contracts/", env!("CARGO_MANIFEST_DIR"));
-    let full_path: String = contract_path + filename;
-
-    let mut src_file = File::open(full_path).unwrap();
-    let mut src = String::new();
-    src_file.read_to_string(&mut src).unwrap();
-    src = src.replace("\"", "\\\"");
-    src
-}
-
-pub fn get_filename_src_contract(filename: &str, as_contract: bool) -> String {
+pub fn get_filename_src(filename: &str, as_contract: bool) -> String {
     let contract_path = format!("{}/contracts/", env!("CARGO_MANIFEST_DIR"));
     let full_path: String = contract_path + filename;
 

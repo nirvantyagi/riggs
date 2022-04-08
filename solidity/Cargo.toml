@@ -49,6 +49,11 @@ path = "benches/rsa.rs"
 harness = false
 
 [[bench]]
+name = "poe_verifier"
+path = "benches/poe_verifier.rs"
+harness = false
+
+[[bench]]
 name = "fkps"
 path = "benches/fkps.rs"
 harness = false

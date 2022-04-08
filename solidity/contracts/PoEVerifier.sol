@@ -4,7 +4,7 @@ pragma solidity ^0.8.10;
 import "./BigInt.sol";
 import "./RSA2048.sol";
 
-contract PoEVerifier {
+<%con_or_lib%> PoEVerifier {
     using RSA2048 for *;
 
     //TODO: Pad BigInts to offset 32 bytes after input to save input space
@@ -37,7 +37,7 @@ contract PoEVerifier {
         PocklingtonCertificate cert;
     }
 
-    function verify(RSA2048.Element memory x, RSA2048.Element memory y, uint32 t, Proof memory proof) public view returns (bool) {
+    function verify(RSA2048.Element memory x, RSA2048.Element memory y, uint32 t, Proof memory proof) <%visibility%> view returns (bool) {
         RSA2048.Params memory pp = RSA2048.publicParams();
         BigInt.BigInt memory h = hashToBigInt(abi.encodePacked(x.n.val, y.n.val, t, proof.cert.nonce));
         require(verifyHashToPrime(h, proof.cert));
@@ -45,7 +45,7 @@ contract PoEVerifier {
         return y.eq(proof.q.power(h, pp).op(x.power(r, pp), pp).reduce(pp));
     }
 
-    function verifyHashToPrime(BigInt.BigInt memory h, PocklingtonCertificate memory cert) public view returns (bool) {
+    function verifyHashToPrime(BigInt.BigInt memory h, PocklingtonCertificate memory cert) internal view returns (bool) {
         BigInt.BigInt memory p = h;
         for (uint i = 0; i < cert.steps.length; i++) {
             verifyPocklingtonStep(p, cert.steps[i]);
@@ -57,7 +57,7 @@ contract PoEVerifier {
         return true;
     }
 
-    function verifyPocklingtonStep(BigInt.BigInt memory p, PocklingtonStep memory cert) public view returns (bool) {
+    function verifyPocklingtonStep(BigInt.BigInt memory p, PocklingtonStep memory cert) internal view returns (bool) {
         BigInt.BigInt memory u = BigInt.prepare_modexp(BigInt.from_uint32(2), BigInt.from_uint32(cert.n2), p);
         u = BigInt.bn_mul(u, BigInt.prepare_modexp(cert.f, BigInt.from_uint32(cert.n), p));
         BigInt.BigInt memory p_less_one = BigInt.prepare_sub(p, BigInt.from_uint256(1));
@@ -122,7 +122,7 @@ contract PoEVerifier {
     }
 
     // Hashes to 277 bit integer (277 bit is what is needed for 256 bits of entropy)
-    function hashToBigInt(bytes memory input) private view returns (BigInt.BigInt memory h) {
+    function hashToBigInt(bytes memory input) internal view returns (BigInt.BigInt memory h) {
         uint256 h1 = uint256(keccak256(abi.encodePacked(input, uint32(0))));
         uint256 h2 = uint256(keccak256(abi.encodePacked(input, uint32(1))));
         // Keep 21 bits = 277 - 256 of h1
@@ -132,11 +132,11 @@ contract PoEVerifier {
         h.val = abi.encodePacked(h1, h2);
     }
 
-    function checkCoprime(BigInt.BigInt memory a, BigInt.BigInt memory b, BigInt.BigInt memory ba, BigInt.BigInt memory bb) private view returns (bool) {
+    function checkCoprime(BigInt.BigInt memory a, BigInt.BigInt memory b, BigInt.BigInt memory ba, BigInt.BigInt memory bb) internal view returns (bool) {
         return BigInt.cmp(BigInt.prepare_add(BigInt.bn_mul(a, ba), BigInt.bn_mul(b, bb)), BigInt.from_uint32(1), true) == 0;
     }
 
-    function checkMillerRabin(BigInt.BigInt memory n, BigInt.BigInt memory b) private view returns (bool) {
+    function checkMillerRabin(BigInt.BigInt memory n, BigInt.BigInt memory b) internal view returns (bool) {
         require(BigInt.is_odd(n) == 1);
         BigInt.BigInt memory n_less_one = BigInt.prepare_sub(n, BigInt.from_uint256(1));
         BigInt.BigInt memory d = BigInt.prepare_sub(n, BigInt.from_uint256(1));
@@ -158,7 +158,7 @@ contract PoEVerifier {
         return false;
     }
 
-    function checkMillerRabin32B(BigInt.BigInt memory n) private view returns (bool) {
+    function checkMillerRabin32B(BigInt.BigInt memory n) internal view returns (bool) {
         return checkMillerRabin(n, BigInt.from_uint256(2))
                 && checkMillerRabin(n, BigInt.from_uint256(7))
                 && checkMillerRabin(n, BigInt.from_uint256(61));

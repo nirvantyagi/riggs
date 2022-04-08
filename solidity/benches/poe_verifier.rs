@@ -17,7 +17,7 @@ use rsa::{
 };
 
 use solidity::{
-    encode_poe_proof, encode_rsa_element, get_bigint_library_src, get_poe_library_src,
+    encode_poe_proof, encode_rsa_element, get_bigint_library_src, get_filename_src,
     get_rsa_library_src,
 };
 
@@ -80,7 +80,7 @@ fn main() {
     // Compile contract from template
     let bigint_src = get_bigint_library_src();
     let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
-    let poe_src = get_poe_library_src();
+    let poe_src = get_filename_src("PoEVerifier.sol", true);
 
     let solc_config = r#"
             {
