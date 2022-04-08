@@ -10,7 +10,7 @@ use solidity_test_utils::{
 
 use range_proofs::bulletproofs::PedersenComm;
 use rsa::bigint::BigInt;
-use solidity::{encode_ped_pp, get_bn254_library_src, get_filename_src, get_pedersen_library_src};
+use solidity::{encode_ped_pp, get_bn254_library_src, get_pedersen_library_src};
 
 fn main() {
     let mut rng = StdRng::seed_from_u64(0u64);
@@ -25,7 +25,6 @@ fn main() {
     // Compile contract from template
     let bn254_src = get_bn254_library_src();
     let pedersen_src = get_pedersen_library_src(&ped_pp, true);
-    // let pedersen_test_src = get_filename_src("PedersenTest.sol");
 
     let solc_config = r#"
             {

@@ -1,10 +1,8 @@
-use ethabi::Token;
 use num_bigint::{RandomBits, Sign};
 use once_cell::sync::Lazy;
 
 use primitive_types::U256;
 use rand::{distributions::Distribution, rngs::StdRng, SeedableRng};
-use sha3::Keccak256;
 
 use std::{ops::Deref, str::FromStr};
 
@@ -18,7 +16,7 @@ use rsa::{
 };
 
 use solidity::{
-    encode_rsa_element, encode_rsa_pp, get_bigint_library_src, get_filename_src,
+    encode_rsa_element, encode_rsa_pp, get_bigint_library_src,
     get_rsa_library_src,
 };
 
@@ -43,8 +41,6 @@ impl RsaGroupParams for TestRsaParams {
 pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 
 const MOD_BITS: usize = 2048;
-
-use hex::ToHex;
 
 fn main() {
     // cargo bench --bench poe_verifier --profile test
@@ -119,8 +115,4 @@ fn main() {
 
     assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
     println!("RSA power verif costs {:?} gas", result.gas);
-    // println!("{:?}", (result.out).encode_hex::<String>());
-    // println!("{:?}", (x.n.to_bytes_be().1).encode_hex::<String>());
-    // println!("{:?}", (exponent.to_bytes_be().1).encode_hex::<String>());
-    // println!("{:?}", (y.n.to_bytes_be().1).encode_hex::<String>());
 }

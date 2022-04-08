@@ -2,21 +2,18 @@ use ark_bn254::{Bn254, G1Projective as G};
 use ark_ec::{PairingEngine, ProjectiveCurve};
 
 use digest::Digest;
-use hex::ToHex;
 use ethabi::Token;
-use num_bigint::{RandomBits, Sign};
 use num_traits::Signed;
 use primitive_types::U256;
 use sha3::digest;
 use std::{
     fs::File, io::Read,
-    ops::Deref, str::FromStr,
+    str::FromStr,
 };
 
 use range_proofs::bulletproofs::{serialize_group_elem, Params, PedersenParams, Proof};
 use rsa::{
     bigint::BigInt,
-    hash_to_prime::HashToPrime,
     hash_to_prime::{
         hash_to_variable_output_length,
         pocklington::{PocklingtonCert, PocklingtonCertParams, PocklingtonHash, StepCert},
@@ -27,7 +24,7 @@ use rsa::{
 use timed_commitments::{basic_tc, lazy_tc};
 use solidity_test_utils::{
     encode_field_element, encode_group_element, encode_int_from_bytes,
-    parse_bytes_to_solidity_string, parse_g1_to_solidity_string,
+    parse_g1_to_solidity_string,
 };
 
 use once_cell::sync::Lazy;
@@ -151,7 +148,7 @@ pub fn get_fkps_src(h: &BigInt, z: &BigInt, m_len: usize, t: u32, as_contract: b
             if as_contract { "public" } else { "internal" },
         )
         //.replace("<%pp_time%>", &format!("{}", t))
-        .replace("<%pp_time%>", &format!("{}", 28u32))
+        .replace("<%pp_time%>", &format!("{}", t))
         .replace("<%pp_m_len%>", &format!("{}", m_len / 256))
         .replace("<%pp_h_populate%>", &{
             let mut populate_h = String::new();
@@ -374,7 +371,7 @@ pub fn encode_tc_comm<E: PairingEngine, P: RsaGroupParams>(
 
 pub fn encode_fkps_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>(
     opening: &basic_tc::Opening<P, PocklingtonHash<HP, D>>,
-    mut m: &Option<Vec<u8>>,
+    m: &Option<Vec<u8>>,
 ) -> Token {
     let mut tokens = Vec::new();
 

@@ -6,7 +6,7 @@ use primitive_types::U256;
 
 use std::{
     error::Error as ErrorTrait,
-    fmt::{self, Debug, Write},
+    fmt::{self, Debug},
 };
 
 pub mod address;
@@ -46,17 +46,6 @@ pub fn parse_g1<E: PairingEngine>(g1: &E::G1Affine) -> (Vec<u8>, Vec<u8>) {
 pub fn parse_g1_to_solidity_string<E: PairingEngine>(g1: &E::G1Affine) -> String {
     let (x, y) = parse_g1::<E>(g1);
     format!("0x{}, 0x{}", hex::encode(&x), hex::encode(&y))
-}
-
-pub fn encode_hex(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        write!(&mut s, "{:02x}", b).unwrap();
-    }
-    s
-}
-pub fn parse_bytes_to_solidity_string(g1: &[u8]) -> String {
-    format!("{}", encode_hex(g1))
 }
 
 pub fn parse_field<E: PairingEngine>(f: &E::Fr) -> Vec<u8> {
