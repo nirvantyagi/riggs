@@ -80,9 +80,8 @@ import "./PoEVerifier.sol";
     // Verify PoE and compare decryption
     bool poe_check = PoEVerifier.verify(comm.h_hat, z_hat, pp.t, poe_proof);
     bool pt_check = keccak256(pt) == keccak256(message);
-    return pt_check;
 
-    //return poe_check && pt_check;
+    return poe_check && pt_check;
   }
 
 
