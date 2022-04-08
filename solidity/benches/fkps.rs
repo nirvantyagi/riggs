@@ -15,15 +15,14 @@ use rsa::{
     pocklington::{PocklingtonCertParams, PocklingtonHash},
   },
   hog::{RsaGroupParams, RsaHiddenOrderGroup},
-  poe::{PoE, PoEParams, Proof as PoEProof},
+  poe::{PoEParams},
 };
 use timed_commitments::{
-  basic_tc::{BasicTC},
+  basic_tc::{BasicTC, Opening},
 };
 use solidity::{
   encode_fkps_comm, encode_fkps_opening, encode_fkps_pp,
-  get_bigint_library_src, get_filename_src, get_fkps_src,
-  get_rsa_library_src,
+  get_bigint_library_src, get_filename_src, get_fkps_src, get_rsa_library_src,
 };
 
 
@@ -55,7 +54,7 @@ const TIME_PARAM: u32 = 40;
 pub struct TestPoEParams;
 
 impl PoEParams for TestPoEParams {
-  const HASH_TO_PRIME_ENTROPY: usize = 128; // TODO: This should be 256
+  const HASH_TO_PRIME_ENTROPY: usize = 256;
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -154,39 +153,26 @@ fn main() {
     .unwrap();
 
   assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-  println!("FKPS verification costs {:?} gas", result.gas);
+  println!("FKPS self-open verification costs {:?} gas", result.gas);
 
-  // Part 2: TEST Force Open
-  // The part below is moved to a separate fkps_force bench file.
-  // To do it in this file, just uncomment what's below
-  // AND change the entropy parameter to 256 above.
+  // Call force verify function on contract;
+  let fkps_force_opening = TC::force_open(&fkps_pp, &comm).unwrap();
+  let force_input = vec![
+    encode_fkps_comm(&comm),
+    encode_fkps_opening(&fkps_force_opening.1, &fkps_force_opening.0),
+    encode_fkps_pp(TestRsaParams::M.deref(), &fkps_pp),
+  ];
 
-  // let fkps_force_opening = TC::force_open(&fkps_pp, &fkps_comm, &ad).unwrap();
+  let force_result = evm
+      .call(
+        contract
+            .encode_call_contract_bytes("verForceOpen", &force_input)
+            .unwrap(),
+        &contract_addr,
+        &deployer,
+      )
+      .unwrap();
 
-  // match &fkps_force_opening.1 {
-  //   basic_tc::Opening::SELF(r) => {}
-  //   basic_tc::Opening::FORCE(y, poe_proof) => {
-  //     let (force_z_hat, force_opening_proof) = (y, poe_proof);
-  //     // Call force verify function on contract;
-  //     let force_input = vec![
-  //       encode_rsa_element(&fkps_comm.x),
-  //       encode_bytes(&fkps_comm.ct),
-  //       encode_rsa_element(&y),
-  //       encode_poe_proof(&poe_proof),
-  //       encode_bytes(&bid_bytes),
-  //     ];
-
-  //     let force_result = evm
-  //       .call(
-  //         contract
-  //           .encode_call_contract_bytes("testVerForceOpen", &force_input)
-  //           .unwrap(),
-  //         &contract_addr,
-  //         &deployer,
-  //       )
-  //       .unwrap();
-
-  //     println!("force result from {:?}", &force_result.out);
-  //   }
-  // };
+  assert_eq!(&force_result.out, &to_be_bytes(&U256::from(1)));
+  println!("FKPS force-open verification costs {:?} gas", force_result.gas);
 }
