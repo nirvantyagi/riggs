@@ -190,110 +190,104 @@ fn main() {
     .unwrap();
 
   assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-  println!("TC verification succeeded");
-  println!("TC verification cost {:?} gas", result.gas);
+  println!("TC verSelfOpen succeeded");
+  println!("   verSelfOpen cost {:?} gas", result.gas);
 
   // Bench force verification
 
   let (mut m, mut tc_force_opening) = TC::force_open(&time_pp, &ped_pp, &tc_comm).unwrap();
 
   let tamper_method = 0; // 0 means no tamper
-  match tamper_method {
-    1 => {
-      let mut tc_input_group_element_bad = tc_comm.clone();
-      tc_input_group_element_bad.tc_comm.x = RsaHiddenOrderGroup::from_nat(BigInt::from(2));
-      let (force_m_bad, force_opening_bad) =
-        TC::force_open(&time_pp, &ped_pp, &tc_input_group_element_bad).unwrap();
-      assert!(force_m_bad.is_none());
-      assert!(TC::ver_open(
-        &time_pp,
-        &ped_pp,
-        &tc_input_group_element_bad,
-        &force_m_bad,
-        &force_opening_bad
-      )
-      .unwrap());
-      tc_comm = tc_input_group_element_bad;
-      tc_force_opening = force_opening_bad;
-      m = force_m_bad;
+  for tamper_method in 0..4 {
+    match tamper_method {
+      // method
+      1 => {
+        let mut tc_input_group_element_bad = tc_comm.clone();
+        tc_input_group_element_bad.tc_comm.x = RsaHiddenOrderGroup::from_nat(BigInt::from(2));
+        let (force_m_bad, force_opening_bad) =
+          TC::force_open(&time_pp, &ped_pp, &tc_input_group_element_bad).unwrap();
+        assert!(force_m_bad.is_none());
+        assert!(TC::ver_open(
+          &time_pp,
+          &ped_pp,
+          &tc_input_group_element_bad,
+          &force_m_bad,
+          &force_opening_bad
+        )
+        .unwrap());
+        tc_comm = tc_input_group_element_bad;
+        tc_force_opening = force_opening_bad;
+        m = force_m_bad;
+      }
+      // method
+      2 => {
+        let mut tc_ae_ct_bad = tc_comm.clone();
+        tc_ae_ct_bad.tc_comm.ct[0] += 1u8;
+        let (force_m_bad, force_opening_bad) =
+          TC::force_open(&time_pp, &ped_pp, &tc_ae_ct_bad).unwrap();
+        assert!(force_m_bad.is_none());
+        assert!(TC::ver_open(
+          &time_pp,
+          &ped_pp,
+          &tc_ae_ct_bad,
+          &force_m_bad,
+          &force_opening_bad
+        )
+        .unwrap());
+        tc_comm = tc_ae_ct_bad;
+        tc_force_opening = force_opening_bad;
+        m = force_m_bad;
+      }
+      // method
+      3 => {
+        let mut ped_comm_bad = tc_comm.clone();
+        ped_comm_bad.ped_comm = ped_pp.g.clone();
+        let (force_m_bad, force_opening_bad) =
+          TC::force_open(&time_pp, &ped_pp, &ped_comm_bad).unwrap();
+        assert!(force_m_bad.is_none());
+        assert!(TC::ver_open(
+          &time_pp,
+          &ped_pp,
+          &ped_comm_bad,
+          &force_m_bad,
+          &force_opening_bad
+        )
+        .unwrap());
+        tc_comm = ped_comm_bad;
+        tc_force_opening = force_opening_bad;
+        m = force_m_bad;
+      }
+      // no tamper
+      _ => {}
     }
-    2 => {
-      let mut tc_ae_ct_bad = tc_comm.clone();
-      tc_ae_ct_bad.tc_comm.ct[0] += 1u8;
-      let (force_m_bad, force_opening_bad) =
-        TC::force_open(&time_pp, &ped_pp, &tc_ae_ct_bad).unwrap();
-      assert!(force_m_bad.is_none());
-      assert!(TC::ver_open(
-        &time_pp,
-        &ped_pp,
-        &tc_ae_ct_bad,
-        &force_m_bad,
-        &force_opening_bad
+    let force_input = vec![
+      encode_tc_comm::<Bn254, _>(&tc_comm),
+      encode_tc_opening(&tc_force_opening),
+      encode_bytes_option(&m),
+      encode_field_element::<Bn254>(&bid_f),
+      encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &time_pp, &ped_pp),
+    ];
+
+    let force_result = evm
+      .call(
+        contract
+          .encode_call_contract_bytes("verForceOpen", &force_input)
+          .unwrap(),
+        &contract_addr,
+        &deployer,
       )
-      .unwrap());
-      tc_comm = tc_ae_ct_bad;
-      tc_force_opening = force_opening_bad;
-      m = force_m_bad;
+      .unwrap();
+
+    // println!("force result {:?}", &force_result.out);
+    assert_eq!(&force_result.out, &to_be_bytes(&U256::from(1)));
+    if (tamper_method == 0) {
+      println!("TC verForceOpen succeeded (without tampering)");
+    } else {
+      println!(
+        "TC verForceOpen succeeded (with tamper method {})",
+        tamper_method
+      );
     }
-    3 => {
-      let mut ped_comm_bad = tc_comm.clone();
-      ped_comm_bad.ped_comm = ped_pp.g.clone();
-      let (force_m_bad, force_opening_bad) =
-        TC::force_open(&time_pp, &ped_pp, &ped_comm_bad).unwrap();
-      assert!(force_m_bad.is_none());
-      assert!(TC::ver_open(
-        &time_pp,
-        &ped_pp,
-        &ped_comm_bad,
-        &force_m_bad,
-        &force_opening_bad
-      )
-      .unwrap());
-      tc_comm = ped_comm_bad;
-      tc_force_opening = force_opening_bad;
-      m = force_m_bad;
-    }
-    _ => {}
+    println!("   verForceOpen costs {:?} gas", force_result.gas);
   }
-  let force_input = vec![
-    encode_tc_comm::<Bn254, _>(&tc_comm),
-    encode_tc_opening(&tc_force_opening),
-    encode_bytes_option(&m),
-    encode_field_element::<Bn254>(&bid_f),
-    encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &time_pp, &ped_pp),
-  ];
-
-  // println!(
-  //   "tc_m from rust {:?}",
-  //   &tc_force_opening.tc_m.unwrap().encode_hex::<String>()
-  // );
-
-  let force_result = evm
-    .call(
-      contract
-        .encode_call_contract_bytes("verForceOpen", &force_input)
-        .unwrap(),
-      &contract_addr,
-      &deployer,
-    )
-    .unwrap();
-
-  // println!("force result {:?}", &force_result.out);
-  assert_eq!(&force_result.out, &to_be_bytes(&U256::from(1)));
-  println!("TC Force verification succeeded");
-  println!("TC Force verification costs {:?} gas", force_result.gas);
-  // IGNORE MESS BELOW
-
-  // println!(
-  //   "ped comm x from solidity {:?}",
-  //   &result.out.encode_hex::<String>()
-  // );
-  // println!("ped opening: {:?}", &ped_opening.to_string());
-  // println!("ped opening from rust: {:?}", &ped_opening.to_string());
-  // println!(
-  //   "pad from rust {:?}",
-  //   &tc_comm.tc_comm.ct.encode_hex::<String>()
-  // );
-
-  // println!("tc_m from rust {:?}", &tc_m.encode_hex::<String>());
 }

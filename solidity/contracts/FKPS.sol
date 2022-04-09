@@ -79,7 +79,15 @@ import "./PoEVerifier.sol";
 
     // Verify PoE and compare decryption
     bool poe_check = PoEVerifier.verify(comm.h_hat, z_hat, pp.t, poe_proof);
-    bool pt_check = keccak256(pt) == keccak256(message);
+    // bool pt_check = keccak256(pt) == keccak256(message);
+
+    bool pt_check = true;
+    if (ok && message.length > 0) {
+      pt_check = keccak256(pt) == keccak256(message);
+    } else if (ok || message.length > 0)  {
+      return false;
+    } 
+    // when ok = false and message = none, then we don't use pt_check in basic_tc::ver_open
 
     return poe_check && pt_check;
   }

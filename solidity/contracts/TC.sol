@@ -51,6 +51,7 @@ import "./Pedersen.sol";
   Params memory pp) <%visibility%> view returns (bool) {
 
     require(FKPS.verForceOpen(comm.fkps, force.fkps_fo, pp.fkps_pp));
+    
     bytes memory tc_m = force.fkps_fo.message;
     if (tc_m.length >= 32) {
       uint ped_r = uint(bytesToBytes32(tc_m, tc_m.length-uint(32)));
