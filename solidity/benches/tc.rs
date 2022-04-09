@@ -12,8 +12,8 @@ use sha3::{Digest, Keccak256};
 use std::{ops::Deref, str::FromStr};
 
 use solidity_test_utils::{
-  address::Address, contract::Contract, encode_bytes, encode_field_element, encode_group_element,
-  encode_int_from_bytes, evm::Evm, to_be_bytes,
+  address::Address, contract::Contract, encode_bytes, encode_bytes_option, encode_field_element,
+  encode_group_element, encode_int_from_bytes, evm::Evm, to_be_bytes,
 };
 
 use rsa::{
@@ -25,8 +25,8 @@ use rsa::{
 
 use solidity::{
   encode_rsa_element, encode_tc_comm, encode_tc_opening, encode_tc_pp, get_bigint_library_src,
-  get_bn254_library_src, get_filename_src, get_filename_src_contract, get_fkps_library_src,
-  get_fkps_src, get_pedersen_library_src, get_rsa_library_src,
+  get_bn254_library_src, get_filename_src, get_fkps_src, get_pedersen_library_src,
+  get_rsa_library_src,
 };
 
 use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
@@ -47,6 +47,7 @@ impl RsaGroupParams for TestRsaParams {
 pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 
 const MOD_BITS: usize = 2048;
+const TIME_PARAM: u32 = 40;
 
 use hex::ToHex;
 
@@ -104,13 +105,12 @@ fn main() {
       .unwrap();
 
   // Generate Parameters
-  let (tc_fkps_pp, tc_fkps_pp_proof) = TC::gen_time_params(40).unwrap();
+  let (time_pp, time_pp_proof) = TC::gen_time_params(TIME_PARAM).unwrap();
   let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
-  assert!(TC::ver_time_params(&tc_fkps_pp, &tc_fkps_pp_proof).unwrap());
+  assert!(TC::ver_time_params(&time_pp, &time_pp_proof).unwrap());
 
   // Create commitment, opening
-  let mut ad = [0u8; 32];
-  let (tc_comm, tc_opening) = TC::commit(&mut rng, &tc_fkps_pp, &ped_pp, &bid_bytes, &ad).unwrap();
+  let (mut tc_comm, tc_opening) = TC::commit(&mut rng, &time_pp, &ped_pp, &bid_bytes).unwrap();
 
   println!("Compiling contract...");
 
@@ -119,9 +119,9 @@ fn main() {
   let bigint_src = get_bigint_library_src();
   let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
   let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
-  let poe_src = get_filename_src("PoElib.sol");
-  let fkps_src = get_fkps_src(&tc_fkps_pp.x.n, &tc_fkps_pp.y.n, MOD_BITS, false);
-  let tc_src = get_filename_src_contract("TC.sol", true);
+  let poe_src = get_filename_src("PoEVerifier.sol", false);
+  let fkps_src = get_fkps_src(&time_pp.x.n, &time_pp.y.n, MOD_BITS, TIME_PARAM, false);
+  let tc_src = get_filename_src("TC.sol", true);
   // let tc_test_src = get_filename_src("TCTest.sol");
 
   let solc_config = r#"
@@ -133,7 +133,7 @@ fn main() {
                     "Pedersen.sol": { "content": "<%pedersen_lib_src%>" },
                     "BigInt.sol": { "content": "<%bigint_src%>" },
                     "RSA2048.sol": { "content": "<%rsa_lib_src%>" },
-                    "PoElib.sol": { "content": "<%poe_lib_src%>" },
+                    "PoEVerifier.sol": { "content": "<%poe_lib_src%>" },
                     "FKPS.sol": { "content": "<%fkps_lib_src%>" }
                 },
                 "settings": {
@@ -153,7 +153,6 @@ fn main() {
     .replace("<%rsa_lib_src%>", &rsa_src)
     .replace("<%poe_lib_src%>", &poe_src)
     .replace("<%fkps_lib_src%>", &fkps_src)
-    // .replace("<%tc_lib_src%>", &tc_lib_src)
     .replace("<%src%>", &tc_src);
 
   let contract = Contract::compile_from_config(&solc_config, "TC").unwrap();
@@ -177,7 +176,7 @@ fn main() {
     encode_tc_comm::<Bn254, _>(&tc_comm),
     encode_tc_opening(&tc_opening),
     encode_field_element::<Bn254>(&bid_f),
-    encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &tc_fkps_pp, &ped_pp),
+    encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &time_pp, &ped_pp),
   ];
 
   let result = evm
@@ -194,6 +193,95 @@ fn main() {
   println!("TC verification succeeded");
   println!("TC verification cost {:?} gas", result.gas);
 
+  // Bench force verification
+
+  let (mut m, mut tc_force_opening) = TC::force_open(&time_pp, &ped_pp, &tc_comm).unwrap();
+
+  let tamper_method = 0; // 0 means no tamper
+  match tamper_method {
+    1 => {
+      let mut tc_input_group_element_bad = tc_comm.clone();
+      tc_input_group_element_bad.tc_comm.x = RsaHiddenOrderGroup::from_nat(BigInt::from(2));
+      let (force_m_bad, force_opening_bad) =
+        TC::force_open(&time_pp, &ped_pp, &tc_input_group_element_bad).unwrap();
+      assert!(force_m_bad.is_none());
+      assert!(TC::ver_open(
+        &time_pp,
+        &ped_pp,
+        &tc_input_group_element_bad,
+        &force_m_bad,
+        &force_opening_bad
+      )
+      .unwrap());
+      tc_comm = tc_input_group_element_bad;
+      tc_force_opening = force_opening_bad;
+      m = force_m_bad;
+    }
+    2 => {
+      let mut tc_ae_ct_bad = tc_comm.clone();
+      tc_ae_ct_bad.tc_comm.ct[0] += 1u8;
+      let (force_m_bad, force_opening_bad) =
+        TC::force_open(&time_pp, &ped_pp, &tc_ae_ct_bad).unwrap();
+      assert!(force_m_bad.is_none());
+      assert!(TC::ver_open(
+        &time_pp,
+        &ped_pp,
+        &tc_ae_ct_bad,
+        &force_m_bad,
+        &force_opening_bad
+      )
+      .unwrap());
+      tc_comm = tc_ae_ct_bad;
+      tc_force_opening = force_opening_bad;
+      m = force_m_bad;
+    }
+    3 => {
+      let mut ped_comm_bad = tc_comm.clone();
+      ped_comm_bad.ped_comm = ped_pp.g.clone();
+      let (force_m_bad, force_opening_bad) =
+        TC::force_open(&time_pp, &ped_pp, &ped_comm_bad).unwrap();
+      assert!(force_m_bad.is_none());
+      assert!(TC::ver_open(
+        &time_pp,
+        &ped_pp,
+        &ped_comm_bad,
+        &force_m_bad,
+        &force_opening_bad
+      )
+      .unwrap());
+      tc_comm = ped_comm_bad;
+      tc_force_opening = force_opening_bad;
+      m = force_m_bad;
+    }
+    _ => {}
+  }
+  let force_input = vec![
+    encode_tc_comm::<Bn254, _>(&tc_comm),
+    encode_tc_opening(&tc_force_opening),
+    encode_bytes_option(&m),
+    encode_field_element::<Bn254>(&bid_f),
+    encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &time_pp, &ped_pp),
+  ];
+
+  // println!(
+  //   "tc_m from rust {:?}",
+  //   &tc_force_opening.tc_m.unwrap().encode_hex::<String>()
+  // );
+
+  let force_result = evm
+    .call(
+      contract
+        .encode_call_contract_bytes("verForceOpen", &force_input)
+        .unwrap(),
+      &contract_addr,
+      &deployer,
+    )
+    .unwrap();
+
+  // println!("force result {:?}", &force_result.out);
+  assert_eq!(&force_result.out, &to_be_bytes(&U256::from(1)));
+  println!("TC Force verification succeeded");
+  println!("TC Force verification costs {:?} gas", force_result.gas);
   // IGNORE MESS BELOW
 
   // println!(

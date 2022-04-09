@@ -106,8 +106,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         ped_pp: &PedersenParams<G>,
         comm: &Comm<G, RsaP>,
     ) -> Result<(Option<Vec<u8>>, Opening<G, RsaP, H2P>), Error> {
-        let (tc_m, tc_opening) =
-            BasicTC::<PoEP, RsaP, H, H2P>::force_open(time_pp, &comm.tc_comm)?;
+        let (tc_m, tc_opening) = BasicTC::<PoEP, RsaP, H, H2P>::force_open(time_pp, &comm.tc_comm)?;
         match &tc_m {
             Some(tc_m_inner) => {
                 let mut m = tc_m_inner.to_vec();
@@ -257,14 +256,7 @@ mod tests {
         let ped_pp = TC::gen_pedersen_params(&mut rng);
 
         let (comm, self_opening) = TC::commit(&mut rng, &time_pp, &ped_pp, &m).unwrap();
-        assert!(TC::ver_open(
-            &time_pp,
-            &ped_pp,
-            &comm,
-            &Some(m.to_vec()),
-            &self_opening
-        )
-        .unwrap());
+        assert!(TC::ver_open(&time_pp, &ped_pp, &comm, &Some(m.to_vec()), &self_opening).unwrap());
 
         let (force_m, force_opening) = TC::force_open(&time_pp, &ped_pp, &comm).unwrap();
         assert!(TC::ver_open(&time_pp, &ped_pp, &comm, &force_m, &force_opening).unwrap());

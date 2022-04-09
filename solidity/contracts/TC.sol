@@ -49,22 +49,15 @@ import "./Pedersen.sol";
 
   function verForceOpen(Comm memory comm, ForceOpening memory force, bytes memory m, uint bid, 
   Params memory pp) <%visibility%> view returns (bool) {
-    bool fkps_check = true;
 
-    fkps_check = FKPS.verForceOpen(comm.fkps, force.fkps_fo, pp.fkps_pp);
-
-    if (fkps_check == false) return false;
-
-    bool ped_valid = true;
-
+    require(FKPS.verForceOpen(comm.fkps, force.fkps_fo, pp.fkps_pp));
     bytes memory tc_m = force.fkps_fo.message;
     if (tc_m.length >= 32) {
-      bytes32 ped_r = bytesToBytes32(tc_m, tc_m.length-uint(32));
-      ped_valid = Pedersen.verify(comm.ped, bid, uint(ped_r), pp.ped_pp);
+      uint ped_r = uint(bytesToBytes32(tc_m, tc_m.length-uint(32)));
+      bool ped_valid = Pedersen.verify(comm.ped, bid, ped_r, pp.ped_pp);
 
       if (m.length > 0) {
-        bool m_compare = bytesCompare(m, tc_m); // compares the prefixes
-        return ped_valid && m_compare;
+        return ped_valid && bytesCompare(m, tc_m);
       } else {
         return !ped_valid;
       }
