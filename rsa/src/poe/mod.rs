@@ -37,8 +37,8 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
     pub fn prove(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u32) -> Result<Proof<RsaP, H>, Error> {
         // Hash to challenge
         let mut hash_input = vec![];
-        hash_input.append(&mut u.n.to_bytes_be().1);
-        hash_input.append(&mut v.n.to_bytes_be().1);
+        hash_input.append(&mut pad_to_32_byte_offset(u.n.to_bytes_be().1));
+        hash_input.append(&mut pad_to_32_byte_offset(v.n.to_bytes_be().1));
         hash_input.extend_from_slice(&t.to_be_bytes());
         let (l, cert) = H::hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input)?;
 
@@ -60,8 +60,8 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         proof: &Proof<RsaP, H>,
     ) -> Result<bool, Error> {
         let mut hash_input = vec![];
-        hash_input.append(&mut u.n.to_bytes_be().1);
-        hash_input.append(&mut v.n.to_bytes_be().1);
+        hash_input.append(&mut pad_to_32_byte_offset(u.n.to_bytes_be().1));
+        hash_input.append(&mut pad_to_32_byte_offset(v.n.to_bytes_be().1));
         hash_input.extend_from_slice(&t.to_be_bytes());
         let b = H::verify_hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input, &proof.l, &proof.cert)?;
         let r = BigInt::from(2).modpow(&BigInt::from(t), &proof.l);
@@ -70,6 +70,17 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         Ok(b && v == &proof.q.power(&proof.l).op(&u.power(&r)))
     }
 }
+
+// Needed to match solidity functionality
+fn pad_to_32_byte_offset(mut bytes: Vec<u8>) -> Vec<u8> {
+    let pad_len = 32 * ((bytes.len() - 1) / 32 + 1);
+    bytes.reverse();
+    bytes.resize(pad_len, 0);
+    debug_assert_eq!(bytes.len() % 32, 0);
+    bytes.reverse();
+    bytes
+}
+
 
 #[cfg(test)]
 mod tests {

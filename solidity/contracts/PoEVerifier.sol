@@ -40,28 +40,30 @@ import "./RSA2048.sol";
     function verify(RSA2048.Element memory x, RSA2048.Element memory y, uint32 t, Proof memory proof) <%visibility%> view returns (bool) {
         RSA2048.Params memory pp = RSA2048.publicParams();
         BigInt.BigInt memory h = hashToBigInt(abi.encodePacked(x.n.val, y.n.val, t, proof.cert.nonce));
-        // require(verifyHashToPrime(h, proof.cert));
+        bool hash_ok = verifyHashToPrime(h, proof.cert);
         BigInt.BigInt memory r = BigInt.prepare_modexp(BigInt.from_uint256(2), BigInt.from_uint32(t), h);
-        return y.eq(proof.q.power(h, pp).op(x.power(r, pp), pp).reduce(pp));
+        return hash_ok && y.eq(proof.q.power(h, pp).op(x.power(r, pp), pp).reduce(pp));
     }
 
     function verifyHashToPrime(BigInt.BigInt memory h, PocklingtonCertificate memory cert) internal view returns (bool) {
         BigInt.BigInt memory p = h;
+        bool ok_p_pocksteps = true;
         for (uint i = 0; i < cert.steps.length; i++) {
-            verifyPocklingtonStep(p, cert.steps[i]);
+            bool ok = verifyPocklingtonStep(p, cert.steps[i]);
+            ok_p_pocksteps = ok_p_pocksteps && ok;
             p = cert.steps[i].f;
         }
         // Verify final prime using Miller-Rabin for 32 bit integers
-        require(BigInt.cmp(BigInt.from_uint256(1 << 32), p, false) == 1);
-        require(checkMillerRabin32B(p));
-        return true;
+        bool ok_p_32 = BigInt.cmp(BigInt.from_uint256(1 << 32), p, false) == 1;
+        bool ok_p_mr = checkMillerRabin32B(p);
+        return ok_p_pocksteps && ok_p_32 && ok_p_mr;
     }
 
     function verifyPocklingtonStep(BigInt.BigInt memory p, PocklingtonStep memory cert) internal view returns (bool) {
         BigInt.BigInt memory u = BigInt.prepare_modexp(BigInt.from_uint32(2), BigInt.from_uint32(cert.n2), p);
         u = BigInt.bn_mul(u, BigInt.prepare_modexp(cert.f, BigInt.from_uint32(cert.n), p));
         BigInt.BigInt memory p_less_one = BigInt.prepare_sub(p, BigInt.from_uint256(1));
-        require(BigInt.check_bn_div(p_less_one, u, cert.v) == 1);
+        if (BigInt.check_bn_div(p_less_one, u, cert.v) != 1) { return false; }
         BigInt.BigInt memory r;
         {
             BigInt.BigInt memory u_twice = BigInt.bn_mul(BigInt.from_uint256(2), u);
@@ -75,7 +77,7 @@ import "./RSA2048.sol";
             BigInt.BigInt memory u_squared_times2 = BigInt.bn_mul(BigInt.square(u), BigInt.from_uint256(2));
             BigInt.BigInt memory u_times_r = BigInt.bn_mul(u, BigInt.prepare_sub(r, one));
             BigInt.BigInt memory checkf1 = BigInt.bn_mul(u_plus_one, BigInt.prepare_add(u_squared_times2, BigInt.prepare_add(u_times_r, one)));
-            require(BigInt.cmp(checkf1, p, false) == 1);
+            if (BigInt.cmp(checkf1, p, false) != 1) { return false; }
         }
         {
             bool checkf2 = false;
@@ -91,32 +93,31 @@ import "./RSA2048.sol";
                     }
                 }
             }
-            require(checkf2);
+            if (!checkf2) { return false; }
         }
         BigInt.check_bn_div(p_less_one, cert.f, cert.p_less_one_div_f);
         BigInt.check_bn_div(p_less_one, BigInt.from_uint256(2), cert.p_less_one_div_two);
         {
-            // checka1
-            require(BigInt.cmp(BigInt.prepare_modexp(cert.a, p_less_one, p), BigInt.from_uint32(1), false) == 0);
-            // checka2
-            require(checkCoprime(
+            bool checka1 = (BigInt.cmp(BigInt.prepare_modexp(cert.a, p_less_one, p), BigInt.from_uint32(1), false) == 0);
+            bool checka2 = (checkCoprime(
                         BigInt.prepare_sub(BigInt.prepare_modexp(cert.a, cert.p_less_one_div_f, p), BigInt.from_uint256(1)),
                         p,
                         cert.b_p_div_f1,
                         cert.b_p_div_f2
             ));
-            // checka3
-            require(checkCoprime(
+            bool checka3 = (checkCoprime(
                     BigInt.prepare_sub(BigInt.prepare_modexp(cert.a, cert.p_less_one_div_two, p), BigInt.from_uint256(1)),
                     p,
                     cert.b_p_div_two1,
                     cert.b_p_div_two2
             ));
+            if (!(checka1 && checka2 && checka3)) { return false; }
         }
         {
-            require(BigInt.is_odd(u) == 0);
-            require(BigInt.is_odd(cert.v) == 1);
-            require(checkCoprime(u, cert.v, cert.bu, cert.bv));
+            bool finalcheck1 = (BigInt.is_odd(u) == 0);
+            bool finalcheck2 = (BigInt.is_odd(cert.v) == 1);
+            bool finalcheck3 = (checkCoprime(u, cert.v, cert.bu, cert.bv));
+            if (!(finalcheck1 && finalcheck2 && finalcheck3)) { return false; }
         }
         return true;
     }
@@ -137,7 +138,7 @@ import "./RSA2048.sol";
     }
 
     function checkMillerRabin(BigInt.BigInt memory n, BigInt.BigInt memory b) internal view returns (bool) {
-        require(BigInt.is_odd(n) == 1);
+        if (BigInt.is_odd(n) != 1) { return false; }
         BigInt.BigInt memory n_less_one = BigInt.prepare_sub(n, BigInt.from_uint256(1));
         BigInt.BigInt memory d = BigInt.prepare_sub(n, BigInt.from_uint256(1));
         uint s;

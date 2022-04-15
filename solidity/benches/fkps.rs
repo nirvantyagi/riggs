@@ -153,7 +153,7 @@ fn main() {
     .unwrap();
 
   assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-  println!("FKPS self-open verification costs {:?} gas", result.gas);
+  println!("FKPS self-open verification gas cost: {:?}", result.gas);
 
   // Call force verify function on contract;
   let fkps_force_opening = TC::force_open(&fkps_pp, &comm).unwrap();
@@ -174,5 +174,5 @@ fn main() {
       .unwrap();
 
   assert_eq!(&force_result.out, &to_be_bytes(&U256::from(1)));
-  println!("FKPS force-open verification costs {:?} gas", force_result.gas);
+  println!("FKPS force-open verification gas cost: {:?}", force_result.gas);
 }

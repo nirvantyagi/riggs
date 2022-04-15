@@ -16,11 +16,11 @@ import "./BN254.sol";
     pp.H = BN254.G1Point(<%ped_pp_h%>);
   }
 
-  function commit(uint b, uint r, Params memory pp) internal view returns (BN254.G1Point memory) {
+  function commit(uint256 b, uint256 r, Params memory pp) internal view returns (BN254.G1Point memory) {
     return BN254.g1add(BN254.g1mul(pp.G, b), BN254.g1mul(pp.H, r));
   }
 
-  function verify(BN254.G1Point memory given, uint b, uint r, Params memory pp) 
+  function verify(BN254.G1Point memory given, uint256 b, uint256 r, Params memory pp)
   <%visibility%>  view returns (bool) {
     BN254.G1Point memory calc = commit(b, r, pp);
     return given.X==calc.X && given.Y==calc.Y; 

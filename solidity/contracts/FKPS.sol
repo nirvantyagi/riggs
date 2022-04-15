@@ -79,17 +79,14 @@ import "./PoEVerifier.sol";
 
     // Verify PoE and compare decryption
     bool poe_check = PoEVerifier.verify(comm.h_hat, z_hat, pp.t, poe_proof);
-    // bool pt_check = keccak256(pt) == keccak256(message);
-
-    bool pt_check = true;
-    if (ok && message.length > 0) {
-      pt_check = keccak256(pt) == keccak256(message);
-    } else if (ok || message.length > 0)  {
-      return false;
-    } 
-    // when ok = false and message = none, then we don't use pt_check in basic_tc::ver_open
-
-    return poe_check && pt_check;
+    if (!ok) {
+      // Message claimed to be invalid
+      return poe_check && (message.length == 0);
+    } else {
+      // Check decrypted message against claimed message
+      bool pt_check = keccak256(pt) == keccak256(message);
+      return poe_check && pt_check;
+    }
   }
 
 
@@ -138,7 +135,7 @@ import "./PoEVerifier.sol";
     return out;
   }
 
-function bytes_slice(bytes memory arr, uint256 begin, uint256 end) internal pure returns (bytes memory) {
+  function bytes_slice(bytes memory arr, uint256 begin, uint256 end) internal pure returns (bytes memory) {
     bytes memory slice = new bytes(end - begin);
     for(uint i=0; i < end-begin; i++){
       slice[i] = arr[i + begin];

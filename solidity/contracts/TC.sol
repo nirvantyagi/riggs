@@ -30,63 +30,55 @@ import "./Pedersen.sol";
     pp.fkps_pp = FKPS.publicParams();
     pp.ped_pp = Pedersen.publicParams();
   }
-  
 
-  function verOpen(Comm memory comm, SelfOpening memory so, uint bid, 
-  Params memory pp) <%visibility%> view returns (bool) {
-    bool fkps_check = true;
-    bool ped_valid = true;
-
-    if (so.fkps_so.message.length >= 32) {
-      bytes32 ped_r = bytesToBytes32(so.fkps_so.message, so.fkps_so.message.length-uint(32));
-      ped_valid = Pedersen.verify(comm.ped, bid, uint(ped_r), pp.ped_pp);
-    }
-
-    fkps_check = FKPS.verOpen(comm.fkps, so.fkps_so, pp.fkps_pp);
-
-    return ped_valid && fkps_check;
+  function verOpen(Comm memory comm, SelfOpening memory opening, uint256 m, Params memory pp) <%visibility%> view returns (bool) {
+    bool fkps_check = FKPS.verOpen(comm.fkps, opening.fkps_so, pp.fkps_pp);
+    if (!fkps_check) { return false; }
+    return verOpenPedersenHelper(comm, opening.fkps_so.message, m, pp);
   }
 
-  function verForceOpen(Comm memory comm, ForceOpening memory force, bytes memory m, uint bid, 
-  Params memory pp) <%visibility%> view returns (bool) {
+  function verForceOpen(Comm memory comm, ForceOpening memory opening, uint256 m, Params memory pp) <%visibility%> view returns (bool) {
+    bool fkps_check = FKPS.verForceOpen(comm.fkps, opening.fkps_fo, pp.fkps_pp);
+    if (!fkps_check) { return false; }
+    if (opening.fkps_fo.message.length == 0) {
+      // if FKPS opens to empty, TC opens to empty
+      return (m == 0);
+    }
+    return verOpenPedersenHelper(comm, opening.fkps_fo.message, m, pp);
+  }
 
-    require(FKPS.verForceOpen(comm.fkps, force.fkps_fo, pp.fkps_pp));
-    
-    bytes memory tc_m = force.fkps_fo.message;
-    if (tc_m.length >= 32) {
-      uint ped_r = uint(bytesToBytes32(tc_m, tc_m.length-uint(32)));
-      bool ped_valid = Pedersen.verify(comm.ped, bid, ped_r, pp.ped_pp);
-
-      if (m.length > 0) {
-        return ped_valid && bytesCompare(m, tc_m);
-      } else {
-        return !ped_valid;
-      }
-    } 
-    else {
-      return m.length == 0;
+  function verOpenPedersenHelper(Comm memory comm, bytes memory fkps_m, uint256 m, Params memory pp) internal view returns (bool) {
+    // check Pedersen commitment
+    bytes32 ped_r = FKPS.bytes_to_bytes32(FKPS.bytes_slice(fkps_m, fkps_m.length - 32, fkps_m.length));
+    bool ped_valid = Pedersen.verify(comm.ped, m, uint(ped_r), pp.ped_pp);
+    if (!ped_valid) {
+      // if Pedersen opening fails, TC opens to empty
+      return (m == 0);
+    } else {
+      // if Pedersen opening succeeds, verify FKPS message matches claimed message
+      bool check_len = (fkps_m.length <= 64);
+      bool check_eq = (keccak256(abi.encodePacked(reverse(m))) == keccak256(abi.encodePacked(FKPS.bytes_slice(fkps_m, 0, fkps_m.length - 32), new bytes(64 - fkps_m.length))));
+      return (check_len && check_eq);
     }
   }
 
-  // Utility function
-  function bytesToBytes32(bytes memory b, uint offset) private pure returns (bytes32) {
-    bytes32 out;
-    for (uint i = 0; i < 32; i++) {
-      if (b.length < offset+i+1) {
-        out |= bytes32(bytes1(0) & 0xFF) >> (i * 8);
-      } else {
-        out |= bytes32(b[offset + i] & 0xFF) >> (i * 8);
-      }
-    }
-    return out;
-  }
+  function reverse(uint256 input) internal pure returns (uint256 v) {
+    v = input;
+    v = ((v & 0xFF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00) >> 8) |
+    ((v & 0x00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF00FF) << 8);
 
-  function bytesCompare(bytes memory a, bytes memory b) private pure returns (bool) {
-    if (a.length > b.length) return false;
-    for (uint i=0; i<a.length; i++) {
-      if (a[i] != b[i]) return false; 
-    }
-    return true;
+    // swap 2-byte long pairs
+    v = ((v & 0xFFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000) >> 16) |
+    ((v & 0x0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF0000FFFF) << 16);
+
+    // swap 4-byte long pairs
+    v = ((v & 0xFFFFFFFF00000000FFFFFFFF00000000FFFFFFFF00000000FFFFFFFF00000000) >> 32) |
+    ((v & 0x00000000FFFFFFFF00000000FFFFFFFF00000000FFFFFFFF00000000FFFFFFFF) << 32);
+
+    v = ((v & 0xFFFFFFFFFFFFFFFF0000000000000000FFFFFFFFFFFFFFFF0000000000000000) >> 64) |
+    ((v & 0x0000000000000000FFFFFFFFFFFFFFFF0000000000000000FFFFFFFFFFFFFFFF) << 64);
+
+    // swap 16-byte long pairs
+    v = (v >> 128) | (v << 128);
   }
-  
 }

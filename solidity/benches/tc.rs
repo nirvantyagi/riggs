@@ -1,36 +1,36 @@
 use ark_bn254::{Bn254, G1Projective as G};
-use ark_ec::ProjectiveCurve;
-use ark_ff::{biginteger::BigInteger, PrimeField};
 
 use ethabi::Token;
-use num_bigint::{RandomBits, Sign};
 use once_cell::sync::Lazy;
 use primitive_types::U256;
-use rand::{distributions::Distribution, rngs::StdRng, SeedableRng};
-use sha3::{Digest, Keccak256};
+use rand::{rngs::StdRng, SeedableRng, Rng};
+use sha3::{Keccak256};
 
-use std::{ops::Deref, str::FromStr};
-
-use solidity_test_utils::{
-  address::Address, contract::Contract, encode_bytes, encode_bytes_option, encode_field_element,
-  encode_group_element, encode_int_from_bytes, evm::Evm, to_be_bytes,
+use std::{
+  ops::Deref,
+  str::{FromStr},
+  collections::BTreeSet,
 };
 
 use rsa::{
-  bigint::{nat_to_f, BigInt},
-  hash_to_prime::HashToPrime,
+  bigint::{BigInt},
+  hash_to_prime::{pocklington::{PocklingtonCertParams, PocklingtonHash}},
   hog::{RsaGroupParams, RsaHiddenOrderGroup},
-  poe::{PoE, PoEParams, Proof as PoEProof},
+  poe::{PoEParams},
 };
-
+use timed_commitments::{
+  lazy_tc::{LazyTC},
+};
 use solidity::{
-  encode_rsa_element, encode_tc_comm, encode_tc_opening, encode_tc_pp, get_bigint_library_src,
+  encode_tc_comm, encode_tc_opening, encode_tc_pp, get_bigint_library_src,
   get_bn254_library_src, get_filename_src, get_fkps_src, get_pedersen_library_src,
   get_rsa_library_src,
 };
+use solidity_test_utils::{
+  address::Address, contract::Contract, evm::Evm,
+  to_be_bytes,
+};
 
-use rsa::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
-use timed_commitments::{basic_tc, lazy_tc};
 
 use range_proofs::bulletproofs::PedersenComm;
 
@@ -40,7 +40,15 @@ pub struct TestRsaParams;
 impl RsaGroupParams for TestRsaParams {
   const G: Lazy<BigInt> = Lazy::new(|| BigInt::from(2));
   const M: Lazy<BigInt> = Lazy::new(|| {
-    BigInt::from_str("25195908475657893494027183240048398571429282126204032027777137836043662020707595556264018525880784406918290641249515082189298559149176184502808489120072844992687392807287776735971418347270261896375014971824691165077613379859095700097330459748808428401797429100642458691817195118746121515172654632282216869987549182422433637259085141865462043576798423387184774447920739934236584823824281198163815010674810451660377306056201619676256133844143603833904414952634432190114657544454178424020924616515723350778707749817125772467962926386356373289912154831438167899885040445364023527381951378636564391212010397122822120720357").unwrap()
+    BigInt::from_str("2519590847565789349402718324004839857142928212620403202777713783604366202070\
+                          7595556264018525880784406918290641249515082189298559149176184502808489120072\
+                          8449926873928072877767359714183472702618963750149718246911650776133798590957\
+                          0009733045974880842840179742910064245869181719511874612151517265463228221686\
+                          9987549182422433637259085141865462043576798423387184774447920739934236584823\
+                          8242811981638150106748104516603773060562016196762561338441436038339044149526\
+                          3443219011465754445417842402092461651572335077870774981712577246796292638635\
+                          6373289912154831438167899885040445364023527381951378636564391212010397122822\
+                          120720357").unwrap()
   });
 }
 
@@ -49,13 +57,11 @@ pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 const MOD_BITS: usize = 2048;
 const TIME_PARAM: u32 = 40;
 
-use hex::ToHex;
-
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestPoEParams;
 
 impl PoEParams for TestPoEParams {
-  const HASH_TO_PRIME_ENTROPY: usize = 128;
+  const HASH_TO_PRIME_ENTROPY: usize = 256;
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -66,7 +72,7 @@ impl PocklingtonCertParams for TestPocklingtonParams {
   const INCLUDE_SOLIDITY_WITNESSES: bool = true;
 }
 
-pub type TC = lazy_tc::LazyTC<
+pub type TC = LazyTC<
   G,
   TestPoEParams,
   TestRsaParams,
@@ -74,43 +80,62 @@ pub type TC = lazy_tc::LazyTC<
   PocklingtonHash<TestPocklingtonParams, Keccak256>,
 >;
 
-fn pad_32(input: &[u8]) -> [u8; 32] {
-  let mut padded: [u8; 32] = [0; 32];
-  let m = std::cmp::min(32, input.len());
-  for i in 0..m {
-    padded[31 - i] = input[input.len() - 1 - i];
-  }
-  return padded;
-}
-
-fn pad_256(input: &[u8]) -> [u8; 256] {
-  let mut padded: [u8; 256] = [0; 256];
-  let m = std::cmp::min(256, input.len());
-  for i in 0..m {
-    padded[255 - i] = input[input.len() - 1 - i];
-  }
-  return padded;
-}
-
 fn main() {
-  // cargo bench --bench poe_verifier --profile test
+  // cargo bench --bench tc --profile test
+  let mut args: Vec<String> = std::env::args().collect();
+  if args.last().unwrap() == "--bench" {
+    args.pop();
+  }
+  let mut tamper_force_open: BTreeSet<String> = if args.len() > 1
+      && (args[1] == "-h" || args[1] == "--help")
+  {
+    println!("Usage: ``cargo bench --bench tc --  [--tamper <none | bad_x | bad_ct | bad_ped_comm> ]``");
+    return;
+  } else {
+    let mut args = args.into_iter().skip(1);
+    let mut next_arg = args.next();
+    let mut tamper_force_open = BTreeSet::new();
+    while let Some(arg) = next_arg.clone() {
+      match arg.as_str() {
+        "--tamper" => {
+          next_arg = args.next();
+          'subargs: while let Some(subarg) = next_arg.clone() {
+            if ["none", "bad_x", "bad_ct", "bad_ped_comm"].contains(&subarg.as_str()) {
+              tamper_force_open.insert(subarg);
+            } else {
+              break 'subargs;
+            }
+            next_arg = args.next();
+          }
+        }
+        _ => {
+          println!("Invalid argument: {}; Run with -h for usage", arg);
+          return;
+        }
+      }
+    }
+    tamper_force_open
+  };
+  if tamper_force_open.is_empty() {
+    tamper_force_open = BTreeSet::from(["none".to_string(), "bad_x".to_string(), "bad_ct".to_string(), "bad_ped_comm".to_string()]);
+  }
+  println!("Benchmarking TC with tamper options: {:?}", tamper_force_open);
+
+  // Begin benchmark
   let mut rng = StdRng::seed_from_u64(1u64);
 
-  // create sample bid and FKPS commitment
-  // 1. Get bid
-  let bid = BigInt::from(10000);
-  let bid_bytes = [bid.to_bytes_be().1].concat();
-  let bid_f =
-    nat_to_f::<<G as ProjectiveCurve>::ScalarField>(&BigInt::from_bytes_le(Sign::Plus, &bid_bytes))
-      .unwrap();
-
-  // Generate Parameters
+  // Generate time parameters
   let (time_pp, time_pp_proof) = TC::gen_time_params(TIME_PARAM).unwrap();
   let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
   assert!(TC::ver_time_params(&time_pp, &time_pp_proof).unwrap());
 
   // Create commitment, opening
-  let (mut tc_comm, tc_opening) = TC::commit(&mut rng, &time_pp, &ped_pp, &bid_bytes).unwrap();
+  let m = {
+    let mut m = [0u8; 8];
+    rng.fill(&mut m);
+    m
+  };
+  let (tc_comm, tc_opening) = TC::commit(&mut rng, &time_pp, &ped_pp, &m).unwrap();
 
   println!("Compiling contract...");
 
@@ -122,7 +147,6 @@ fn main() {
   let poe_src = get_filename_src("PoEVerifier.sol", false);
   let fkps_src = get_fkps_src(&time_pp.x.n, &time_pp.y.n, MOD_BITS, TIME_PARAM, false);
   let tc_src = get_filename_src("TC.sol", true);
-  // let tc_test_src = get_filename_src("TCTest.sol");
 
   let solc_config = r#"
             {
@@ -172,10 +196,12 @@ fn main() {
   let contract_addr = create_result.addr.clone();
   println!("Contract deploy gas cost: {}", create_result.gas);
 
+  // Benchmark self open
+  println!("Benchmark self-open...");
   let input = vec![
     encode_tc_comm::<Bn254, _>(&tc_comm),
     encode_tc_opening(&tc_opening),
-    encode_field_element::<Bn254>(&bid_f),
+    Token::Uint(U256::from_little_endian(&m)),
     encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &time_pp, &ped_pp),
   ];
 
@@ -190,22 +216,18 @@ fn main() {
     .unwrap();
 
   assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-  println!("TC verSelfOpen succeeded");
-  println!("   verSelfOpen cost {:?} gas", result.gas);
+  println!("TC self-open verification gas cost: {:?}", result.gas);
 
-  // Bench force verification
-
-  let (mut m, mut tc_force_opening) = TC::force_open(&time_pp, &ped_pp, &tc_comm).unwrap();
-
-  let tamper_method = 0; // 0 means no tamper
-  for tamper_method in 0..4 {
-    match tamper_method {
-      // method
-      1 => {
+  // Benchmark force open
+  for tamper_method in tamper_force_open.into_iter() {
+    println!("Benchmark force-open with tamper: {} ...", tamper_method);
+    let (tc_comm, m, tc_force_opening) = match tamper_method.as_str() {
+      "bad_x" => {
         let mut tc_input_group_element_bad = tc_comm.clone();
-        tc_input_group_element_bad.tc_comm.x = RsaHiddenOrderGroup::from_nat(BigInt::from(2));
+        tc_input_group_element_bad.tc_comm.x = RsaHiddenOrderGroup::from_nat(BigInt::from(3));
         let (force_m_bad, force_opening_bad) =
           TC::force_open(&time_pp, &ped_pp, &tc_input_group_element_bad).unwrap();
+        assert!(force_opening_bad.tc_m.is_none());
         assert!(force_m_bad.is_none());
         assert!(TC::ver_open(
           &time_pp,
@@ -215,12 +237,9 @@ fn main() {
           &force_opening_bad
         )
         .unwrap());
-        tc_comm = tc_input_group_element_bad;
-        tc_force_opening = force_opening_bad;
-        m = force_m_bad;
+        (tc_input_group_element_bad, force_m_bad, force_opening_bad)
       }
-      // method
-      2 => {
+      "bad_ct" => {
         let mut tc_ae_ct_bad = tc_comm.clone();
         tc_ae_ct_bad.tc_comm.ct[0] += 1u8;
         let (force_m_bad, force_opening_bad) =
@@ -234,12 +253,9 @@ fn main() {
           &force_opening_bad
         )
         .unwrap());
-        tc_comm = tc_ae_ct_bad;
-        tc_force_opening = force_opening_bad;
-        m = force_m_bad;
+        (tc_ae_ct_bad, force_m_bad, force_opening_bad)
       }
-      // method
-      3 => {
+      "bad_ped_comm" => {
         let mut ped_comm_bad = tc_comm.clone();
         ped_comm_bad.ped_comm = ped_pp.g.clone();
         let (force_m_bad, force_opening_bad) =
@@ -253,18 +269,17 @@ fn main() {
           &force_opening_bad
         )
         .unwrap());
-        tc_comm = ped_comm_bad;
-        tc_force_opening = force_opening_bad;
-        m = force_m_bad;
+        (ped_comm_bad, force_m_bad, force_opening_bad)
       }
-      // no tamper
-      _ => {}
-    }
+      _ => {
+        let (m, opening) = TC::force_open(&time_pp, &ped_pp, &tc_comm).unwrap();
+        (tc_comm.clone(), m, opening)
+      },
+    };
     let force_input = vec![
       encode_tc_comm::<Bn254, _>(&tc_comm),
       encode_tc_opening(&tc_force_opening),
-      encode_bytes_option(&m),
-      encode_field_element::<Bn254>(&bid_f),
+      Token::Uint(m.map(|m| U256::from_little_endian(&m)).unwrap_or(U256::from(0))),
       encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &time_pp, &ped_pp),
     ];
 
@@ -278,16 +293,8 @@ fn main() {
       )
       .unwrap();
 
-    // println!("force result {:?}", &force_result.out);
+    println!("{:?}", force_result);
     assert_eq!(&force_result.out, &to_be_bytes(&U256::from(1)));
-    if (tamper_method == 0) {
-      println!("TC verForceOpen succeeded (without tampering)");
-    } else {
-      println!(
-        "TC verForceOpen succeeded (with tamper method {})",
-        tamper_method
-      );
-    }
-    println!("   verForceOpen costs {:?} gas", force_result.gas);
+    println!("TC force-open (with tamper {}) verification gas cost: {:?}", tamper_method, force_result.gas);
   }
 }
