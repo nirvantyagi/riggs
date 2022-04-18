@@ -62,3 +62,8 @@ harness = false
 name = "tc"
 path = "benches/tc.rs"
 harness = false
+
+[[bench]]
+name = "auction_house"
+path = "benches/auction_house.rs"
+harness = false

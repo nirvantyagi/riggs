@@ -1,77 +1,61 @@
-pragma solidity ^0.8.11;
+pragma solidity ^0.8.10;
 
-import "./RSA.sol";
-
-// 0x6523784162348715238471625341873265421652378416234871523847162534
+import "./TC.sol";
+import "./BulletproofsVerifier.sol";
 
 contract AuctionHouse {
-    
-    struct TCbid {
-        bool opened;
-        bytes pc;
-        RSA.Element tc;
-        // need a pedersen commitment element
-        uint256 bid;
-    }
+    mapping(uint256 => Auction) active_auctions;
+    uint256 ctr_auction;
+    uint256 bid_collection_num_blocks;
+    uint256 bid_self_open_num_blocks;
 
     struct Auction {
-        bytes32 auction_id;
-        bool active;
-
-        
-        uint256 bid_bno;
-        uint256 open_bno;
-        TCbid[] bids;
-        // bytes32[] bidKeys;
-        // mapping(bytes32 => TCbid) bidMap;
+        uint256 start_block;
+        uint256 bid_collection_end_block;
+        uint256 bid_self_open_end_block;
+        mapping(address => TC.Comm) bidder_to_comm;
+        mapping(address => TC.Comm) bidder_to_bid;
+        mapping(address => bool) bidders;
+        mapping(bytes32 => bool) comms;
+        uint256 bids_to_open;
     }
 
-    uint public num_auctions;
-    // Auction[] public auctions;
-
-    mapping(bytes32 => Auction) auctionMap;
-    bytes32[] auctionIDs;
-
-    address public founder;
-
-    constructor() {
-        num_auctions = 0;
-        founder = msg.sender;
+    // TODO: Allow auctions to have different time parameters
+    constructor(uint256 bid_collection_num_blocks_, uint256 bid_self_open_num_blocks_) {
+        bid_collection_num_blocks = bid_collection_num_blocks_;
+        bid_self_open_num_blocks = bid_self_open_num_blocks_;
     }
 
-    function create_auction(bytes32 input_id) external {
-        // uint ano = num_auctions;
-        // auctions[ano].auction_id = num_auctions;
-        // auctions[ano].active = true;
-        // auctions[ano].bid_bno = 0;
-        // auctions[ano].open_bno = 0;
+    enum AuctionPhase { BidCollection, BidSelfOpening, BidForceOpening, Complete }
 
-        auctionMap[input_id].auction_id = input_id;
-        auctionMap[input_id].active = true;
-        auctionMap[input_id].bid_bno = 0;
-        auctionMap[input_id].open_bno = 0;
-
-        auctionIDs.push(input_id);
-        num_auctions++;
+    function newAuction() public returns (uint256 id) {
+        id = ctr_auction;
+        ctr_auction += 1;
+        Auction storage auction = active_auctions[id];
+        auction.start_block = block.number;
+        auction.bid_collection_end_block = block.number + bid_collection_num_blocks;
+        auction.bid_self_open_end_block = block.number + bid_collection_num_blocks + bid_self_open_num_blocks;
     }
 
-    // res = await instance.bid("0x6523784162348715238471625341873265421652378416234871523847162534", "0x00", "0x00")
-
-    function bid(bytes32 auction_id, bytes calldata bid_pc, bytes calldata bid_tc) 
-    external returns (uint) {
-        // currently ignoring the pedersen part
-        TCbid memory new_bid = TCbid(false, bid_pc, RSA._new(bid_tc), 0);
-
-        auctionMap[auction_id].bids.push(new_bid);
-
-	    //auctions[auction_id].bids.push(new_bid);
-        return auctionMap[auction_id].bids.length;
+    function getAuctionPhase(uint256 id) public view returns (AuctionPhase) {
+        Auction storage auction = active_auctions[id];
+        require(auction.start_block > 0);  // Check if auction id is valid
+        if (auction.start_block <= block.number && block.number < auction.bid_collection_end_block) {
+            return AuctionPhase.BidCollection;
+        } else if (auction.bids_to_open == 0) {
+            return AuctionPhase.Complete;
+        } else if (auction.bid_collection_end_block <= block.number && block.number < auction.bid_self_open_end_block) {
+            return AuctionPhase.BidSelfOpening;
+        } else {
+            return AuctionPhase.BidForceOpening;
+        }
     }
 
-    function open_bid(bytes32 auction_id, uint bidno, uint bid_value, 
-        bytes calldata open_pc, bytes calldata open_tc) 
-    external {
-        
+    function bidAuction(uint256 id) public returns (bool) {
+        Auction storage auction = active_auctions[id];
+        require(auction.start_block > 0);  // Check if auction id is valid
+        auction.bids_to_open += 1;
+        return true;
     }
 
 }

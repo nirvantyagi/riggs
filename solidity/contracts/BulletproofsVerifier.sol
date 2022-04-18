@@ -4,7 +4,7 @@ pragma solidity ^0.8.10;
 import "./BN254.sol";
 import "./Pedersen.sol";
 
-contract BulletproofsVerifier {
+<%con_or_lib%> BulletproofsVerifier {
     struct Params {
         bytes32 hash;
         Pedersen.Params ped_pp;
@@ -86,7 +86,7 @@ contract BulletproofsVerifier {
     //    out = BN254.g1add(out, window_sums[0]);
     //}
 
-    function verify(BN254.G1Point memory comm, Proof memory proof) public view returns (bool) {
+    function verify(BN254.G1Point memory comm, Proof memory proof) <%visibility%> view returns (bool) {
         Params memory pp = publicParams();
         uint256[5] memory ch_yzxu;
         uint256[<%ipa_log_len%>] memory ch_recurse;

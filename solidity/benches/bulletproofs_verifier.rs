@@ -36,7 +36,7 @@ fn main() {
     let bn254_src = get_bn254_library_src();
     let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
     let bulletproofs_src =
-        get_bulletproofs_verifier_contract_src(&pp, &ped_pp, NUM_BITS, LOG_NUM_BITS);
+        get_bulletproofs_verifier_contract_src(&pp, &ped_pp, NUM_BITS, LOG_NUM_BITS, true);
 
     let solc_config = r#"
             {

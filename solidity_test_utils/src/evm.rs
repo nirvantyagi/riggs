@@ -118,4 +118,8 @@ impl Evm {
     pub fn get_account(&mut self, address: &Address) -> Option<AccountInfo> {
         self.vm.db().unwrap().cache().get(address.as_ref()).cloned()
     }
+
+    pub fn set_block_number(&mut self, block_num: u32) {
+        self.vm.env.block.number = U256::from(block_num);
+    }
 }

@@ -22,10 +22,11 @@ use timed_commitments::{
   PedersenComm,
   lazy_tc::{LazyTC},
 };
+use range_proofs::bulletproofs::{Bulletproofs};
 use solidity::{
   encode_tc_comm, encode_tc_opening, encode_tc_pp, get_bigint_library_src,
   get_bn254_library_src, get_filename_src, get_fkps_src, get_pedersen_library_src,
-  get_rsa_library_src,
+  get_rsa_library_src, get_bulletproofs_verifier_contract_src,
 };
 use solidity_test_utils::{
   address::Address, contract::Contract, evm::Evm,
@@ -54,6 +55,8 @@ pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 
 const MOD_BITS: usize = 2048;
 const TIME_PARAM: u32 = 40;
+const NUM_BID_BITS: u64 = 32;
+const LOG_NUM_BID_BITS: u64 = 5;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestPoEParams;
@@ -80,71 +83,30 @@ pub type TC = LazyTC<
 
 fn main() {
   // cargo bench --bench tc --profile test
-  let mut args: Vec<String> = std::env::args().collect();
-  if args.last().unwrap() == "--bench" {
-    args.pop();
-  }
-  let mut tamper_force_open: BTreeSet<String> = if args.len() > 1
-      && (args[1] == "-h" || args[1] == "--help")
-  {
-    println!("Usage: ``cargo bench --bench tc --  [--tamper <none | bad_x | bad_ct | bad_ped_comm> ]``");
-    return;
-  } else {
-    let mut args = args.into_iter().skip(1);
-    let mut next_arg = args.next();
-    let mut tamper_force_open = BTreeSet::new();
-    while let Some(arg) = next_arg.clone() {
-      match arg.as_str() {
-        "--tamper" => {
-          next_arg = args.next();
-          'subargs: while let Some(subarg) = next_arg.clone() {
-            if ["none", "bad_x", "bad_ct", "bad_ped_comm"].contains(&subarg.as_str()) {
-              tamper_force_open.insert(subarg);
-            } else {
-              break 'subargs;
-            }
-            next_arg = args.next();
-          }
-        }
-        _ => {
-          println!("Invalid argument: {}; Run with -h for usage", arg);
-          return;
-        }
-      }
-    }
-    tamper_force_open
-  };
-  if tamper_force_open.is_empty() {
-    tamper_force_open = BTreeSet::from(["none".to_string(), "bad_x".to_string(), "bad_ct".to_string(), "bad_ped_comm".to_string()]);
-  }
-  println!("Benchmarking TC with tamper options: {:?}", tamper_force_open);
 
   // Begin benchmark
   let mut rng = StdRng::seed_from_u64(1u64);
 
-  // Generate time parameters
+  // Generate parameters
   let (time_pp, time_pp_proof) = TC::gen_time_params(TIME_PARAM).unwrap();
   let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
+  let bulletproofs_pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, NUM_BID_BITS);
   assert!(TC::ver_time_params(&time_pp, &time_pp_proof).unwrap());
 
   // Create commitment, opening
-  let m = {
-    let mut m = [0u8; 8];
-    rng.fill(&mut m);
-    m
-  };
-  let (tc_comm, tc_opening) = TC::commit(&mut rng, &time_pp, &ped_pp, &m).unwrap();
-
   println!("Compiling contract...");
 
   // Compile contract from template
+  let auction_house_src = get_filename_src("AuctionHouse.sol", true);
   let bn254_src = get_bn254_library_src();
   let bigint_src = get_bigint_library_src();
   let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
   let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
   let poe_src = get_filename_src("PoEVerifier.sol", false);
   let fkps_src = get_fkps_src(&time_pp.x.n, &time_pp.y.n, MOD_BITS, TIME_PARAM, false);
-  let tc_src = get_filename_src("TC.sol", true);
+  let tc_src = get_filename_src("TC.sol", false);
+  let bulletproofs_src =
+      get_bulletproofs_verifier_contract_src(&bulletproofs_pp, &ped_pp, NUM_BID_BITS, LOG_NUM_BID_BITS, true);
 
   let solc_config = r#"
             {
@@ -156,7 +118,9 @@ fn main() {
                     "BigInt.sol": { "content": "<%bigint_src%>" },
                     "RSA2048.sol": { "content": "<%rsa_lib_src%>" },
                     "PoEVerifier.sol": { "content": "<%poe_lib_src%>" },
-                    "FKPS.sol": { "content": "<%fkps_lib_src%>" }
+                    "FKPS.sol": { "content": "<%fkps_lib_src%>" },
+                    "TC.sol": { "content": "<%tc_lib_src%>" },
+                    "BulletproofsVerifier.sol": { "content": "<%bulletproofs_lib_src%>" }
                 },
                 "settings": {
                     "optimizer": { "enabled": <%opt%> },
@@ -175,9 +139,11 @@ fn main() {
     .replace("<%rsa_lib_src%>", &rsa_src)
     .replace("<%poe_lib_src%>", &poe_src)
     .replace("<%fkps_lib_src%>", &fkps_src)
-    .replace("<%src%>", &tc_src);
+    .replace("<%tc_lib_src%>", &tc_src)
+    .replace("<%bulletproofs_lib_src%>", &bulletproofs_src)
+    .replace("<%src%>", &auction_house_src);
 
-  let contract = Contract::compile_from_config(&solc_config, "TC").unwrap();
+  let contract = Contract::compile_from_config(&solc_config, "AuctionHouse").unwrap();
 
   // Setup EVM
   let mut evm = Evm::new();
@@ -185,114 +151,74 @@ fn main() {
   evm.create_account(&deployer, 0);
 
   // Deploy contract
+  let contract_constructor_input = vec![
+    Token::Uint(U256::from(20)),
+    Token::Uint(U256::from(10)),
+  ];
   let create_result = evm
     .deploy(
-      contract.encode_create_contract_bytes(&[]).unwrap(),
+      contract.encode_create_contract_bytes(&contract_constructor_input).unwrap(),
       &deployer,
     )
     .unwrap();
   let contract_addr = create_result.addr.clone();
   println!("Contract deploy gas cost: {}", create_result.gas);
 
-  // Benchmark self open
-  println!("Benchmark self-open...");
-  let input = vec![
-    encode_tc_comm::<Bn254, _>(&tc_comm),
-    encode_tc_opening(&tc_opening),
-    Token::Uint(U256::from_little_endian(&m)),
-    encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &time_pp, &ped_pp),
-  ];
-
+  evm.set_block_number(1);
   let result = evm
     .call(
       contract
-        .encode_call_contract_bytes("verOpen", &input)
+        .encode_call_contract_bytes("newAuction", &[])
         .unwrap(),
       &contract_addr,
       &deployer,
     )
     .unwrap();
+  assert_eq!(&result.out, &to_be_bytes(&U256::from(0)));
+  println!("Create auction gas cost: {:?}", result.gas);
 
-  assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-  println!("TC self-open verification gas cost: {:?}", result.gas);
-
-  // Benchmark force open
-  for tamper_method in tamper_force_open.into_iter() {
-    println!("Benchmark force-open with tamper: {} ...", tamper_method);
-    let (tc_comm, m, tc_force_opening) = match tamper_method.as_str() {
-      "bad_x" => {
-        let mut tc_input_group_element_bad = tc_comm.clone();
-        tc_input_group_element_bad.tc_comm.x = RsaHiddenOrderGroup::from_nat(BigInt::from(3));
-        let (force_m_bad, force_opening_bad) =
-          TC::force_open(&time_pp, &ped_pp, &tc_input_group_element_bad).unwrap();
-        assert!(force_opening_bad.tc_m.is_none());
-        assert!(force_m_bad.is_none());
-        assert!(TC::ver_open(
-          &time_pp,
-          &ped_pp,
-          &tc_input_group_element_bad,
-          &force_m_bad,
-          &force_opening_bad
-        )
-        .unwrap());
-        (tc_input_group_element_bad, force_m_bad, force_opening_bad)
-      }
-      "bad_ct" => {
-        let mut tc_ae_ct_bad = tc_comm.clone();
-        tc_ae_ct_bad.tc_comm.ct[0] += 1u8;
-        let (force_m_bad, force_opening_bad) =
-          TC::force_open(&time_pp, &ped_pp, &tc_ae_ct_bad).unwrap();
-        assert!(force_m_bad.is_none());
-        assert!(TC::ver_open(
-          &time_pp,
-          &ped_pp,
-          &tc_ae_ct_bad,
-          &force_m_bad,
-          &force_opening_bad
-        )
-        .unwrap());
-        (tc_ae_ct_bad, force_m_bad, force_opening_bad)
-      }
-      "bad_ped_comm" => {
-        let mut ped_comm_bad = tc_comm.clone();
-        ped_comm_bad.ped_comm = ped_pp.g.clone();
-        let (force_m_bad, force_opening_bad) =
-          TC::force_open(&time_pp, &ped_pp, &ped_comm_bad).unwrap();
-        assert!(force_m_bad.is_none());
-        assert!(TC::ver_open(
-          &time_pp,
-          &ped_pp,
-          &ped_comm_bad,
-          &force_m_bad,
-          &force_opening_bad
-        )
-        .unwrap());
-        (ped_comm_bad, force_m_bad, force_opening_bad)
-      }
-      _ => {
-        let (m, opening) = TC::force_open(&time_pp, &ped_pp, &tc_comm).unwrap();
-        (tc_comm.clone(), m, opening)
-      },
-    };
-    let force_input = vec![
-      encode_tc_comm::<Bn254, _>(&tc_comm),
-      encode_tc_opening(&tc_force_opening),
-      Token::Uint(m.map(|m| U256::from_little_endian(&m)).unwrap_or(U256::from(0))),
-      encode_tc_pp::<Bn254, _>(TestRsaParams::M.deref(), &time_pp, &ped_pp),
-    ];
-
-    let force_result = evm
+  evm.set_block_number(8);
+  let result = evm
       .call(
         contract
-          .encode_call_contract_bytes("verForceOpen", &force_input)
-          .unwrap(),
+            .encode_call_contract_bytes("bidAuction", &[Token::Uint(U256::from(0))])
+            .unwrap(),
         &contract_addr,
         &deployer,
       )
       .unwrap();
+  let result = evm
+      .call(
+        contract
+            .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
+            .unwrap(),
+        &contract_addr,
+        &deployer,
+      )
+      .unwrap();
+  println!("{:?}", result);
 
-    println!("{:?}", force_result);
-    assert_eq!(&force_result.out, &to_be_bytes(&U256::from(1)));
-    println!("TC force-open (with tamper {}) verification gas cost: {:?}", tamper_method, force_result.gas);
-  }
+  evm.set_block_number(25);
+  let result = evm
+      .call(
+        contract
+            .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
+            .unwrap(),
+        &contract_addr,
+        &deployer,
+      )
+      .unwrap();
+  println!("{:?}", result);
+
+  evm.set_block_number(35);
+  let result = evm
+      .call(
+        contract
+            .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
+            .unwrap(),
+        &contract_addr,
+        &deployer,
+      )
+      .unwrap();
+  println!("{:?}", result);
 }

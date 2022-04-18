@@ -54,6 +54,7 @@ pub fn get_bulletproofs_verifier_contract_src(
     ped_pp: &PedersenParams<G>,
     n: u64,
     lg_n: u64,
+    as_contract: bool,
 ) -> String {
     let pp_hash = {
         let mut hash_input = Vec::<u8>::new();
@@ -79,6 +80,14 @@ pub fn get_bulletproofs_verifier_contract_src(
     src_file.read_to_string(&mut src).unwrap();
     src = src
         .replace("\"", "\\\"")
+        .replace(
+            "<%con_or_lib%>",
+            if as_contract { "contract" } else { "library" },
+        )
+        .replace(
+            "<%visibility%>",
+            if as_contract { "public" } else { "internal" },
+        )
         .replace("<%pp_hash%>", &format!("0x{}", hex::encode(&pp_hash)))
         .replace(
             "<%ipa_pp_u%>",
