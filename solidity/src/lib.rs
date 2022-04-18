@@ -81,14 +81,6 @@ pub fn get_bulletproofs_verifier_contract_src(
         .replace("\"", "\\\"")
         .replace("<%pp_hash%>", &format!("0x{}", hex::encode(&pp_hash)))
         .replace(
-            "<%ped_pp_g%>",
-            &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()),
-        )
-        .replace(
-            "<%ped_pp_h%>",
-            &parse_g1_to_solidity_string::<Bn254>(&ped_pp.h.into_affine()),
-        )
-        .replace(
             "<%ipa_pp_u%>",
             &parse_g1_to_solidity_string::<Bn254>(&pp.u.into_affine()),
         )

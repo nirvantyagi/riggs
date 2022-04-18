@@ -9,7 +9,9 @@ use solidity_test_utils::{
 
 use range_proofs::bulletproofs::{Bulletproofs, PedersenComm};
 use rsa::bigint::BigInt;
-use solidity::{encode_bulletproof, get_bn254_library_src, get_bulletproofs_verifier_contract_src};
+use solidity::{
+    encode_bulletproof,
+    get_bn254_library_src, get_bulletproofs_verifier_contract_src, get_pedersen_library_src};
 
 const NUM_BITS: u64 = 64;
 const LOG_NUM_BITS: u64 = 6;
@@ -32,6 +34,7 @@ fn main() {
 
     // Compile contract from template
     let bn254_src = get_bn254_library_src();
+    let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
     let bulletproofs_src =
         get_bulletproofs_verifier_contract_src(&pp, &ped_pp, NUM_BITS, LOG_NUM_BITS);
 
@@ -40,6 +43,7 @@ fn main() {
                 "language": "Solidity",
                 "sources": {
                     "input.sol": { "content": "<%src%>" },
+                    "Pedersen.sol": { "content": "<%pedersen_lib_src%>" },
                     "BN254.sol": { "content": "<%bn254_src%>" }
                 },
                 "settings": {
@@ -53,6 +57,7 @@ fn main() {
                 }
             }"#
     .replace("<%opt%>", &true.to_string())
+    .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
     .replace("<%bn254_src%>", &bn254_src)
     .replace("<%src%>", &bulletproofs_src);
 

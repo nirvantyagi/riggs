@@ -2,12 +2,12 @@
 pragma solidity ^0.8.10;
 
 import "./BN254.sol";
+import "./Pedersen.sol";
 
 contract BulletproofsVerifier {
     struct Params {
         bytes32 hash;
-        BN254.G1Point pedG;
-        BN254.G1Point pedH;
+        Pedersen.Params ped_pp;
         BN254.G1Point[] ipaG;
         BN254.G1Point[] ipaH;
         BN254.G1Point ipaU;
@@ -29,8 +29,7 @@ contract BulletproofsVerifier {
 
     function publicParams() internal pure returns (Params memory pp) {
         pp.hash = <%pp_hash%>;
-        pp.pedG = BN254.G1Point(<%ped_pp_g%>);
-        pp.pedH = BN254.G1Point(<%ped_pp_h%>);
+        pp.ped_pp = Pedersen.publicParams();
         pp.ipaU = BN254.G1Point(<%ipa_pp_u%>);
         pp.ipaG = new BN254.G1Point[](<%ipa_pp_len%>);
         pp.ipaH = new BN254.G1Point[](<%ipa_pp_len%>);
@@ -189,8 +188,8 @@ contract BulletproofsVerifier {
             final_check_exps[4 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = mulmod(BN254.submod(0, mulmod(ch_yzxu[2], ch_yzxu[2], BN254.P)), ch_yzxu[4], BN254.P);
         }
 
-        final_check_bases[0 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = pp.pedG;
-        final_check_bases[1 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = pp.pedH;
+        final_check_bases[0 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = pp.ped_pp.G;
+        final_check_bases[1 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = pp.ped_pp.H;
         final_check_bases[2 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = comm;
         final_check_bases[3 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = proof.commLC1;
         final_check_bases[4 + 2*<%ipa_pp_len%> + 2*<%ipa_log_len%> + 3] = proof.commLC2;
