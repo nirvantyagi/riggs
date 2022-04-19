@@ -31,13 +31,13 @@ import "./Pedersen.sol";
     pp.ped_pp = Pedersen.publicParams();
   }
 
-  function verOpen(Comm memory comm, SelfOpening memory opening, uint256 m, Params memory pp) <%visibility%> view returns (bool) {
+  function verOpen(Comm memory comm, SelfOpening memory opening, uint256 m, Params memory pp) public view returns (bool) {
     bool fkps_check = FKPS.verOpen(comm.fkps, opening.fkps_so, pp.fkps_pp);
     if (!fkps_check) { return false; }
     return verOpenPedersenHelper(comm, opening.fkps_so.message, m, pp);
   }
 
-  function verForceOpen(Comm memory comm, ForceOpening memory opening, uint256 m, Params memory pp) <%visibility%> view returns (bool) {
+  function verForceOpen(Comm memory comm, ForceOpening memory opening, uint256 m, Params memory pp) public view returns (bool) {
     bool fkps_check = FKPS.verForceOpen(comm.fkps, opening.fkps_fo, pp.fkps_pp);
     if (!fkps_check) { return false; }
     if (opening.fkps_fo.message.length == 0) {

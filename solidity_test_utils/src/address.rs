@@ -1,6 +1,7 @@
 use ethabi::token::Token;
 use primitive_types::H160;
 use rand::Rng;
+use std::string::ToString;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Address(pub H160);
@@ -30,5 +31,11 @@ impl From<H160> for Address {
 impl Into<Token> for Address {
     fn into(self) -> Token {
         self.as_token()
+    }
+}
+
+impl ToString for Address {
+    fn to_string(&self) -> String {
+        format!("{:?}", self.as_ref())
     }
 }

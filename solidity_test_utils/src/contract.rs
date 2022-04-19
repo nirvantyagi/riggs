@@ -94,6 +94,10 @@ impl Contract {
                 //.map_err(|e| Box::new(e))?;
             binary
         };
+        println!("Binary size: {}", binary.len());
+        if binary.len() > 24576 {
+            return Err(Box::new(EvmTestError("contract binary too large".to_string())))
+        }
         let abi = {
             if out["contracts"]["input.sol"][contract_name]["abi"] == "null" {
                 return Err(Box::new(EvmTestError(

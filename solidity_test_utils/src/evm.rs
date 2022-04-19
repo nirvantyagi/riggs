@@ -45,6 +45,13 @@ impl Evm {
         })
     }
 
+    pub fn call_payable(&mut self, input: Vec<u8>, addr: &Address, caller: &Address, value: U256) -> Result<CallResult, Error> {
+        self.vm.env.tx.value = value;
+        let result = self.call(input, addr, caller);
+        self.vm.env.tx.value = U256::from(0);  // Reset tx value
+        result
+    }
+
     pub fn deploy(
         &mut self,
         contract: Vec<u8>,

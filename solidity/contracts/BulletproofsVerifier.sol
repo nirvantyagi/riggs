@@ -86,7 +86,7 @@ import "./Pedersen.sol";
     //    out = BN254.g1add(out, window_sums[0]);
     //}
 
-    function verify(BN254.G1Point memory comm, Proof memory proof) <%visibility%> view returns (bool) {
+    function verify(BN254.G1Point memory comm, Proof memory proof) public view returns (bool) {
         Params memory pp = publicParams();
         uint256[5] memory ch_yzxu;
         uint256[<%ipa_log_len%>] memory ch_recurse;

@@ -13,12 +13,14 @@ library BN254 {
         uint256 X;
         uint256 Y;
     }
+
     /// @return the negation of p, i.e. p.addition(p.negate()) should be zero.
-    function g1negate(G1Point memory p) pure internal returns (G1Point memory) {
+    function g1negate(G1Point memory p) internal pure returns (G1Point memory) {
         if (p.X == 0 && p.Y == 0)
             return G1Point(0, 0);
         return G1Point(p.X, Q - (p.Y % Q));
     }
+
     /// @return r the sum of two points of G1
     function g1add(G1Point memory p1, G1Point memory p2) internal view returns (G1Point memory r) {
         uint[4] memory input;
@@ -34,6 +36,7 @@ library BN254 {
         }
         require(success);
     }
+
     /// @return r the product of a point on G1 and a scalar, i.e.
     /// p == p.scalar_mul(1) and p.addition(p) == p.scalar_mul(2) for all points p.
     function g1mul(G1Point memory p, uint256 s) internal view returns (G1Point memory r) {

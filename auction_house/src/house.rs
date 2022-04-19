@@ -33,8 +33,8 @@ const BID_BITS: u32 = 32;
 //TODO: PedersenParams should be here instead of in per-auction params (currently duplicated)
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct HouseParams<G: ProjectiveCurve> {
-    range_proof_pp: RangeProofParams<G>,
-    ped_pp: PedersenParams<G>,
+    pub range_proof_pp: RangeProofParams<G>,
+    pub ped_pp: PedersenParams<G>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -60,17 +60,17 @@ pub struct AuctionHouse<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParam
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AccountPrivateState<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> {
-    public_summary: AccountSummary<G>,
-    active_bids: HashMap<u32, (u32, TCOpening<G, RsaP, H2P>, TCComm<G, RsaP>)>,  // auction_id -> (bid, opening, comm)
-    sum_active_bids: u32,
-    opening_active_bids: G::ScalarField,
+    pub public_summary: AccountSummary<G>,
+    pub active_bids: HashMap<u32, (u32, TCOpening<G, RsaP, H2P>, TCComm<G, RsaP>)>,  // auction_id -> (bid, opening, comm)
+    pub sum_active_bids: u32,
+    pub opening_active_bids: G::ScalarField,
     _auction: PhantomData<Auction<G, PoEP, RsaP, H, H2P>>,
 }
 
 pub struct BidProposal<G: ProjectiveCurve, RsaP: RsaGroupParams> {
-    comm_bid: TCComm<G, RsaP>,
-    range_proof_bid: RangeProof<G>,
-    range_proof_balance: RangeProof<G>,
+    pub comm_bid: TCComm<G, RsaP>,
+    pub range_proof_bid: RangeProof<G>,
+    pub range_proof_balance: RangeProof<G>,
 }
 
 impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> AccountPrivateState<G, PoEP, RsaP, H, H2P> {
