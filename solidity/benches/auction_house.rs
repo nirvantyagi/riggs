@@ -3,43 +3,33 @@ use ark_bn254::{Bn254, G1Projective as G};
 use ethabi::Token;
 use once_cell::sync::Lazy;
 use primitive_types::U256;
-use rand::{rngs::StdRng, SeedableRng, Rng};
-use sha3::{Keccak256};
+use rand::{rngs::StdRng, Rng, SeedableRng};
+use sha3::Keccak256;
 
-use std::{
-  ops::Deref,
-  str::{FromStr},
-  collections::BTreeSet,
-};
+use std::{collections::BTreeSet, ops::Deref, str::FromStr};
 
+use range_proofs::bulletproofs::Bulletproofs;
 use rsa::{
-  bigint::{BigInt},
-  hash_to_prime::{pocklington::{PocklingtonCertParams, PocklingtonHash}},
-  hog::{RsaGroupParams, RsaHiddenOrderGroup},
-  poe::{PoEParams},
+    bigint::BigInt,
+    hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash},
+    hog::{RsaGroupParams, RsaHiddenOrderGroup},
+    poe::PoEParams,
 };
-use timed_commitments::{
-  PedersenComm,
-  lazy_tc::{LazyTC},
-};
-use range_proofs::bulletproofs::{Bulletproofs};
 use solidity::{
-  encode_tc_comm, encode_tc_opening, encode_tc_pp, get_bigint_library_src,
-  get_bn254_library_src, get_filename_src, get_fkps_src, get_pedersen_library_src,
-  get_rsa_library_src, get_bulletproofs_verifier_contract_src,
+    encode_tc_comm, encode_tc_opening, encode_tc_pp, get_bigint_library_src, get_bn254_library_src,
+    get_bulletproofs_verifier_contract_src, get_filename_src, get_fkps_src,
+    get_pedersen_library_src, get_rsa_library_src,
 };
-use solidity_test_utils::{
-  address::Address, contract::Contract, evm::Evm,
-  to_be_bytes,
-};
+use solidity_test_utils::{address::Address, contract::Contract, evm::Evm, to_be_bytes};
+use timed_commitments::{lazy_tc::LazyTC, PedersenComm};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
 
 impl RsaGroupParams for TestRsaParams {
-  const G: Lazy<BigInt> = Lazy::new(|| BigInt::from(2));
-  const M: Lazy<BigInt> = Lazy::new(|| {
-    BigInt::from_str("2519590847565789349402718324004839857142928212620403202777713783604366202070\
+    const G: Lazy<BigInt> = Lazy::new(|| BigInt::from(2));
+    const M: Lazy<BigInt> = Lazy::new(|| {
+        BigInt::from_str("2519590847565789349402718324004839857142928212620403202777713783604366202070\
                           7595556264018525880784406918290641249515082189298559149176184502808489120072\
                           8449926873928072877767359714183472702618963750149718246911650776133798590957\
                           0009733045974880842840179742910064245869181719511874612151517265463228221686\
@@ -48,7 +38,7 @@ impl RsaGroupParams for TestRsaParams {
                           3443219011465754445417842402092461651572335077870774981712577246796292638635\
                           6373289912154831438167899885040445364023527381951378636564391212010397122822\
                           120720357").unwrap()
-  });
+    });
 }
 
 pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
@@ -62,53 +52,84 @@ const LOG_NUM_BID_BITS: u64 = 5;
 pub struct TestPoEParams;
 
 impl PoEParams for TestPoEParams {
-  const HASH_TO_PRIME_ENTROPY: usize = 256;
+    const HASH_TO_PRIME_ENTROPY: usize = 256;
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestPocklingtonParams;
 impl PocklingtonCertParams for TestPocklingtonParams {
-  const NONCE_SIZE: usize = 16;
-  const MAX_STEPS: usize = 5;
-  const INCLUDE_SOLIDITY_WITNESSES: bool = true;
+    const NONCE_SIZE: usize = 16;
+    const MAX_STEPS: usize = 5;
+    const INCLUDE_SOLIDITY_WITNESSES: bool = true;
 }
 
 pub type TC = LazyTC<
-  G,
-  TestPoEParams,
-  TestRsaParams,
-  Keccak256,
-  PocklingtonHash<TestPocklingtonParams, Keccak256>,
+    G,
+    TestPoEParams,
+    TestRsaParams,
+    Keccak256,
+    PocklingtonHash<TestPocklingtonParams, Keccak256>,
 >;
 
 fn main() {
-  // cargo bench --bench tc --profile test
+    // cargo bench --bench tc --profile test
 
-  // Begin benchmark
-  let mut rng = StdRng::seed_from_u64(1u64);
+    // Begin benchmark
+    let mut rng = StdRng::seed_from_u64(1u64);
 
-  // Generate parameters
-  let (time_pp, time_pp_proof) = TC::gen_time_params(TIME_PARAM).unwrap();
-  let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
-  let bulletproofs_pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, NUM_BID_BITS);
-  assert!(TC::ver_time_params(&time_pp, &time_pp_proof).unwrap());
+    // Generate parameters
+    let (time_pp, time_pp_proof) = TC::gen_time_params(TIME_PARAM).unwrap();
+    let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
+    let bulletproofs_pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, NUM_BID_BITS);
+    assert!(TC::ver_time_params(&time_pp, &time_pp_proof).unwrap());
 
-  // Create commitment, opening
-  println!("Compiling contract...");
+    // Compile ERC721 contract from template
+    println!("Compiling ERC721 contract...");
 
-  // Compile contract from template
-  let auction_house_src = get_filename_src("AuctionHouse.sol", true);
-  let bn254_src = get_bn254_library_src();
-  let bigint_src = get_bigint_library_src();
-  let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
-  let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
-  let poe_src = get_filename_src("PoEVerifier.sol", false);
-  let fkps_src = get_fkps_src(&time_pp.x.n, &time_pp.y.n, MOD_BITS, TIME_PARAM, false);
-  let tc_src = get_filename_src("TC.sol", false);
-  let bulletproofs_src =
-      get_bulletproofs_verifier_contract_src(&bulletproofs_pp, &ped_pp, NUM_BID_BITS, LOG_NUM_BID_BITS, true);
+    let solc_config = r#"
+            {
+                "language": "Solidity",
+                "sources": {
+                    "input.sol": { "content": "<%src%>" },
+                    "IERC721.sol": { "content": "<%erc721_src%>" }
+                },
+                "settings": {
+                    "optimizer": { "enabled": <%opt%> },
+                    "outputSelection": {
+                        "*": {
+                            "*": [
+                                "evm.bytecode.object", "abi"
+                            ],
+                        "": [ "*" ] } }
+                }
+            }"#
+    .replace("<%opt%>", &true.to_string())
+    .replace("<%erc721_src%>", &get_filename_src("IERC721.sol", false))
+    .replace("<%src%>", &get_filename_src("TestERC721.sol", true));
 
-  let solc_config = r#"
+    let erc721_contract = Contract::compile_from_config(&solc_config, "TestERC721").unwrap();
+
+    // Compile auction house contract from template
+    println!("Compiling auction house contract...");
+    let auction_house_src = get_filename_src("AuctionHouse.sol", true);
+    let bn254_src = get_bn254_library_src();
+    let bigint_src = get_bigint_library_src();
+    let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
+    let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
+    let poe_src = get_filename_src("PoEVerifier.sol", false);
+    let fkps_src = get_fkps_src(&time_pp.x.n, &time_pp.y.n, MOD_BITS, TIME_PARAM, false);
+    let tc_src = get_filename_src("TC.sol", false);
+    let bulletproofs_src = get_bulletproofs_verifier_contract_src(
+        &bulletproofs_pp,
+        &ped_pp,
+        NUM_BID_BITS,
+        LOG_NUM_BID_BITS,
+        true,
+    );
+    let erc20_src = get_filename_src("IERC20.sol", false);
+    let erc721_src = get_filename_src("IERC721.sol", false);
+
+    let solc_config = r#"
             {
                 "language": "Solidity",
                 "sources": {
@@ -120,7 +141,9 @@ fn main() {
                     "PoEVerifier.sol": { "content": "<%poe_lib_src%>" },
                     "FKPS.sol": { "content": "<%fkps_lib_src%>" },
                     "TC.sol": { "content": "<%tc_lib_src%>" },
-                    "BulletproofsVerifier.sol": { "content": "<%bulletproofs_lib_src%>" }
+                    "BulletproofsVerifier.sol": { "content": "<%bulletproofs_lib_src%>" },
+                    "IERC20.sol": { "content": "<%erc20_src%>" },
+                    "IERC721.sol": { "content": "<%erc721_src%>" }
                 },
                 "settings": {
                     "optimizer": { "enabled": <%opt%> },
@@ -141,84 +164,130 @@ fn main() {
     .replace("<%fkps_lib_src%>", &fkps_src)
     .replace("<%tc_lib_src%>", &tc_src)
     .replace("<%bulletproofs_lib_src%>", &bulletproofs_src)
+    .replace("<%erc20_src%>", &erc20_src)
+    .replace("<%erc721_src%>", &erc721_src)
     .replace("<%src%>", &auction_house_src);
 
-  let contract = Contract::compile_from_config(&solc_config, "AuctionHouse").unwrap();
+    let contract = Contract::compile_from_config(&solc_config, "AuctionHouse").unwrap();
 
-  // Setup EVM
-  let mut evm = Evm::new();
-  let deployer = Address::random(&mut rng);
-  evm.create_account(&deployer, 0);
+    // Setup EVM
+    let mut evm = Evm::new();
+    let deployer = Address::random(&mut rng);
+    evm.create_account(&deployer, 0);
 
-  // Deploy contract
-  let contract_constructor_input = vec![
-    Token::Uint(U256::from(20)),
-    Token::Uint(U256::from(10)),
-  ];
-  let create_result = evm
-    .deploy(
-      contract.encode_create_contract_bytes(&contract_constructor_input).unwrap(),
-      &deployer,
-    )
-    .unwrap();
-  let contract_addr = create_result.addr.clone();
-  println!("Contract deploy gas cost: {}", create_result.gas);
+    // Deploy ERC-721 contract
+    let create_result = evm
+        .deploy(
+            erc721_contract
+                .encode_create_contract_bytes(&[
+                    Token::String("TestERC721".to_string()),
+                    Token::String("NFT".to_string()),
+                ])
+                .unwrap(),
+            &deployer,
+        )
+        .unwrap();
+    let erc721_contract_addr = create_result.addr.clone();
+    println!(
+        "ERC-721 contract deployed at address: {:?}",
+        erc721_contract_addr
+    );
+    println!("ERC-721 contract deploy gas cost: {}", create_result.gas);
 
-  evm.set_block_number(1);
-  let result = evm
-    .call(
-      contract
-        .encode_call_contract_bytes("newAuction", &[])
-        .unwrap(),
-      &contract_addr,
-      &deployer,
-    )
-    .unwrap();
-  assert_eq!(&result.out, &to_be_bytes(&U256::from(0)));
-  println!("Create auction gas cost: {:?}", result.gas);
+    // Deploy auction house contract
+    let contract_constructor_input = vec![Token::Uint(U256::from(20)), Token::Uint(U256::from(10))];
+    let create_result = evm
+        .deploy(
+            contract
+                .encode_create_contract_bytes(&contract_constructor_input)
+                .unwrap(),
+            &deployer,
+        )
+        .unwrap();
+    let contract_addr = create_result.addr.clone();
+    println!("Contract deploy gas cost: {}", create_result.gas);
 
-  evm.set_block_number(8);
-  let result = evm
-      .call(
-        contract
-            .encode_call_contract_bytes("bidAuction", &[Token::Uint(U256::from(0))])
-            .unwrap(),
-        &contract_addr,
-        &deployer,
-      )
-      .unwrap();
-  let result = evm
-      .call(
-        contract
-            .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
-            .unwrap(),
-        &contract_addr,
-        &deployer,
-      )
-      .unwrap();
-  println!("{:?}", result);
+    // Mint token to auction (auctioned by "owner")
+    let owner = Address::random(&mut rng);
+    evm.create_account(&owner, 0);
+    let result = evm
+        .call(
+           erc721_contract
+                .encode_call_contract_bytes("mint", &[owner.as_token(), Token::Uint(U256::from(1))])
+                .unwrap(),
+            &erc721_contract_addr,
+            &deployer,
+        )
+        .unwrap();
+    //println!("Minted token to auction: result: {:?}", result);
 
-  evm.set_block_number(25);
-  let result = evm
-      .call(
-        contract
-            .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
-            .unwrap(),
-        &contract_addr,
-        &deployer,
-      )
-      .unwrap();
-  println!("{:?}", result);
+    // Owner approves auction house to take control of token
+    let result = evm
+        .call(
+            erc721_contract
+                .encode_call_contract_bytes("approve", &[contract_addr.as_token(), Token::Uint(U256::from(1))])
+                .unwrap(),
+            &erc721_contract_addr,
+            &owner,
+        )
+        .unwrap();
+    //println!("Approved auction house to transfer token: result: {:?}", result);
 
-  evm.set_block_number(35);
-  let result = evm
-      .call(
-        contract
-            .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
-            .unwrap(),
-        &contract_addr,
-        &deployer,
-      )
-      .unwrap();
-  println!("{:?}", result);
+    evm.set_block_number(1);
+    let result = evm
+        .call(
+            contract
+                .encode_call_contract_bytes("newAuction", &[erc721_contract_addr.as_token(), Token::Uint(U256::from(1))])
+                .unwrap(),
+            &contract_addr,
+            &owner,
+        )
+        .unwrap();
+    println!("Create auction: result: {:?}", result);
+    assert_eq!(&result.out, &to_be_bytes(&U256::from(0)));
+
+    evm.set_block_number(8);
+    let result = evm
+        .call(
+            contract
+                .encode_call_contract_bytes("bidAuction", &[Token::Uint(U256::from(0))])
+                .unwrap(),
+            &contract_addr,
+            &deployer,
+        )
+        .unwrap();
+    let result = evm
+        .call(
+            contract
+                .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
+                .unwrap(),
+            &contract_addr,
+            &deployer,
+        )
+        .unwrap();
+    println!("{:?}", result);
+
+    evm.set_block_number(25);
+    let result = evm
+        .call(
+            contract
+                .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
+                .unwrap(),
+            &contract_addr,
+            &deployer,
+        )
+        .unwrap();
+    println!("{:?}", result);
+
+    evm.set_block_number(35);
+    let result = evm
+        .call(
+            contract
+                .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
+                .unwrap(),
+            &contract_addr,
+            &deployer,
+        )
+        .unwrap();
+    println!("{:?}", result);
 }
