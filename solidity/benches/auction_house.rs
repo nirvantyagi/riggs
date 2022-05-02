@@ -8,6 +8,10 @@ use sha3::Keccak256;
 
 use std::{ops::Deref, str::FromStr};
 
+use auction_house::{
+    auction::AuctionParams,
+    house::{AccountPrivateState, HouseAuctionParams, HouseParams},
+};
 use range_proofs::bulletproofs::Bulletproofs;
 use rsa::{
     bigint::BigInt,
@@ -16,17 +20,13 @@ use rsa::{
     poe::PoEParams,
 };
 use solidity::{
-    encode_tc_comm, encode_tc_opening, encode_bulletproof,
-    get_bigint_library_src, get_bn254_library_src,
-    get_bulletproofs_verifier_contract_src, get_filename_src, get_fkps_src,
-    get_pedersen_library_src, get_rsa_library_src,
+    encode_bulletproof, encode_tc_comm, encode_tc_opening, get_bigint_library_src,
+    get_bn254_deploy_src, get_bn254_library_src, get_bulletproofs_verifier_contract_src,
+    get_filename_src, get_fkps_src, get_pedersen_deploy_src, get_pedersen_library_src,
+    get_rsa_library_src,
 };
 use solidity_test_utils::{address::Address, contract::Contract, evm::Evm, to_be_bytes};
 use timed_commitments::{lazy_tc::LazyTC, PedersenComm};
-use auction_house::{
-    house::{AccountPrivateState, HouseParams, HouseAuctionParams},
-    auction::AuctionParams,
-};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
@@ -99,11 +99,11 @@ fn main() {
     let bulletproofs_pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, NUM_BID_BITS);
     let auction_pp = HouseAuctionParams {
         auction_pp: AuctionParams {
-        t_bid_collection: Default::default(),
-        t_bid_self_open: Default::default(),
-        time_pp: time_pp.clone(),
-        ped_pp: ped_pp.clone(),
-    },
+            t_bid_collection: Default::default(),
+            t_bid_self_open: Default::default(),
+            time_pp: time_pp.clone(),
+            ped_pp: ped_pp.clone(),
+        },
         reward_self_open: REWARD_SELF_OPEN,
         reward_force_open: REWARD_FORCE_OPEN,
     };
@@ -112,11 +112,83 @@ fn main() {
         ped_pp: ped_pp.clone(),
     };
 
-
     // Setup EVM
     let mut evm = Evm::new();
     let deployer = Address::random(&mut rng);
     evm.create_account(&deployer, 0);
+
+    println!("Compiling pedersen contract...");
+    let (_bn254_contract, bn254_contract_addr) = {
+        let bn254_src = get_bn254_deploy_src();
+
+        let solc_config = r#"
+            {
+                "language": "Solidity",
+                "sources": {
+                    "input.sol": { "content": "<%src%>" }
+                },
+                "settings": {
+                    "optimizer": { "enabled": <%opt%> },
+                    "outputSelection": {
+                        "*": {
+                            "*": [
+                                "evm.bytecode.object", "abi"
+                            ],
+                        "": [ "*" ] } }
+                }
+            }"#
+        .replace("<%opt%>", &true.to_string())
+        .replace("<%src%>", &bn254_src);
+
+        let bn254_contract = Contract::compile_from_config(&solc_config, "BN254").unwrap();
+        let create_result = evm
+            .deploy(
+                bn254_contract.encode_create_contract_bytes(&[]).unwrap(),
+                &deployer,
+            )
+            .unwrap();
+        let contract_addr = create_result.addr.clone();
+        println!("BN254 contract deployed at address: {:?}", contract_addr);
+        (bn254_contract, contract_addr)
+    };
+
+    println!("Compiling pedersen contract...");
+    let (_pedersen_contract, pedersen_contract_addr) = {
+        let bn254_src = get_bn254_library_src();
+        let pedersen_lib_src = get_pedersen_deploy_src(&ped_pp, false);
+
+        let solc_config = r#"
+            {
+                "language": "Solidity",
+                "sources": {
+                    "input.sol": { "content": "<%src%>" },
+                    "BN254.sol": { "content": "<%bn254_src%>" }
+                },
+                "settings": {
+                    "optimizer": { "enabled": <%opt%> },
+                    "outputSelection": {
+                        "*": {
+                            "*": [
+                                "evm.bytecode.object", "abi"
+                            ],
+                        "": [ "*" ] } }
+                }
+            }"#
+        .replace("<%opt%>", &true.to_string())
+        .replace("<%bn254_src%>", &bn254_src)
+        .replace("<%src%>", &pedersen_lib_src);
+
+        let pedersen_contract = Contract::compile_from_config(&solc_config, "Pedersen").unwrap();
+        let create_result = evm
+            .deploy(
+                pedersen_contract.encode_create_contract_bytes(&[]).unwrap(),
+                &deployer,
+            )
+            .unwrap();
+        let contract_addr = create_result.addr.clone();
+        println!("Pedersen contract deployed at address: {:?}", contract_addr);
+        (pedersen_contract, contract_addr)
+    };
 
     // Compile and deploy libraries to reduce contract size under limit
     // TODO: Create better tooling for compiling and deploying with libraries
@@ -150,12 +222,13 @@ fn main() {
                         "": [ "*" ] } }
                 }
             }"#
-            .replace("<%opt%>", &true.to_string())
-            .replace("<%bn254_src%>", &bn254_src)
-            .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
-            .replace("<%src%>", &bulletproofs_src);
+        .replace("<%opt%>", &true.to_string())
+        .replace("<%bn254_src%>", &bn254_src)
+        .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
+        .replace("<%src%>", &bulletproofs_src);
 
-        let bulletproofs_contract = Contract::compile_from_config(&solc_config, "BulletproofsVerifier").unwrap();
+        let bulletproofs_contract =
+            Contract::compile_from_config(&solc_config, "BulletproofsVerifier").unwrap();
         let create_result = evm
             .deploy(
                 bulletproofs_contract
@@ -204,21 +277,19 @@ fn main() {
                         "": [ "*" ] } }
                 }
             }"#
-            .replace("<%opt%>", &false.to_string()) // Needed to disable opt for a BigNumber assembly instruction
-            .replace("<%bn254_src%>", &bn254_src)
-            .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
-            .replace("<%bigint_src%>", &bigint_src)
-            .replace("<%rsa_lib_src%>", &rsa_src)
-            .replace("<%poe_lib_src%>", &poe_src)
-            .replace("<%fkps_lib_src%>", &fkps_src)
-            .replace("<%src%>", &tc_src);
+        .replace("<%opt%>", &false.to_string()) // Needed to disable opt for a BigNumber assembly instruction
+        .replace("<%bn254_src%>", &bn254_src)
+        .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
+        .replace("<%bigint_src%>", &bigint_src)
+        .replace("<%rsa_lib_src%>", &rsa_src)
+        .replace("<%poe_lib_src%>", &poe_src)
+        .replace("<%fkps_lib_src%>", &fkps_src)
+        .replace("<%src%>", &tc_src);
 
         let contract = Contract::compile_from_config(&solc_config, "TC").unwrap();
         let create_result = evm
             .deploy(
-                contract
-                    .encode_create_contract_bytes(&[])
-                    .unwrap(),
+                contract.encode_create_contract_bytes(&[]).unwrap(),
                 &deployer,
             )
             .unwrap();
@@ -229,8 +300,6 @@ fn main() {
         );
         (contract, contract_addr)
     };
-
-
 
     // Compile ERC721 contract from template
     println!("Compiling ERC721 contract...");
@@ -303,6 +372,12 @@ fn main() {
                             ],
                         "": [ "*" ] } },
                     "libraries": {
+                        "BN254.sol": {
+                            "BN254": "<%bn254_lib_addr%>"
+                        },
+                        "Pedersen.sol": {
+                            "Pedersen": "<%pedersen_lib_addr%>"
+                        },
                         "TC.sol": {
                             "TC": "<%tc_lib_addr%>"
                         },
@@ -314,7 +389,9 @@ fn main() {
             }"#
     .replace("<%opt%>", &false.to_string()) // Needed to disable opt for a BigNumber assembly instruction
     .replace("<%bn254_src%>", &bn254_src)
+    .replace("<%bn254_lib_addr%>", &bn254_contract_addr.to_string())
     .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
+    .replace("<%pedersen_lib_addr%>", &pedersen_contract_addr.to_string())
     .replace("<%bigint_src%>", &bigint_src)
     .replace("<%rsa_lib_src%>", &rsa_src)
     .replace("<%poe_lib_src%>", &poe_src)
@@ -322,7 +399,10 @@ fn main() {
     .replace("<%tc_lib_src%>", &tc_src)
     .replace("<%tc_lib_addr%>", &tc_contract_addr.to_string())
     .replace("<%bulletproofs_lib_src%>", &bulletproofs_src)
-    .replace("<%bulletproofs_lib_addr%>", &bulletproofs_contract_addr.to_string())
+    .replace(
+        "<%bulletproofs_lib_addr%>",
+        &bulletproofs_contract_addr.to_string(),
+    )
     .replace("<%erc20_src%>", &erc20_src)
     .replace("<%erc721_src%>", &erc721_src)
     .replace("<%src%>", &auction_house_src);
@@ -371,7 +451,7 @@ fn main() {
     evm.create_account(&owner, 0);
     let result = evm
         .call(
-           erc721_contract
+            erc721_contract
                 .encode_call_contract_bytes("mint", &[owner.as_token(), Token::Uint(U256::from(1))])
                 .unwrap(),
             &erc721_contract_addr,
@@ -385,14 +465,20 @@ fn main() {
     let result = evm
         .call(
             erc721_contract
-                .encode_call_contract_bytes("approve", &[contract_addr.as_token(), Token::Uint(U256::from(1))])
+                .encode_call_contract_bytes(
+                    "approve",
+                    &[contract_addr.as_token(), Token::Uint(U256::from(1))],
+                )
                 .unwrap(),
             &erc721_contract_addr,
             &owner,
         )
         .unwrap();
     //println!("Approved auction house to transfer token: result: {:?}", result);
-    println!("Approved auction house to transfer token: gas: {}", result.gas);
+    println!(
+        "Approved auction house to transfer token: gas: {}",
+        result.gas
+    );
 
     let mut bidders = {
         let mut bidders = Vec::new();
@@ -416,13 +502,19 @@ fn main() {
             let result = evm
                 .call(
                     contract
-                        .encode_call_contract_bytes("approve", &[contract_addr.as_token(), Token::Uint(U256::from(80))])
+                        .encode_call_contract_bytes(
+                            "approve",
+                            &[contract_addr.as_token(), Token::Uint(U256::from(80))],
+                        )
                         .unwrap(),
                     &contract_addr,
                     &bidder_addr,
                 )
                 .unwrap();
-            println!("Bidder {} approved auction house to transfer AHC: gas: {}", i, result.gas);
+            println!(
+                "Bidder {} approved auction house to transfer AHC: gas: {}",
+                i, result.gas
+            );
             //println!("{:?}", result);
 
             let result = evm
@@ -434,7 +526,10 @@ fn main() {
                     &bidder_addr,
                 )
                 .unwrap();
-            println!("Bidder {} deposited AHC into auction house balance: gas: {}", i, result.gas);
+            println!(
+                "Bidder {} deposited AHC into auction house balance: gas: {}",
+                i, result.gas
+            );
             //println!("{:?}", result);
 
             let mut bidder = Account::new();
@@ -449,7 +544,10 @@ fn main() {
     let result = evm
         .call(
             contract
-                .encode_call_contract_bytes("newAuction", &[erc721_contract_addr.as_token(), Token::Uint(U256::from(1))])
+                .encode_call_contract_bytes(
+                    "newAuction",
+                    &[erc721_contract_addr.as_token(), Token::Uint(U256::from(1))],
+                )
                 .unwrap(),
             &contract_addr,
             &owner,
@@ -463,21 +561,21 @@ fn main() {
     {
         for i in 0..3_usize {
             let (bidder, bidder_addr) = bidders.get_mut(i).unwrap();
-            let (bid_proposal, opening) = bidder.propose_bid(
-                &mut rng,
-                &house_pp,
-                &auction_pp,
-                (i as u32 + 1) * 20,
-            ).unwrap();
+            let (bid_proposal, opening) = bidder
+                .propose_bid(&mut rng, &house_pp, &auction_pp, (i as u32 + 1) * 20)
+                .unwrap();
             let result = evm
                 .call(
                     contract
-                        .encode_call_contract_bytes("bidAuction", &[
-                            Token::Uint(U256::from(0)),
-                            encode_tc_comm::<Bn254, _>(&bid_proposal.comm_bid),
-                            encode_bulletproof::<Bn254>(&bid_proposal.range_proof_bid),
-                            encode_bulletproof::<Bn254>(&bid_proposal.range_proof_balance),
-                        ])
+                        .encode_call_contract_bytes(
+                            "bidAuction",
+                            &[
+                                Token::Uint(U256::from(0)),
+                                encode_tc_comm::<Bn254, _>(&bid_proposal.comm_bid),
+                                encode_bulletproof::<Bn254>(&bid_proposal.range_proof_bid),
+                                encode_bulletproof::<Bn254>(&bid_proposal.range_proof_balance),
+                            ],
+                        )
                         .unwrap(),
                     &contract_addr,
                     &bidder_addr,
@@ -485,7 +583,16 @@ fn main() {
                 .unwrap();
             println!("Bidder {} placed bid: gas: {}", i, result.gas);
             //println!("{:?}", result);
-            bidder.confirm_bid(&house_pp, &auction_pp, 0, (i as u32 + 1) * 20, &bid_proposal, &opening).unwrap();
+            bidder
+                .confirm_bid(
+                    &house_pp,
+                    &auction_pp,
+                    0,
+                    (i as u32 + 1) * 20,
+                    &bid_proposal,
+                    &opening,
+                )
+                .unwrap();
         }
 
         let result = evm
@@ -509,11 +616,14 @@ fn main() {
             let result = evm
                 .call(
                     contract
-                        .encode_call_contract_bytes("selfOpenAuction", &[
-                            Token::Uint(U256::from(0)),
-                            Token::Uint(U256::from(*bid)),
-                            encode_tc_opening(opening),
-                        ])
+                        .encode_call_contract_bytes(
+                            "selfOpenAuction",
+                            &[
+                                Token::Uint(U256::from(0)),
+                                Token::Uint(U256::from(*bid)),
+                                encode_tc_opening(opening),
+                            ],
+                        )
                         .unwrap(),
                     &contract_addr,
                     &bidder_addr,
@@ -521,7 +631,9 @@ fn main() {
                 .unwrap();
             println!("Bidder {} self-opened bid: gas: {}", i, result.gas);
             //println!("{:?}", result);
-            bidder.confirm_bid_self_open(&house_pp, &auction_pp).unwrap();
+            bidder
+                .confirm_bid_self_open(&house_pp, &auction_pp)
+                .unwrap();
         }
         let result = evm
             .call(
@@ -556,12 +668,15 @@ fn main() {
         let result = evm
             .call(
                 contract
-                    .encode_call_contract_bytes("forceOpenAuction", &[
-                        Token::Uint(U256::from(0)),
-                        bidder_addr.as_token(),
-                        Token::Uint(U256::from(*bid)),
-                        encode_tc_opening(&opening),
-                    ])
+                    .encode_call_contract_bytes(
+                        "forceOpenAuction",
+                        &[
+                            Token::Uint(U256::from(0)),
+                            bidder_addr.as_token(),
+                            Token::Uint(U256::from(*bid)),
+                            encode_tc_opening(&opening),
+                        ],
+                    )
                     .unwrap(),
                 &contract_addr,
                 &opener_addr,
@@ -570,7 +685,9 @@ fn main() {
         println!("Bidder 0 force-opened bid 2: gas: {}", result.gas);
         //println!("{:?}", result);
         let (opener, _opener_addr) = bidders.get_mut(0).unwrap();
-        opener.confirm_bid_force_open(&house_pp, &auction_pp).unwrap();
+        opener
+            .confirm_bid_force_open(&house_pp, &auction_pp)
+            .unwrap();
     }
 
     // Withdrawal
@@ -580,16 +697,22 @@ fn main() {
         let result = evm
             .call(
                 contract
-                    .encode_call_contract_bytes("withdraw", &[
-                        Token::Uint(U256::from(65)),
-                        encode_bulletproof::<Bn254>(&withdrawal_proof),
-                    ])
+                    .encode_call_contract_bytes(
+                        "withdraw",
+                        &[
+                            Token::Uint(U256::from(65)),
+                            encode_bulletproof::<Bn254>(&withdrawal_proof),
+                        ],
+                    )
                     .unwrap(),
                 &contract_addr,
                 &bidder_addr,
             )
             .unwrap();
-        println!("Bidder 0 withdrew AHC from auction house balance: gas: {}", result.gas);
+        println!(
+            "Bidder 0 withdrew AHC from auction house balance: gas: {}",
+            result.gas
+        );
         //println!("{:?}", result);
         bidder.confirm_withdrawal(&house_pp, 65).unwrap();
     }
@@ -623,7 +746,10 @@ fn main() {
         let result = evm
             .call(
                 erc721_contract
-                    .encode_call_contract_bytes("balanceOf", &[bidders.get(2).unwrap().1.as_token()])
+                    .encode_call_contract_bytes(
+                        "balanceOf",
+                        &[bidders.get(2).unwrap().1.as_token()],
+                    )
                     .unwrap(),
                 &erc721_contract_addr,
                 &deployer,
@@ -642,20 +768,41 @@ fn main() {
         let result = evm
             .call(
                 contract
-                    .encode_call_contract_bytes("withdraw", &[
-                        Token::Uint(U256::from(60)),
-                        encode_bulletproof::<Bn254>(&withdrawal_proof),
-                    ])
+                    .encode_call_contract_bytes(
+                        "withdraw",
+                        &[
+                            Token::Uint(U256::from(60)),
+                            encode_bulletproof::<Bn254>(&withdrawal_proof),
+                        ],
+                    )
                     .unwrap(),
                 &contract_addr,
                 &owner,
             )
             .unwrap();
-        println!("Owner withdrew AHC from auction house balance: gas: {}", result.gas);
+        println!(
+            "Owner withdrew AHC from auction house balance: gas: {}",
+            result.gas
+        );
 
-        bidders.get_mut(0).unwrap().0.confirm_auction_loss(&house_pp, &auction_pp, 0).unwrap();
-        bidders.get_mut(1).unwrap().0.confirm_auction_loss(&house_pp, &auction_pp, 0).unwrap();
-        bidders.get_mut(2).unwrap().0.confirm_auction_win(&house_pp, &auction_pp, 0, 60).unwrap();
+        bidders
+            .get_mut(0)
+            .unwrap()
+            .0
+            .confirm_auction_loss(&house_pp, &auction_pp, 0)
+            .unwrap();
+        bidders
+            .get_mut(1)
+            .unwrap()
+            .0
+            .confirm_auction_loss(&house_pp, &auction_pp, 0)
+            .unwrap();
+        bidders
+            .get_mut(2)
+            .unwrap()
+            .0
+            .confirm_auction_win(&house_pp, &auction_pp, 0, 60)
+            .unwrap();
     }
 
     // Withdrawal after active bids updated
@@ -665,16 +812,22 @@ fn main() {
         let result = evm
             .call(
                 contract
-                    .encode_call_contract_bytes("withdraw", &[
-                        Token::Uint(U256::from(80)),
-                        encode_bulletproof::<Bn254>(&withdrawal_proof),
-                    ])
+                    .encode_call_contract_bytes(
+                        "withdraw",
+                        &[
+                            Token::Uint(U256::from(80)),
+                            encode_bulletproof::<Bn254>(&withdrawal_proof),
+                        ],
+                    )
                     .unwrap(),
                 &contract_addr,
                 &bidder_addr,
             )
             .unwrap();
-        println!("Bidder 2 withdrew AHC from auction house balance: gas: {}", result.gas);
+        println!(
+            "Bidder 2 withdrew AHC from auction house balance: gas: {}",
+            result.gas
+        );
         //println!("{:?}", result);
         bidder.confirm_withdrawal(&house_pp, 80).unwrap();
     }

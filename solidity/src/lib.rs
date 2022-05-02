@@ -6,10 +6,7 @@ use ethabi::Token;
 use num_traits::Signed;
 use primitive_types::U256;
 use sha3::digest;
-use std::{
-    fs::File, io::Read,
-    str::FromStr,
-};
+use std::{fs::File, io::Read, str::FromStr};
 
 use range_proofs::bulletproofs::{serialize_group_elem, Params, PedersenParams, Proof};
 use rsa::{
@@ -21,11 +18,10 @@ use rsa::{
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
     poe::Proof as PoEProof,
 };
-use timed_commitments::{basic_tc, lazy_tc};
 use solidity_test_utils::{
-    encode_field_element, encode_group_element, encode_int_from_bytes,
-    parse_g1_to_solidity_string,
+    encode_field_element, encode_group_element, encode_int_from_bytes, parse_g1_to_solidity_string,
 };
+use timed_commitments::{basic_tc, lazy_tc};
 
 use once_cell::sync::Lazy;
 
@@ -45,7 +41,23 @@ pub fn get_bn254_library_src() -> String {
     let mut src_file = File::open(contract_path).unwrap();
     let mut src = String::new();
     src_file.read_to_string(&mut src).unwrap();
-    src = src.replace("\"", "\\\"");
+    src = src
+        .replace("\"", "\\\"")
+        .replace("<%con_or_lib%>", "library")
+        .replace("<%visibility%>", "internal");
+    src
+}
+
+pub fn get_bn254_deploy_src() -> String {
+    let contract_path = format!("{}/contracts/BN254.sol", env!("CARGO_MANIFEST_DIR"));
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src
+        .replace("\"", "\\\"")
+        .replace("<%con_or_lib%>", "library")
+        .replace("<%visibility%>", "public");
     src
 }
 
@@ -240,6 +252,33 @@ pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>, as_contract: bool) -
         .replace(
             "<%visibility%>",
             if as_contract { "public" } else { "internal" },
+        )
+        .replace(
+            "<%ped_pp_g%>",
+            &parse_g1_to_solidity_string::<Bn254>(&ped_pp.g.into_affine()),
+        )
+        .replace(
+            "<%ped_pp_h%>",
+            &parse_g1_to_solidity_string::<Bn254>(&ped_pp.h.into_affine()),
+        );
+    src
+}
+
+pub fn get_pedersen_deploy_src(ped_pp: &PedersenParams<G>, as_contract: bool) -> String {
+    let contract_path = format!("{}/contracts/Pedersen.sol", env!("CARGO_MANIFEST_DIR"));
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src
+        .replace("\"", "\\\"")
+        .replace(
+            "<%con_or_lib%>",
+            if as_contract { "library" } else { "library" },
+        )
+        .replace(
+            "<%visibility%>",
+            if as_contract { "public" } else { "public" },
         )
         .replace(
             "<%ped_pp_g%>",
