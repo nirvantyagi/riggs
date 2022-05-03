@@ -217,6 +217,7 @@ contract AuctionHouse is IERC721Receiver {
             TC.Comm memory bid_comm,
             BulletproofsVerifier.Proof memory bid_proof,
             BulletproofsVerifier.Proof memory balance_proof) public {
+
         require(getAuctionPhase(id) == AuctionPhase.BidCollection);
         Auction storage auction = active_auctions[id];
         require(!auction.bidders[msg.sender]);  // TODO: Allow multiple bids by single account
@@ -243,6 +244,11 @@ contract AuctionHouse is IERC721Receiver {
         auction.comms[comm_hash] = true;
         auction.bidder_to_comm[msg.sender] = bid_comm;
         auction.bids_to_open += 1;
+    }
+
+    function getNumBidsToOpen(uint256 id) public view returns (uint256) {
+        Auction storage auction = active_auctions[id];
+        return auction.bids_to_open; 
     }
 
     function selfOpenAuction(uint256 id, uint256 bid, TC.SelfOpening memory opening) public {

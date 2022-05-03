@@ -527,7 +527,7 @@ fn main() {
       let mut bidder = Account::new();
       bidder.confirm_deposit(&house_pp, 80).unwrap();
 
-      bidders.push((bidder, bidder_addr)); 
+      bidders.push((bidder, bidder_addr));
     }
     bidders
   };

@@ -124,19 +124,19 @@ contract AuctionHouseCoin is IERC165, IERC20, IERC20Metadata, IERC721Receiver {
     // }
 
     function queryDeposit(address user) external view returns (uint256) {
-      return balances[msg.sender];
+      return balances[user];
     }
 
     function setDeposit(address user, uint256 amount) public {
-      balances[msg.sender] = amount;
+      balances[user] = amount;
     }
 
     function incrementDeposit(address user, uint256 amount) public {
-      balances[msg.sender] += amount;
+      balances[user] += amount;
     }
 
     function decrementDeposit(address user, uint256 amount) public {
-      balances[msg.sender] -= amount;
+      balances[user] -= amount;
     }
 
 }
