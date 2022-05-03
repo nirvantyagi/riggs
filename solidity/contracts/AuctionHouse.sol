@@ -184,7 +184,7 @@ contract AuctionHouse is IERC721Receiver {
         setDeposit(msg.sender, balance_less_amt);
     }
 
-    function newAuction(address token, uint256 token_id) public returns (uint256 id) {
+    function newAuction(address token, uint256 token_id, uint256 _bid_collection_num_blocks, uint256 _bid_self_open_num_blocks) public returns (uint256 id) {
         id = ctr_auction;
         Auction storage auction = active_auctions[id];
         auction.token = IERC721(token);
@@ -193,8 +193,8 @@ contract AuctionHouse is IERC721Receiver {
         auction.token.safeTransferFrom(msg.sender, address(this), token_id); // Transfer token to house
         auction.owner = msg.sender;
         auction.start_block = block.number;
-        auction.bid_collection_end_block = block.number + bid_collection_num_blocks;
-        auction.bid_self_open_end_block = block.number + bid_collection_num_blocks + bid_self_open_num_blocks;
+        auction.bid_collection_end_block = block.number + _bid_collection_num_blocks;
+        auction.bid_self_open_end_block = block.number + _bid_collection_num_blocks + _bid_self_open_num_blocks;
         ctr_auction += 1;
     }
 

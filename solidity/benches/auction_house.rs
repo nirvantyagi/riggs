@@ -538,7 +538,12 @@ fn main() {
       contract
         .encode_call_contract_bytes(
           "newAuction",
-          &[erc721_contract_addr.as_token(), Token::Uint(U256::from(1))],
+          &[
+            erc721_contract_addr.as_token(),
+            Token::Uint(U256::from(1)),
+            Token::Uint(U256::from(20)),
+            Token::Uint(U256::from(10)),
+          ],
         )
         .unwrap(),
       &contract_addr,
