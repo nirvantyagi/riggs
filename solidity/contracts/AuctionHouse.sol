@@ -9,7 +9,7 @@ import "./IERC20.sol";
 import "./IERC721.sol";
 import "./AuctionHouseCoin.sol";
 
-contract AuctionHouse {
+contract AuctionHouse is IERC721Receiver {
     AuctionHouseCoin AHC_contract;
 
     mapping(uint256 => Auction) active_auctions;
@@ -121,16 +121,16 @@ contract AuctionHouse {
     //     return true;
     // }
 
-    // // IERC-721 Receiver Implementation
+    // IERC-721 Receiver Implementation
 
-    // function onERC721Received(
-    //     address,
-    //     address,
-    //     uint256,
-    //     bytes memory
-    // ) public override returns (bytes4) {
-    //     return this.onERC721Received.selector;
-    // }
+    function onERC721Received(
+        address,
+        address,
+        uint256,
+        bytes memory
+    ) public override returns (bytes4) {
+        return this.onERC721Received.selector;
+    }
 
 
     // Auction House Implementation
