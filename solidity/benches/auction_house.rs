@@ -20,10 +20,10 @@ use rsa::{
   poe::PoEParams,
 };
 use solidity::{
-  encode_bulletproof, encode_tc_comm, encode_tc_opening, get_bigint_library_src,
-  get_bn254_deploy_src, get_bn254_library_src, get_bulletproofs_verifier_contract_src,
-  get_filename_src, get_fkps_src, get_pedersen_deploy_src, get_pedersen_library_src,
-  get_rsa_library_src,
+  encode_bulletproof, encode_new_auction, encode_tc_comm, encode_tc_opening, encode_tc_partial,
+  get_bigint_library_src, get_bn254_deploy_src, get_bn254_library_src,
+  get_bulletproofs_verifier_contract_src, get_filename_src, get_fkps_src, get_pedersen_deploy_src,
+  get_pedersen_library_src, get_rsa_library_src,
 };
 use solidity_test_utils::{address::Address, contract::Contract, evm::Evm, to_be_bytes};
 use timed_commitments::{lazy_tc::LazyTC, PedersenComm};
@@ -417,10 +417,10 @@ fn main() {
   // Deploy auction house contract
   let contract_constructor_input = vec![
     ah_coin_contract_addr.as_token(),
-    Token::Uint(U256::from(20)),
-    Token::Uint(U256::from(10)),
-    Token::Uint(U256::from(REWARD_SELF_OPEN)),
-    Token::Uint(U256::from(REWARD_FORCE_OPEN)),
+    // Token::Uint(U256::from(20)),
+    // Token::Uint(U256::from(10)),
+    // Token::Uint(U256::from(REWARD_SELF_OPEN)),
+    // Token::Uint(U256::from(REWARD_FORCE_OPEN)),
   ];
   let create_result = evm
     .deploy(
@@ -532,18 +532,31 @@ fn main() {
     bidders
   };
 
+  let new_auction_inputs = encode_new_auction::<Bn254, _>(
+    &erc721_contract_addr,
+    1,
+    20,
+    10,
+    REWARD_SELF_OPEN,
+    REWARD_FORCE_OPEN,
+    &time_pp,
+  );
+
   evm.set_block_number(1);
   let result = evm
     .call(
       contract
         .encode_call_contract_bytes(
           "newAuction",
-          &[
-            erc721_contract_addr.as_token(),
-            Token::Uint(U256::from(1)),
-            Token::Uint(U256::from(20)),
-            Token::Uint(U256::from(10)),
-          ],
+          // &[
+          //   erc721_contract_addr.as_token(),
+          //   Token::Uint(U256::from(1)),
+          //   Token::Uint(U256::from(20)),
+          //   Token::Uint(U256::from(10)),
+          //   Token::Uint(U256::from(REWARD_SELF_OPEN)),
+          //   Token::Uint(U256::from(REWARD_FORCE_OPEN)),
+          // ],
+          &new_auction_inputs,
         )
         .unwrap(),
       &contract_addr,

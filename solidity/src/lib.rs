@@ -482,6 +482,37 @@ pub fn encode_tc_pp<E: PairingEngine, P: RsaGroupParams>(
     Token::Tuple(tokens)
 }
 
+pub fn encode_tc_partial<E: PairingEngine, P: RsaGroupParams>(
+    fkps_pp: &basic_tc::TimeParams<P>,
+) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_rsa_element(&fkps_pp.x));
+    tokens.push(encode_rsa_element(&fkps_pp.y));
+    tokens.push(Token::Uint(U256::from(fkps_pp.t)));
+    Token::Tuple(tokens)
+}
+
+pub fn encode_new_auction<E: PairingEngine, P: RsaGroupParams>(
+    erc721_contract_addr: &solidity_test_utils::address::Address,
+    token_id: u32,
+    bid_collection_num_blocks: u32,
+    bid_self_open_num_blocks: u32,
+    reward_self_open: u32,
+    reward_force_open: u32,
+    fkps_pp: &basic_tc::TimeParams<P>,
+) -> Vec<Token> {
+    let mut tokens = Vec::new();
+    tokens.push(erc721_contract_addr.as_token());
+    tokens.push(Token::Uint(U256::from(token_id)));
+    tokens.push(Token::Uint(U256::from(bid_collection_num_blocks)));
+    tokens.push(Token::Uint(U256::from(bid_self_open_num_blocks)));
+    tokens.push(Token::Uint(U256::from(reward_self_open)));
+    tokens.push(Token::Uint(U256::from(reward_force_open)));
+    tokens.push(encode_tc_partial::<E, P>(fkps_pp));
+    // Token::Tuple(tokens)
+    tokens
+}
+
 fn pad_to_32_byte_offset(mut bytes: Vec<u8>) -> Vec<u8> {
     let pad_len = 32 * ((bytes.len() - 1) / 32 + 1);
     bytes.reverse();

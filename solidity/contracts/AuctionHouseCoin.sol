@@ -7,7 +7,7 @@ import "./BulletproofsVerifier.sol";
 import "./IERC20.sol";
 import "./IERC721.sol";
 
-contract AuctionHouseCoin is IERC165, IERC20, IERC20Metadata, IERC721Receiver {
+contract AuctionHouseCoin is IERC165, IERC20, IERC20Metadata {
 
     mapping(address => uint256) balances;
 
@@ -79,16 +79,16 @@ contract AuctionHouseCoin is IERC165, IERC20, IERC20Metadata, IERC721Receiver {
         return true;
     }
 
-    // IERC-721 Receiver Implementation
+    // // IERC-721 Receiver Implementation
 
-    function onERC721Received(
-        address,
-        address,
-        uint256,
-        bytes memory
-    ) public override returns (bytes4) {
-        return this.onERC721Received.selector;
-    }
+    // function onERC721Received(
+    //     address,
+    //     address,
+    //     uint256,
+    //     bytes memory
+    // ) public override returns (bytes4) {
+    //     return this.onERC721Received.selector;
+    // }
 
 
     // Auction House Implementation

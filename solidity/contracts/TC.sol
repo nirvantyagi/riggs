@@ -17,6 +17,12 @@ import "./Pedersen.sol";
     Pedersen.Params ped_pp;
     FKPS.Params fkps_pp;
   }
+
+  struct PartialParams {
+    RSA2048.Element h; 
+    RSA2048.Element z;
+    uint32 t;
+  }
   
   struct SelfOpening {
     FKPS.SelfOpening fkps_so;
@@ -28,6 +34,14 @@ import "./Pedersen.sol";
 
   function publicParams() internal pure returns (Params memory pp) {
     pp.fkps_pp = FKPS.publicParams();
+    pp.ped_pp = Pedersen.publicParams();
+  }
+
+  function publicParams(PartialParams memory partial_params) internal pure returns (Params memory pp) {
+    pp.fkps_pp = FKPS.publicParams();
+    pp.fkps_pp.h = partial_params.h;
+    pp.fkps_pp.z = partial_params.z;
+    pp.fkps_pp.t = partial_params.t;
     pp.ped_pp = Pedersen.publicParams();
   }
 
