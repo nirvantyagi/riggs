@@ -253,8 +253,8 @@ fn main() {
 
   let erc721_contract = Contract::compile_from_config(&solc_config, "TestERC721").unwrap();
 
-  println!("Compiling Auction House Coin commitments contract...");
-  let (ah_coin_contract, ah_coin_contract_addr) = {
+  println!("Compiling (but not deploying) Auction House Coin contract...");
+  let ah_coin_contract = {
     let auction_house_coin_src = get_filename_src("AuctionHouseCoin.sol", true);
     let bn254_src = get_bn254_library_src();
     let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
@@ -307,6 +307,75 @@ fn main() {
       .replace("<%src%>", &auction_house_coin_src);
 
     let contract = Contract::compile_from_config(&solc_config, "AuctionHouseCoin").unwrap();
+    // let create_result = evm
+    //   .deploy(
+    //     contract.encode_create_contract_bytes(&[]).unwrap(),
+    //     &deployer,
+    //   )
+    //   .unwrap();
+    // let contract_addr = create_result.addr.clone();
+    // println!("AH Coin contract deployed at address: {:?}", contract_addr);
+    contract
+  };
+
+  println!("Compiling Auction House Coin Factory contract...");
+  let (ahc_factory_contract, ahc_factory_contract_addr) = {
+    let ahc_factory_src = get_filename_src("AuctionHouseCoinFactory.sol", true);
+    let bn254_src = get_bn254_library_src();
+    let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
+    let bulletproofs_src = get_bulletproofs_verifier_contract_src(
+      &bulletproofs_pp,
+      &ped_pp,
+      NUM_BID_BITS,
+      LOG_NUM_BID_BITS,
+      false,
+    );
+    let erc20_src = get_filename_src("IERC20.sol", false);
+    let erc721_src = get_filename_src("IERC721.sol", false);
+    let ah_coin_src = get_filename_src("AuctionHouseCoin.sol", false);
+
+    let solc_config = r#"
+            {
+                "language": "Solidity",
+                "sources": {
+                    "input.sol": { "content": "<%src%>" },
+                    "BN254.sol": { "content": "<%bn254_src%>" },
+                    "Pedersen.sol": { "content": "<%pedersen_lib_src%>" },
+                    "BulletproofsVerifier.sol": { "content": "<%bulletproofs_lib_src%>" },
+                    "IERC20.sol": { "content": "<%erc20_src%>" },
+                    "IERC721.sol": { "content": "<%erc721_src%>" },
+                    "AuctionHouseCoin.sol": { "content": "<%ah_coin_src%>" }
+
+                },
+                "settings": {
+                    "optimizer": { "enabled": <%opt%> },
+                    "outputSelection": {
+                        "*": {
+                            "*": [
+                                "evm.bytecode.object", "abi"
+                            ],
+                        "": [ "*" ] } },
+                    "libraries": {
+                        "BulletproofsVerifier.sol": {
+                            "BulletproofsVerifier": "<%bulletproofs_lib_addr%>"
+                        }
+                    }
+                }
+            }"#
+      .replace("<%opt%>", &false.to_string()) // Needed to disable opt for a BigNumber assembly instruction
+      .replace("<%bn254_src%>", &bn254_src)
+      .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
+      .replace("<%bulletproofs_lib_src%>", &bulletproofs_src)
+      .replace(
+        "<%bulletproofs_lib_addr%>",
+        &bulletproofs_contract_addr.to_string(),
+      )
+      .replace("<%erc20_src%>", &erc20_src)
+      .replace("<%erc721_src%>", &erc721_src)
+      .replace("<%ah_coin_src%>", &ah_coin_src)
+      .replace("<%src%>", &ahc_factory_src);
+
+    let contract = Contract::compile_from_config(&solc_config, "AuctionHouseCoinFactory").unwrap();
     let create_result = evm
       .deploy(
         contract.encode_create_contract_bytes(&[]).unwrap(),
@@ -314,7 +383,10 @@ fn main() {
       )
       .unwrap();
     let contract_addr = create_result.addr.clone();
-    println!("AH Coin contract deployed at address: {:?}", contract_addr);
+    println!(
+      "AHC Factory contract deployed at address: {:?}",
+      contract_addr
+    );
     (contract, contract_addr)
   };
 
@@ -337,6 +409,7 @@ fn main() {
   );
   let erc20_src = get_filename_src("IERC20.sol", false);
   let erc721_src = get_filename_src("IERC721.sol", false);
+  let ahc_factory_src = get_filename_src("AuctionHouseCoinFactory.sol", false);
   let ah_coin_src = get_filename_src("AuctionHouseCoin.sol", false);
 
   let solc_config = r#"
@@ -354,6 +427,7 @@ fn main() {
                     "BulletproofsVerifier.sol": { "content": "<%bulletproofs_lib_src%>" },
                     "IERC20.sol": { "content": "<%erc20_src%>" },
                     "IERC721.sol": { "content": "<%erc721_src%>" },
+                    "AuctionHouseCoinFactory.sol": { "content": "<%ahc_factory_src%>" },
                     "AuctionHouseCoin.sol": { "content": "<%ah_coin_src%>" }
                 },
                 "settings": {
@@ -390,6 +464,7 @@ fn main() {
     )
     .replace("<%erc20_src%>", &erc20_src)
     .replace("<%erc721_src%>", &erc721_src)
+    .replace("<%ahc_factory_src%>", &ahc_factory_src)
     .replace("<%ah_coin_src%>", &ah_coin_src)
     .replace("<%src%>", &auction_house_src);
 
@@ -416,7 +491,7 @@ fn main() {
 
   // Deploy auction house contract
   let contract_constructor_input = vec![
-    ah_coin_contract_addr.as_token(),
+    ahc_factory_contract_addr.as_token(),
     // Token::Uint(U256::from(20)),
     // Token::Uint(U256::from(10)),
     // Token::Uint(U256::from(REWARD_SELF_OPEN)),
@@ -435,6 +510,25 @@ fn main() {
 
   // Mint token to auction (auctioned by "owner")
   let owner = Address::random(&mut rng);
+
+  let result_coin_address = evm
+    .call(
+      contract
+        .encode_call_contract_bytes("get_AHCoin_address", &[])
+        .unwrap(),
+      &contract_addr,
+      &owner,
+    )
+    .unwrap();
+  println!("Owner created auction: gas: {}", result_coin_address.gas);
+
+  let ahc_address_vec = &result_coin_address.out;
+
+  let ah_coin_contract_addr = solidity_test_utils::address::Address(
+    primitive_types::H160::from_slice(&ahc_address_vec[12..]),
+  );
+  println!("Coin contract is at address: {:?}", ah_coin_contract_addr);
+
   evm.create_account(&owner, 0);
   let result = evm
     .call(
@@ -487,6 +581,19 @@ fn main() {
         .unwrap();
       println!("Bidder {} exchanged ether for AHC: gas: {}", i, result.gas);
       //println!("{:?}", result);
+
+      // // Just testing ownership
+      // let result = evm
+      //   .call(
+      //     ah_coin_contract
+      //       .encode_call_contract_bytes("queryDeposit", &[bidder_addr.as_token()])
+      //       .unwrap(),
+      //     &ah_coin_contract_addr,
+      //     &bidder_addr,
+      //   )
+      //   .unwrap();
+      // // result will be "Revert"
+      // println!("TRYING ONLY OWNERSHIP FUNCTIONS: {:?}", result);
 
       let result = evm
         .call(

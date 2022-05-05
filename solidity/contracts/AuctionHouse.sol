@@ -8,8 +8,10 @@ import "./BulletproofsVerifier.sol";
 import "./IERC20.sol";
 import "./IERC721.sol";
 import "./AuctionHouseCoin.sol";
+import "./AuctionHouseCoinFactory.sol";
 
 contract AuctionHouse is IERC721Receiver {
+    AuctionHouseCoinFactory AHCF_contract;
     AuctionHouseCoin AHC_contract;
 
     mapping(uint256 => Auction) active_auctions;
@@ -36,14 +38,22 @@ contract AuctionHouse is IERC721Receiver {
         address owner;
     }
 
+    enum AuctionPhase { BidCollection, BidSelfOpening, BidForceOpening, Complete }
+
     // TODO: Allow auctions to have different time parameters
     constructor(
-            address AHC_contract_addr
+            // address AHC_contract_addr
+            address AHCF_addr
             ) {
-        AHC_contract = AuctionHouseCoin(AHC_contract_addr);
+        // AHC_contract = AuctionHouseCoin(AHC_contract_addr);
+        AHCF_contract = AuctionHouseCoinFactory(AHCF_addr);
+        AHC_contract = AuctionHouseCoin(AHCF_contract.newAHCoin());
     }
 
-    enum AuctionPhase { BidCollection, BidSelfOpening, BidForceOpening, Complete }
+    function get_AHCoin_address() public returns (address) {
+        return address(AHC_contract);
+    }
+
 
     // IERC-721 Receiver Implementation
 

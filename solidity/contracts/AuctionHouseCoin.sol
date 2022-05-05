@@ -9,6 +9,8 @@ import "./IERC721.sol";
 
 contract AuctionHouseCoin is IERC165, IERC20, IERC20Metadata {
 
+    address owner;
+
     mapping(address => uint256) balances;
 
     // ERC-20
@@ -18,6 +20,15 @@ contract AuctionHouseCoin is IERC165, IERC20, IERC20Metadata {
     mapping(address => uint256) erc20_balances;
     mapping(address => mapping (address => uint256)) erc20_allowed;
     uint256 erc20_total_supply;
+
+    constructor(address _owner) {
+        owner = _owner;
+    }
+
+    modifier onlyOwner {
+        require(msg.sender == owner, "Only callable by owning House");
+    _;
+  }
 
     // IERC-165 Implementation
 
@@ -123,19 +134,20 @@ contract AuctionHouseCoin is IERC165, IERC20, IERC20Metadata {
     //     balances[msg.sender] = balance_less_amt;
     // }
 
-    function queryDeposit(address user) external view returns (uint256) {
+
+    function queryDeposit(address user) public view onlyOwner returns (uint256) {
       return balances[user];
     }
 
-    function setDeposit(address user, uint256 amount) public {
+    function setDeposit(address user, uint256 amount) public onlyOwner {
       balances[user] = amount;
     }
 
-    function incrementDeposit(address user, uint256 amount) public {
+    function incrementDeposit(address user, uint256 amount) public onlyOwner {
       balances[user] += amount;
     }
 
-    function decrementDeposit(address user, uint256 amount) public {
+    function decrementDeposit(address user, uint256 amount) public onlyOwner {
       balances[user] -= amount;
     }
 
