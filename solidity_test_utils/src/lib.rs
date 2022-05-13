@@ -59,6 +59,10 @@ pub fn encode_int_from_bytes(b: &[u8]) -> Token {
     Token::Uint(U256::from_big_endian(&b.to_vec()))
 }
 
+pub fn encode_bytes32(b: &[u8]) -> Token {
+    Token::FixedBytes(b.to_vec())
+}
+
 pub fn encode_bytes(b: &[u8]) -> Token {
     Token::Bytes(b.to_vec())
 }

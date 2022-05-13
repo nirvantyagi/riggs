@@ -5,6 +5,8 @@ use std::{
 
 pub mod auction;
 pub mod house;
+pub mod baseline_auction;
+pub mod baseline_house;
 
 pub type Error = Box<dyn ErrorTrait>;
 

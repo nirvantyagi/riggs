@@ -11,6 +11,10 @@ import "./BN254.sol";
     BN254.G1Point H;
   }
 
+  struct Comm {
+    BN254.G1Point comm;
+  }
+
   function publicParams() internal pure returns (Params memory pp) {
     pp.G = BN254.G1Point(<%ped_pp_g%>);
     pp.H = BN254.G1Point(<%ped_pp_h%>);
