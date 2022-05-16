@@ -391,6 +391,12 @@ pub fn encode_poe_proof<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest>
 
 // Commitments
 
+pub fn encode_ped_comm_struct<E: PairingEngine>(g: &E::G1Projective) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_group_element::<E>(&g));
+    Token::Tuple(tokens)
+}
+
 pub fn encode_fkps_comm<P: RsaGroupParams>(comm: &basic_tc::Comm<P>) -> Token {
     let mut tokens = Vec::new();
     tokens.push(encode_rsa_element(&comm.x));

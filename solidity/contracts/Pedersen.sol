@@ -12,7 +12,7 @@ import "./BN254.sol";
   }
 
   struct Comm {
-    BN254.G1Point comm;
+    BN254.G1Point g;
   }
 
   function publicParams() internal pure returns (Params memory pp) {

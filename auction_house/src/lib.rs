@@ -7,6 +7,8 @@ pub mod auction;
 pub mod house;
 pub mod baseline_auction;
 pub mod baseline_house;
+pub mod rp_auction;
+pub mod rp_house;
 
 pub type Error = Box<dyn ErrorTrait>;
 

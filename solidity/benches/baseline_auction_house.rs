@@ -28,7 +28,6 @@ const TIME_PARAM: u32 = 40;
 const NUM_BID_BITS: u64 = 32;
 const LOG_NUM_BID_BITS: u64 = 5;
 
-
 pub type Account = AccountPrivateState<Keccak256>;
 use ark_ff::UniformRand;
 
@@ -43,11 +42,10 @@ fn main() {
   let auction_pp = HouseAuctionParams {
     auction_pp: AuctionParams {
       t_bid_collection: Default::default(),
-      t_bid_self_open: Default::default()
+      t_bid_self_open: Default::default(),
     },
   };
-  let house_pp = HouseParams {
-  };
+  let house_pp = HouseParams {};
 
   // Setup EVM
   let mut evm = Evm::new();
@@ -352,8 +350,7 @@ fn main() {
     bidders
   };
 
-
-    // create new auction
+  // create new auction
   evm.set_block_number(1);
   let result = evm
     .call(
@@ -380,9 +377,11 @@ fn main() {
   {
     for i in 0..3_usize {
       let bid = (i as u32 + 1) * 20;
-        let collateral = bid;
+      let collateral = bid;
       let (bidder, bidder_addr) = bidders.get_mut(i).unwrap();
-      let (bid_proposal, opening) = bidder.propose_bid(&mut rng, &house_pp, &auction_pp, bid, collateral).unwrap();
+      let (bid_proposal, opening) = bidder
+        .propose_bid(&mut rng, &house_pp, &auction_pp, bid, collateral)
+        .unwrap();
 
       baseline_bids.push(bid);
       baseline_openings.push(opening);
@@ -406,7 +405,7 @@ fn main() {
       println!("Bidder {} placed bid: gas: {}", i, result.gas);
       // println!("{:?}", result);
 
-        bidder
+      bidder
         .confirm_bid(
           &house_pp,
           &auction_pp,
@@ -486,60 +485,60 @@ fn main() {
     //   .unwrap();
     // assert_eq!(&result.out, &to_be_bytes(&U256::from(2))); // Auction complete enum = 2
 
-  //   let (bidder, bidder_addr) = bidders.get(2).unwrap();
-  //   let (bid, _, comm) = bidder.active_bids.get(&0).unwrap();
-  //   let (_, opening) = TC::force_open(&time_pp, &ped_pp, comm).unwrap();
-  //   let (_opener, opener_addr) = bidders.get(0).unwrap();
-  //   let result = evm
-  //     .call(
-  //       contract
-  //         .encode_call_contract_bytes(
-  //           "forceOpenAuction",
-  //           &[
-  //             Token::Uint(U256::from(0)),
-  //             bidder_addr.as_token(),
-  //             Token::Uint(U256::from(*bid)),
-  //             encode_tc_opening(&opening),
-  //           ],
-  //         )
-  //         .unwrap(),
-  //       &contract_addr,
-  //       &opener_addr,
-  //     )
-  //     .unwrap();
-  //   println!("Bidder 0 force-opened bid 2: gas: {}", result.gas);
-  //   //println!("{:?}", result);
-  //   let (opener, _opener_addr) = bidders.get_mut(0).unwrap();
-  //   opener
-  //     .confirm_bid_force_open(&house_pp, &auction_pp)
-  //     .unwrap();
-  // }
+    //   let (bidder, bidder_addr) = bidders.get(2).unwrap();
+    //   let (bid, _, comm) = bidder.active_bids.get(&0).unwrap();
+    //   let (_, opening) = TC::force_open(&time_pp, &ped_pp, comm).unwrap();
+    //   let (_opener, opener_addr) = bidders.get(0).unwrap();
+    //   let result = evm
+    //     .call(
+    //       contract
+    //         .encode_call_contract_bytes(
+    //           "forceOpenAuction",
+    //           &[
+    //             Token::Uint(U256::from(0)),
+    //             bidder_addr.as_token(),
+    //             Token::Uint(U256::from(*bid)),
+    //             encode_tc_opening(&opening),
+    //           ],
+    //         )
+    //         .unwrap(),
+    //       &contract_addr,
+    //       &opener_addr,
+    //     )
+    //     .unwrap();
+    //   println!("Bidder 0 force-opened bid 2: gas: {}", result.gas);
+    //   //println!("{:?}", result);
+    //   let (opener, _opener_addr) = bidders.get_mut(0).unwrap();
+    //   opener
+    //     .confirm_bid_force_open(&house_pp, &auction_pp)
+    //     .unwrap();
+    // }
 
-  // // Withdrawal
-  // {
-  //   let (bidder, bidder_addr) = bidders.get_mut(0).unwrap();
-  //   let withdrawal_proof = bidder.propose_withdrawal(&mut rng, &house_pp, 65).unwrap();
-  //   let result = evm
-  //     .call(
-  //       contract
-  //         .encode_call_contract_bytes(
-  //           "withdraw",
-  //           &[
-  //             Token::Uint(U256::from(65)),
-  //             encode_bulletproof::<Bn254>(&withdrawal_proof),
-  //           ],
-  //         )
-  //         .unwrap(),
-  //       &contract_addr,
-  //       &bidder_addr,
-  //     )
-  //     .unwrap();
-  //   println!(
-  //     "Bidder 0 withdrew AHC from auction house balance: gas: {}",
-  //     result.gas
-  //   );
-  //   //println!("{:?}", result);
-  //   bidder.confirm_withdrawal(&house_pp, 65).unwrap();
+    // // Withdrawal
+    // {
+    //   let (bidder, bidder_addr) = bidders.get_mut(0).unwrap();
+    //   let withdrawal_proof = bidder.propose_withdrawal(&mut rng, &house_pp, 65).unwrap();
+    //   let result = evm
+    //     .call(
+    //       contract
+    //         .encode_call_contract_bytes(
+    //           "withdraw",
+    //           &[
+    //             Token::Uint(U256::from(65)),
+    //             encode_bulletproof::<Bn254>(&withdrawal_proof),
+    //           ],
+    //         )
+    //         .unwrap(),
+    //       &contract_addr,
+    //       &bidder_addr,
+    //     )
+    //     .unwrap();
+    //   println!(
+    //     "Bidder 0 withdrew AHC from auction house balance: gas: {}",
+    //     result.gas
+    //   );
+    //   //println!("{:?}", result);
+    //   bidder.confirm_withdrawal(&house_pp, 65).unwrap();
   }
 
   // Complete auction
