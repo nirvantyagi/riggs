@@ -34,6 +34,9 @@ contract AuctionHouse is IERC721Receiver {
         IERC721 token;
         uint256 token_id;
         address owner;
+        address winner;
+        uint256 first_price;
+        uint256 second_price;
     }
     
     enum AuctionPhase { BidCollection, BidSelfOpening, Complete }
@@ -105,6 +108,8 @@ contract AuctionHouse is IERC721Receiver {
         require(msg.sender == auction.token.ownerOf(token_id));  
         auction.token.safeTransferFrom(msg.sender, address(this), token_id); // Transfer token to house
         auction.owner = msg.sender;
+        auction.first_price = 0;
+        auction.second_price = 0;
         
         auction.start_block = block.number;
         auction.bid_collection_end_block = block.number + bid_collection_num_blocks;
@@ -176,7 +181,13 @@ contract AuctionHouse is IERC721Receiver {
         uint256 collateral = auction.bidder_to_collateral[msg.sender];
         require(bid > 0 && bid <= collateral);
         auction.total_valid_bids += 1;
-        // if (bid > 0 && queryDeposit(user) > bid) { auction.total_valid_bids += 1; }
+
+        // Update winner, prices
+        if (bid > auction.first_price) {
+            auction.winner = msg.sender;
+            auction.second_price = auction.first_price;
+            auction.first_price = bid;
+        }
 
         // Update state
         incrementDeposit(msg.sender, collateral-bid);
@@ -210,24 +221,26 @@ contract AuctionHouse is IERC721Receiver {
                 }
             }
         } else {
-            address high_bidder = auction.bidders_list[0];
-            address second_bidder = auction.bidders_list[1];
-            if (auction.bidder_to_bid[second_bidder] > auction.bidder_to_bid[high_bidder]) {
-                high_bidder = auction.bidders_list[1];
-                second_bidder = auction.bidders_list[0];
-            }
-            for (uint i = 2; i < auction.bidders_list.length; i++) {
-                address bidder = auction.bidders_list[i];
-                uint256 bid = auction.bidder_to_bid[bidder];
-                if (bid > auction.bidder_to_bid[high_bidder]) {
-                    second_bidder = high_bidder;
-                    high_bidder = bidder;
-                } else if (bid > auction.bidder_to_bid[second_bidder]) {
-                    second_bidder = bidder;
-                }
-            }
-            winner = high_bidder;
-            price = auction.bidder_to_bid[second_bidder];
+            // address high_bidder = auction.bidders_list[0];
+            // address second_bidder = auction.bidders_list[1];
+            // if (auction.bidder_to_bid[second_bidder] > auction.bidder_to_bid[high_bidder]) {
+            //     high_bidder = auction.bidders_list[1];
+            //     second_bidder = auction.bidders_list[0];
+            // }
+            // for (uint i = 2; i < auction.bidders_list.length; i++) {
+            //     address bidder = auction.bidders_list[i];
+            //     uint256 bid = auction.bidder_to_bid[bidder];
+            //     if (bid > auction.bidder_to_bid[high_bidder]) {
+            //         second_bidder = high_bidder;
+            //         high_bidder = bidder;
+            //     } else if (bid > auction.bidder_to_bid[second_bidder]) {
+            //         second_bidder = bidder;
+            //     }
+            // }
+            // winner = high_bidder;
+            // price = auction.bidder_to_bid[second_bidder];
+            winner = auction.winner;
+            price = auction.second_price;
         }
 
         // Return bids to those with valid bids
@@ -243,7 +256,7 @@ contract AuctionHouse is IERC721Receiver {
         incrementDeposit(auction.owner, price);
         auction.token.transferFrom(address(this), winner, auction.token_id);
         auction.start_block = 0;
-        return 0;
+        return price;
     }
 
 }

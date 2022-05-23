@@ -21,6 +21,8 @@ num-integer = { version = "0.1" }
 num-traits = { version = "0.2" }
 once_cell = { version = "1.9" }
 
+csv = "1.1.6"
+
 solidity_test_utils = { path = "../solidity_test_utils" }
 range_proofs = { path = "../range_proofs" }
 rsa = { path = "../rsa" }
@@ -75,4 +77,19 @@ harness = false
 [[bench]]
 name = "rp_auction_house"
 path = "benches/rp_auction_house.rs"
+harness = false
+
+[[bench]]
+name = "bench_baseline"
+path = "benches/bench_baseline.rs"
+harness = false
+
+[[bench]]
+name = "bench_auction_house"
+path = "benches/bench_auction_house.rs"
+harness = false
+
+[[bench]]
+name = "bench_rp"
+path = "benches/bench_rp.rs"
 harness = false

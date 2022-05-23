@@ -24,7 +24,6 @@ use solidity_test_utils::{
 use timed_commitments::{basic_tc, lazy_tc};
 
 use once_cell::sync::Lazy;
-
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
 

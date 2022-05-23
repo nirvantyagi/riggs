@@ -36,6 +36,9 @@ contract AuctionHouse is IERC721Receiver {
         IERC721 token;
         uint256 token_id;
         address owner;
+        address winner;
+        uint256 first_price;
+        uint256 second_price;
     }
 
     enum AuctionPhase { BidCollection, BidSelfOpening, BidForceOpening, Complete }
@@ -183,6 +186,13 @@ contract AuctionHouse is IERC721Receiver {
         // Verify opening
         require(TC.verOpen(auction.bidder_to_comm[msg.sender], opening, bid, TC.publicParams(auction.tc_partial)));
 
+        // Update winner, prices
+        if (bid > auction.first_price) {
+            auction.winner = msg.sender;
+            auction.second_price = auction.first_price;
+            auction.first_price = bid;
+        }
+
         // Update state
         incrementDeposit(msg.sender, auction.reward_self_open + auction.reward_force_open);
         auction.bidders[msg.sender] = false;  // TODO: Support multiple bids from single account
@@ -198,6 +208,14 @@ contract AuctionHouse is IERC721Receiver {
 
         // Verify opening
         require(TC.verForceOpen(auction.bidder_to_comm[bidder], opening, bid, TC.publicParams(auction.tc_partial)));
+
+        // Update winner, prices
+        if (bid > auction.first_price) {
+            auction.winner = bidder;
+            auction.second_price = auction.first_price;
+            auction.first_price = bid;
+        }
+
 
         // Update state
         incrementDeposit(msg.sender, auction.reward_force_open);
@@ -229,24 +247,26 @@ contract AuctionHouse is IERC721Receiver {
                 }
             }
         } else {
-            address high_bidder = auction.bidders_list[0];
-            address second_bidder = auction.bidders_list[1];
-            if (auction.bidder_to_bid[second_bidder] > auction.bidder_to_bid[high_bidder]) {
-                high_bidder = auction.bidders_list[1];
-                second_bidder = auction.bidders_list[0];
-            }
-            for (uint i = 2; i < auction.bidders_list.length; i++) {
-                address bidder = auction.bidders_list[i];
-                uint256 bid = auction.bidder_to_bid[bidder];
-                if (bid > auction.bidder_to_bid[high_bidder]) {
-                    second_bidder = high_bidder;
-                    high_bidder = bidder;
-                } else if (bid > auction.bidder_to_bid[second_bidder]) {
-                    second_bidder = bidder;
-                }
-            }
-            winner = high_bidder;
-            price = auction.bidder_to_bid[second_bidder];
+            // address high_bidder = auction.bidders_list[0];
+            // address second_bidder = auction.bidders_list[1];
+            // if (auction.bidder_to_bid[second_bidder] > auction.bidder_to_bid[high_bidder]) {
+            //     high_bidder = auction.bidders_list[1];
+            //     second_bidder = auction.bidders_list[0];
+            // }
+            // for (uint i = 2; i < auction.bidders_list.length; i++) {
+            //     address bidder = auction.bidders_list[i];
+            //     uint256 bid = auction.bidder_to_bid[bidder];
+            //     if (bid > auction.bidder_to_bid[high_bidder]) {
+            //         second_bidder = high_bidder;
+            //         high_bidder = bidder;
+            //     } else if (bid > auction.bidder_to_bid[second_bidder]) {
+            //         second_bidder = bidder;
+            //     }
+            // }
+            // winner = high_bidder;
+            // price = auction.bidder_to_bid[second_bidder];
+            winner = auction.winner;
+            price = auction.second_price;
         }
 
         // Update state

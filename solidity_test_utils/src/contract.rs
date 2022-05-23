@@ -61,7 +61,61 @@ impl Contract {
         Self::compile_from_config(&solc_config, contract_name)
     }
 
-    pub fn compile_from_config(
+    pub fn compile_from_config(config: &String, contract_name: &str) -> Result<Self, Error> {
+        // Compile source file using solc
+        // Configuration: https://docs.soliditylang.org/en/v0.8.10/using-the-compiler.html
+        let out = from_str::<serde_json::Value>(&compile(config))
+            .map_err(|_| Box::new(EvmTestError("solc compile failed".to_string())))?;
+
+        if out["errors"].is_array() {
+            if out["errors"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["severity"] == "error")
+            {
+                return Err(Box::new(EvmTestError(format!(
+                    "solc compiled with errors: {}",
+                    out["errors"]
+                ))));
+            }
+        }
+
+        let binary = {
+            let hex_code = out["contracts"]["input.sol"][contract_name]["evm"]["bytecode"]
+                ["object"]
+                .to_string()
+                .replace("\"", "");
+            let binary = hex::decode(&hex_code)
+                .map_err(|_| Box::new(EvmTestError("decode hex binary failed".to_string())))?;
+            //.map_err(|e| Box::new(e))?;
+            binary
+        };
+        // println!("Binary size: {}", binary.len());
+        if binary.len() > 24576 {
+            return Err(Box::new(EvmTestError(
+                "contract binary too large".to_string(),
+            )));
+        }
+        let abi = {
+            if out["contracts"]["input.sol"][contract_name]["abi"] == "null" {
+                return Err(Box::new(EvmTestError(
+                    "solc compiled with null abi".to_string(),
+                )));
+            }
+            let abi = ContractAbi::load(
+                out["contracts"]["input.sol"][contract_name]["abi"]
+                    .to_string()
+                    .as_bytes(),
+            )
+            .map_err(|_| Box::new(EvmTestError("ethabi failed loading abi".to_string())))?;
+            abi
+        };
+
+        Ok(Contract { binary, abi })
+    }
+
+    pub fn compile_from_config_no_print(
         config: &String,
         contract_name: &str,
     ) -> Result<Self, Error> {
@@ -91,12 +145,14 @@ impl Contract {
                 .replace("\"", "");
             let binary = hex::decode(&hex_code)
                 .map_err(|_| Box::new(EvmTestError("decode hex binary failed".to_string())))?;
-                //.map_err(|e| Box::new(e))?;
+            //.map_err(|e| Box::new(e))?;
             binary
         };
-        println!("Binary size: {}", binary.len());
+        // println!("Binary size: {}", binary.len());
         if binary.len() > 24576 {
-            return Err(Box::new(EvmTestError("contract binary too large".to_string())))
+            return Err(Box::new(EvmTestError(
+                "contract binary too large".to_string(),
+            )));
         }
         let abi = {
             if out["contracts"]["input.sol"][contract_name]["abi"] == "null" {
@@ -109,7 +165,7 @@ impl Contract {
                     .to_string()
                     .as_bytes(),
             )
-                .map_err(|_| Box::new(EvmTestError("ethabi failed loading abi".to_string())))?;
+            .map_err(|_| Box::new(EvmTestError("ethabi failed loading abi".to_string())))?;
             abi
         };
 
@@ -127,26 +183,30 @@ impl Contract {
                         ))
                     })?;
                 Ok(binary.to_vec())
-            },
+            }
             None => Ok(self.binary.clone()),
         }
     }
 
-    pub fn encode_call_contract_bytes(&self, fn_name: &str, input: &[Token]) -> Result<Vec<u8>, Error> {
+    pub fn encode_call_contract_bytes(
+        &self,
+        fn_name: &str,
+        input: &[Token],
+    ) -> Result<Vec<u8>, Error> {
         match self.abi.functions.get(fn_name) {
             Some(f) => {
                 //let c = f[0].inputs.iter().map(|p| p.kind.clone()).collect::<Vec<_>>();
                 //println!("{:?}", c);
-                let call_binary = f[0].encode_input(input)
-                    .map_err(|_| {
-                        Box::new(EvmTestError(
-                            "abi function failed to encode inputs".to_string(),
-                        ))
-                    })?;
+                let call_binary = f[0].encode_input(input).map_err(|_| {
+                    Box::new(EvmTestError(
+                        "abi function failed to encode inputs".to_string(),
+                    ))
+                })?;
                 Ok(call_binary.to_vec())
-            },
-            None => Err(Box::new(EvmTestError("abi does not include function".to_string()))),
+            }
+            None => Err(Box::new(EvmTestError(
+                "abi does not include function".to_string(),
+            ))),
         }
     }
-
 }
