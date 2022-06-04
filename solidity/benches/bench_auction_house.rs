@@ -105,7 +105,7 @@ fn main() {
   // csv writer
   let mut csv_writer = Writer::from_writer(stdout());
   csv_writer
-    .write_record(&["client_time", "server_time", "gas_cost"])
+    .write_record(&["function", "client_time", "server_time", "gas_cost"])
     .unwrap();
   csv_writer.flush().unwrap();
 
@@ -530,7 +530,7 @@ fn main() {
 
   // Benchmark: Create House
   csv_writer
-    .write_record(&["0", "0", &create_result.gas.to_string()])
+    .write_record(&["create_house", "0", "0", &create_result.gas.to_string()])
     .unwrap();
   csv_writer.flush().unwrap();
 
@@ -698,7 +698,7 @@ fn main() {
 
   // Benchmark: Create Auction
   csv_writer
-    .write_record(&["0", "0", &result.gas.to_string()])
+    .write_record(&["create_auction", "0", "0", &result.gas.to_string()])
     .unwrap();
   csv_writer.flush().unwrap();
   assert_eq!(&result.out, &to_be_bytes(&U256::from(0)));
@@ -763,6 +763,7 @@ fn main() {
     // Benchmark: Submit Bid
     csv_writer
       .write_record(&[
+        "submit_bid",
         &(place_bid_client / place_bid_count).to_string(),
         &(place_bid_server / place_bid_count).to_string(),
         &(place_bid_gas / place_bid_count).to_string(),
@@ -816,7 +817,7 @@ fn main() {
         )
         .unwrap();
 
-      self_open_gas = self_open_gas + result.gas as u64;
+      self_open_gas = result.gas as u64;
       self_open_count = self_open_count + 1;
       // println!("Bidder {} self-opened bid: gas: {}", i, result.gas);
 
@@ -846,10 +847,50 @@ fn main() {
   // Benchmark: Self Opening Bid
   csv_writer
     .write_record(&[
+      "self_open",
       &(self_open_client / self_open_count).to_string(),
       &(self_open_server / self_open_count).to_string(),
-      &(self_open_gas / self_open_count).to_string(),
+      &self_open_gas.to_string(),
     ])
+    .unwrap();
+  csv_writer.flush().unwrap();
+
+  let mut update_winnner_gas = 0;
+  // Benchmark: Update winner, prices
+  {
+    for i in 0..(n_bidders - 1) {
+      let (bidder, bidder_addr) = bidders.get_mut(i).unwrap();
+      // ClientTime
+      start = Instant::now();
+      let bidder_clone = bidder.clone();
+      let (bid, opening, _) = bidder_clone.active_bids.get(&0).unwrap();
+      end = start.elapsed().as_millis();
+      self_open_client = self_open_client + (end as u64);
+
+      let result = evm
+        .call(
+          contract
+            .encode_call_contract_bytes(
+              "updateWinnerPrices",
+              &[
+                Token::Uint(U256::from(0)),
+                bidder_addr.as_token(),
+                Token::Uint(U256::from(*bid)),
+              ],
+            )
+            .unwrap(),
+          &contract_addr,
+          &bidder_addr,
+        )
+        .unwrap();
+
+      update_winnner_gas = result.gas as u64;
+    }
+  }
+
+  // Benchmark: Update Prices
+  csv_writer
+    .write_record(&["update_prices", "0", "0", &update_winnner_gas.to_string()])
     .unwrap();
   csv_writer.flush().unwrap();
 
@@ -905,6 +946,24 @@ fn main() {
       .unwrap();
     // println!("Bidder 0 force-opened bid 2: gas: {}", result.gas);
 
+    // CALL UPDATE FUNCTION
+    let update_result = evm
+      .call(
+        contract
+          .encode_call_contract_bytes(
+            "updateWinnerPrices",
+            &[
+              Token::Uint(U256::from(0)),
+              bidder_addr.as_token(),
+              Token::Uint(U256::from(*bid)),
+            ],
+          )
+          .unwrap(),
+        &contract_addr,
+        &bidder_addr,
+      )
+      .unwrap();
+
     force_open_gas = force_open_gas + result.gas as u64;
     force_open_count = force_open_count + 1;
 
@@ -931,6 +990,7 @@ fn main() {
   // Benchmark: Force Opening Bid
   csv_writer
     .write_record(&[
+      "FORCE_OPEN",
       &(force_open_client / force_open_count).to_string(),
       &(force_open_server / force_open_count).to_string(),
       &(force_open_gas / force_open_count).to_string(),
@@ -970,6 +1030,8 @@ fn main() {
   let mut complete_server = 0;
   let mut complete_gas = 0;
   let mut complete_count = 0;
+
+  let winner = 2;
 
   {
     let result = evm
@@ -1068,10 +1130,39 @@ fn main() {
 
   csv_writer
     .write_record(&[
+      "complete_auction",
       "0",
       &(complete_server / 1).to_string(),
       &(complete_gas / 1).to_string(),
     ])
+    .unwrap();
+  csv_writer.flush().unwrap();
+
+  let mut reclaim_server = 0;
+  let mut reclaim_gas = 0;
+  let mut reclaim_count = 0;
+
+  for i in 0..n_bidders {
+    if i == winner {
+      continue;
+    }
+    let (bidder, bidder_addr) = bidders.get_mut(i).unwrap();
+    start = Instant::now();
+    let result = evm
+      .call(
+        contract
+          .encode_call_contract_bytes("reclaim", &[Token::Uint(U256::from(0))])
+          .unwrap(),
+        &contract_addr,
+        &bidder_addr,
+      )
+      .unwrap();
+
+    reclaim_gas = result.gas;
+  }
+
+  csv_writer
+    .write_record(&["reclaim", "0", "0", &(reclaim_gas / 1).to_string()])
     .unwrap();
   csv_writer.flush().unwrap();
 
