@@ -1,31 +1,26 @@
 use ark_ec::ProjectiveCurve;
 
-use num_traits::{Zero};
-use digest::Digest;
-use rand::{CryptoRng, Rng};
-use std::{
-    collections::{HashMap},
-    marker::PhantomData,
-};
-use std::ops::{Neg};
 use ark_ff::PrimeField;
+use digest::Digest;
+use num_traits::Zero;
+use rand::{CryptoRng, Rng};
+use std::ops::Neg;
+use std::{collections::HashMap, marker::PhantomData};
 
+use crate::{
+    auction::{Auction, AuctionParams, AuctionPhase},
+    AuctionError, Error,
+};
+use range_proofs::bulletproofs::{Bulletproofs, Params as RangeProofParams, Proof as RangeProof};
 use rsa::{
-    bigint::{BigInt, nat_to_f},
-    hog::{RsaGroupParams},
-    poe::{PoEParams},
+    bigint::{nat_to_f, BigInt},
     hash_to_prime::HashToPrime,
+    hog::RsaGroupParams,
+    poe::PoEParams,
 };
 use timed_commitments::{
-    PedersenParams,
     lazy_tc::{Comm as TCComm, Opening as TCOpening},
-};
-use range_proofs::bulletproofs::{
-    Bulletproofs, Params as RangeProofParams, Proof as RangeProof,
-};
-use crate::{
-    Error, AuctionError,
-    auction::{AuctionPhase, AuctionParams, Auction},
+    PedersenParams,
 };
 
 const BID_BITS: u32 = 32;
@@ -50,18 +45,30 @@ pub struct AccountSummary<G: ProjectiveCurve> {
     pub comm_active_bids: G,
 }
 
-pub struct AuctionHouse<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> {
-    active_auctions: HashMap<u32, (Auction<G, PoEP, RsaP, H, H2P>, HashMap<u32, u32>)>,  // auction_id -> (auction, (user_id -> bid_id))
-    accounts: HashMap<u32, AccountSummary<G>>,  // user_id -> account_info
+pub struct AuctionHouse<
+    G: ProjectiveCurve,
+    PoEP: PoEParams,
+    RsaP: RsaGroupParams,
+    H: Digest,
+    H2P: HashToPrime,
+> {
+    active_auctions: HashMap<u32, (Auction<G, PoEP, RsaP, H, H2P>, HashMap<u32, u32>)>, // auction_id -> (auction, (user_id -> bid_id))
+    accounts: HashMap<u32, AccountSummary<G>>, // user_id -> account_info
     //TODO: Will eventually overflow, use hash or replace finished auction ids
     ctr_auction: u32,
     ctr_account: u32,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct AccountPrivateState<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> {
+pub struct AccountPrivateState<
+    G: ProjectiveCurve,
+    PoEP: PoEParams,
+    RsaP: RsaGroupParams,
+    H: Digest,
+    H2P: HashToPrime,
+> {
     pub public_summary: AccountSummary<G>,
-    pub active_bids: HashMap<u32, (u32, TCOpening<G, RsaP, H2P>, TCComm<G, RsaP>)>,  // auction_id -> (bid, opening, comm)
+    pub active_bids: HashMap<u32, (u32, TCOpening<G, RsaP, H2P>, TCComm<G, RsaP>)>, // auction_id -> (bid, opening, comm)
     pub sum_active_bids: u32,
     pub opening_active_bids: G::ScalarField,
     _auction: PhantomData<Auction<G, PoEP, RsaP, H, H2P>>,
@@ -73,10 +80,15 @@ pub struct BidProposal<G: ProjectiveCurve, RsaP: RsaGroupParams> {
     pub range_proof_balance: RangeProof<G>,
 }
 
-impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> AccountPrivateState<G, PoEP, RsaP, H, H2P> {
+impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
+    AccountPrivateState<G, PoEP, RsaP, H, H2P>
+{
     pub fn new() -> Self {
         Self {
-            public_summary: AccountSummary { balance: 0, comm_active_bids: G::zero() },
+            public_summary: AccountSummary {
+                balance: 0,
+                comm_active_bids: G::zero(),
+            },
             active_bids: HashMap::new(),
             sum_active_bids: 0,
             opening_active_bids: G::ScalarField::zero(),
@@ -91,10 +103,13 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         auction_pp: &HouseAuctionParams<G, RsaP>,
         bid: u32,
     ) -> Result<(BidProposal<G, RsaP>, TCOpening<G, RsaP, H2P>), Error> {
-        if self.sum_active_bids + bid + auction_pp.reward_self_open + auction_pp.reward_force_open > self.public_summary.balance {
-            return Err(Box::new(AuctionError::InvalidBid))
+        if self.sum_active_bids + bid + auction_pp.reward_self_open + auction_pp.reward_force_open
+            > self.public_summary.balance
+        {
+            return Err(Box::new(AuctionError::InvalidBid));
         }
-        let (comm_bid, opening_bid) = Auction::<G, PoEP, RsaP, H, H2P>::client_create_bid(rng, &auction_pp.auction_pp, bid)?;
+        let (comm_bid, opening_bid) =
+            Auction::<G, PoEP, RsaP, H, H2P>::client_create_bid(rng, &auction_pp.auction_pp, bid)?;
         // Prove bid > 0
         let range_proof_bid = Bulletproofs::<G, H>::prove_range(
             rng,
@@ -106,9 +121,17 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             BID_BITS as u64,
         )?;
         // Prove balance - reward - bid - active_bids > 0
-        let balance_less_reward = self.public_summary.balance - auction_pp.reward_self_open - auction_pp.reward_force_open;
+        let balance_less_reward = self.public_summary.balance
+            - auction_pp.reward_self_open
+            - auction_pp.reward_force_open;
         let f_balance_less_reward = nat_to_f::<G::ScalarField>(&BigInt::from(balance_less_reward))?;
-        let comm_balance = auction_pp.auction_pp.ped_pp.g.mul(&f_balance_less_reward.into_repr()) - &comm_bid.ped_comm - &self.public_summary.comm_active_bids;
+        let comm_balance = auction_pp
+            .auction_pp
+            .ped_pp
+            .g
+            .mul(&f_balance_less_reward.into_repr())
+            - &comm_bid.ped_comm
+            - &self.public_summary.comm_active_bids;
         let range_proof_balance = Bulletproofs::<G, H>::prove_range(
             rng,
             &house_pp.range_proof_pp,
@@ -143,7 +166,10 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         self.sum_active_bids += bid;
         self.opening_active_bids += opening.get_ped_opening();
         self.public_summary.comm_active_bids += proposal.comm_bid.ped_comm;
-        self.active_bids.insert(auction_id, (bid, opening.clone(), proposal.comm_bid.clone()));
+        self.active_bids.insert(
+            auction_id,
+            (bid, opening.clone(), proposal.comm_bid.clone()),
+        );
         Ok(())
     }
 
@@ -173,7 +199,10 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         price: u32,
     ) -> Result<(), Error> {
         {
-            let (bid, opening, bid_comm) = self.active_bids.get(&auction_id).ok_or(Box::new(AuctionError::InvalidID))?;
+            let (bid, opening, bid_comm) = self
+                .active_bids
+                .get(&auction_id)
+                .ok_or(Box::new(AuctionError::InvalidID))?;
             self.public_summary.balance -= price;
             self.sum_active_bids -= bid;
             self.opening_active_bids -= opening.get_ped_opening();
@@ -190,7 +219,10 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         auction_id: u32,
     ) -> Result<(), Error> {
         {
-            let (bid, opening, bid_comm) = self.active_bids.get(&auction_id).ok_or(Box::new(AuctionError::InvalidID))?;
+            let (bid, opening, bid_comm) = self
+                .active_bids
+                .get(&auction_id)
+                .ok_or(Box::new(AuctionError::InvalidID))?;
             self.sum_active_bids -= bid;
             self.opening_active_bids -= opening.get_ped_opening();
             self.public_summary.comm_active_bids -= bid_comm.ped_comm;
@@ -199,11 +231,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         Ok(())
     }
 
-    pub fn confirm_deposit(
-        &mut self,
-        _house_pp: &HouseParams<G>,
-        amt: u32,
-    ) -> Result<(), Error> {
+    pub fn confirm_deposit(&mut self, _house_pp: &HouseParams<G>, amt: u32) -> Result<(), Error> {
         self.public_summary.balance += amt;
         Ok(())
     }
@@ -215,12 +243,13 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         amt: u32,
     ) -> Result<RangeProof<G>, Error> {
         if self.sum_active_bids > self.public_summary.balance - amt {
-            return Err(Box::new(AuctionError::InvalidBid))
+            return Err(Box::new(AuctionError::InvalidBid));
         }
         // Prove balance - amt - active_bids > 0
         let balance_less_amt = self.public_summary.balance - amt;
         let f_balance_less_amt = nat_to_f::<G::ScalarField>(&BigInt::from(balance_less_amt))?;
-        let comm_balance = house_pp.ped_pp.g.mul(&f_balance_less_amt.into_repr()) - &self.public_summary.comm_active_bids;
+        let comm_balance = house_pp.ped_pp.g.mul(&f_balance_less_amt.into_repr())
+            - &self.public_summary.comm_active_bids;
         let range_proof_balance = Bulletproofs::<G, H>::prove_range(
             rng,
             &house_pp.range_proof_pp,
@@ -243,14 +272,15 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
     }
 }
 
-
-impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime> AuctionHouse<G, PoEP, RsaP, H, H2P> {
+impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
+    AuctionHouse<G, PoEP, RsaP, H, H2P>
+{
     pub fn new(_house_pp: &HouseParams<G>) -> Self {
         Self {
             active_auctions: HashMap::new(),
             accounts: HashMap::new(),
             ctr_auction: 0,
-            ctr_account: 0
+            ctr_account: 0,
         }
     }
 
@@ -265,8 +295,15 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         (user_id, user_summary)
     }
 
-    pub fn account_deposit(&mut self, _house_pp: &HouseParams<G>, user_id: u32, amt: u32) -> Result<(), Error> {
-        let summary = self.accounts.get_mut(&user_id)
+    pub fn account_deposit(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        user_id: u32,
+        amt: u32,
+    ) -> Result<(), Error> {
+        let summary = self
+            .accounts
+            .get_mut(&user_id)
             .ok_or(Box::new(AuctionError::InvalidID))?;
         summary.balance += amt;
         Ok(())
@@ -279,11 +316,14 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         amt: u32,
         proof: &RangeProof<G>,
     ) -> Result<(), Error> {
-        let user_summary = self.accounts.get_mut(&user_id)
+        let user_summary = self
+            .accounts
+            .get_mut(&user_id)
             .ok_or(Box::new(AuctionError::InvalidID))?;
         let balance_less_amt = user_summary.balance - amt;
         let f_balance_less_amt = nat_to_f::<G::ScalarField>(&BigInt::from(balance_less_amt))?;
-        let comm_balance = house_pp.ped_pp.g.mul(&f_balance_less_amt.into_repr()) - &user_summary.comm_active_bids;
+        let comm_balance =
+            house_pp.ped_pp.g.mul(&f_balance_less_amt.into_repr()) - &user_summary.comm_active_bids;
         if !Bulletproofs::<G, H>::verify_range(
             &house_pp.range_proof_pp,
             &house_pp.ped_pp,
@@ -320,9 +360,13 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         user_id: u32,
         bid: &BidProposal<G, RsaP>,
     ) -> Result<(), Error> {
-        let user_summary = self.accounts.get_mut(&user_id)
+        let user_summary = self
+            .accounts
+            .get_mut(&user_id)
             .ok_or(Box::new(AuctionError::InvalidID))?;
-        let (auction, bid_map) = self.active_auctions.get_mut(&auction_id)
+        let (auction, bid_map) = self
+            .active_auctions
+            .get_mut(&auction_id)
             .ok_or(Box::new(AuctionError::InvalidID))?;
         // TODO: Allow multiple bids from a single user
         if bid_map.contains_key(&user_id) {
@@ -339,9 +383,12 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             return Err(Box::new(AuctionError::InvalidBid));
         }
         // Verify balance - reward - bid - active_bids > 0
-        let balance_less_reward = user_summary.balance - auction_pp.reward_self_open - auction_pp.reward_force_open;
+        let balance_less_reward =
+            user_summary.balance - auction_pp.reward_self_open - auction_pp.reward_force_open;
         let f_balance_less_reward = nat_to_f::<G::ScalarField>(&BigInt::from(balance_less_reward))?;
-        let comm_balance = house_pp.ped_pp.g.mul(&f_balance_less_reward.into_repr()) - &bid.comm_bid.ped_comm - &user_summary.comm_active_bids;
+        let comm_balance = house_pp.ped_pp.g.mul(&f_balance_less_reward.into_repr())
+            - &bid.comm_bid.ped_comm
+            - &user_summary.comm_active_bids;
         if !Bulletproofs::<G, H>::verify_range(
             &house_pp.range_proof_pp,
             &house_pp.ped_pp,
@@ -368,11 +415,16 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         bid: u32,
         opening: &TCOpening<G, RsaP, H2P>,
     ) -> Result<(), Error> {
-        let user_summary = self.accounts.get_mut(&user_id)
+        let user_summary = self
+            .accounts
+            .get_mut(&user_id)
             .ok_or(Box::new(AuctionError::InvalidID))?;
-        let (auction, bid_map) = self.active_auctions.get_mut(&auction_id)
+        let (auction, bid_map) = self
+            .active_auctions
+            .get_mut(&auction_id)
             .ok_or(Box::new(AuctionError::InvalidID))?;
-        let bid_id = bid_map.get(&user_id)
+        let bid_id = bid_map
+            .get(&user_id)
             .ok_or(Box::new(AuctionError::InvalidID))?;
         // Update state
         auction.accept_self_opening(&auction_pp.auction_pp, bid, opening, *bid_id as usize)?;
@@ -390,9 +442,13 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         bid: Option<u32>,
         opening: &TCOpening<G, RsaP, H2P>,
     ) -> Result<(), Error> {
-        let user_summary = self.accounts.get_mut(&user_id)
+        let user_summary = self
+            .accounts
+            .get_mut(&user_id)
             .ok_or(Box::new(AuctionError::InvalidID))?;
-        let (auction, _) = self.active_auctions.get_mut(&auction_id)
+        let (auction, _) = self
+            .active_auctions
+            .get_mut(&auction_id)
             .ok_or(Box::new(AuctionError::InvalidID))?;
         // Update state
         auction.accept_force_opening(&auction_pp.auction_pp, bid, opening, bid_id as usize)?;
@@ -409,12 +465,15 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         k: usize,
     ) -> Result<(u32, Vec<u32>), Error> {
         let (price, winners) = {
-            let (auction, bid_map) = self.active_auctions.get(&auction_id)
+            let (auction, bid_map) = self
+                .active_auctions
+                .get(&auction_id)
                 .ok_or(Box::new(AuctionError::InvalidID))?;
             if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
                 return Err(Box::new(AuctionError::InvalidPhase));
             }
-            let mut bids = bid_map.iter()
+            let mut bids = bid_map
+                .iter()
                 .map(|(uid, bid_id)| (*uid, auction.bid_openings.get(&(*bid_id as usize)).unwrap()))
                 .filter(|(_uid, bid)| bid.is_some())
                 .map(|(uid, bid)| (uid, bid.unwrap()))
@@ -426,7 +485,8 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             let k1_index = bids.len() - (k + 1);
             bids.select_nth_unstable_by_key(k1_index, |(_, bid)| *bid);
             let price = bids[k1_index].1;
-            let winners = bids[k1_index + 1..].iter()
+            let winners = bids[k1_index + 1..]
+                .iter()
                 .map(|(uid, _)| *uid)
                 .collect::<Vec<_>>();
 
@@ -439,7 +499,60 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
             }
             (price, winners)
         };
-        self.active_auctions.remove(&auction_id);
+        //self.active_auctions.remove(&auction_id);
+        Ok((price, winners))
+    }
+
+    // Dummy function
+    pub fn complete_fixed_price(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        auction_pp: &HouseAuctionParams<G, RsaP>,
+        auction_id: u32,
+        k: usize,
+    ) -> Result<(u32, Vec<u32>), Error> {
+        let (price, winners) = {
+            let (auction, bid_map) = self
+                .active_auctions
+                .get(&auction_id)
+                .ok_or(Box::new(AuctionError::InvalidID))?;
+            if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
+                // return Err(Box::new(AuctionError::InvalidPhase));
+            }
+            let mut bids = bid_map
+                .iter()
+                .map(|(uid, bid_id)| (*uid, auction.bid_openings.get(&(*bid_id as usize)).unwrap()))
+                .filter(|(_uid, bid)| bid.is_some())
+                .map(|(uid, bid)| (uid, bid.unwrap()))
+                .collect::<Vec<_>>();
+
+            assert!(bids.len() > k as usize);
+
+            // // TODO: Does not handle tie bids. Currently tie is broken by unstable selection algo.
+            // let k1_index = bids.len() - (k + 1);
+            // bids.select_nth_unstable_by_key(k1_index, |(_, bid)| *bid);
+            // let price = bids[k1_index].1;
+            // let winners = bids[k1_index + 1..]
+            //     .iter()
+            //     .map(|(uid, _)| *uid)
+            //     .collect::<Vec<_>>();
+
+            // let price = 0;
+            // let winners = vec![1];
+
+            // for (uid, bid_id) in bid_map.iter() {
+            //     let bid_comm = auction.bid_comms_i.get(&(*bid_id as usize)).unwrap();
+            //     self.accounts.get_mut(uid).unwrap().comm_active_bids -= bid_comm.ped_comm;
+            // }
+            // for uid in winners.iter() {
+            //     self.accounts.get_mut(uid).unwrap().balance -= price;
+            // }
+            // (price, winners)
+
+            self.accounts.get_mut(&1).unwrap().balance -= 0;
+            (0, vec![1])
+        };
+        // self.active_auctions.remove(&auction_id);
         Ok((price, winners))
     }
 }
@@ -451,11 +564,7 @@ mod tests {
     use once_cell::sync::Lazy;
     use rand::{rngs::StdRng, SeedableRng};
     use sha3::Keccak256;
-    use std::{
-        str::FromStr,
-        thread,
-        time::Duration,
-    };
+    use std::{str::FromStr, thread, time::Duration};
 
     use rsa::{
         bigint::BigInt,
@@ -539,7 +648,7 @@ mod tests {
                 ped_pp: ped_pp.clone(),
             },
             reward_self_open: 200,
-            reward_force_open: 300
+            reward_force_open: 300,
         };
         let auction2_pp = HouseAuctionParams {
             auction_pp: AuctionParams {
@@ -549,7 +658,7 @@ mod tests {
                 ped_pp: ped_pp.clone(),
             },
             reward_self_open: 200,
-            reward_force_open: 300
+            reward_force_open: 300,
         };
 
         let house_pp = HouseParams {
@@ -558,14 +667,18 @@ mod tests {
         };
 
         let mut auction_house = TestAuctionHouse::new(&house_pp);
-        let mut users = (0..10).map(|i| {
-            let mut user = TestUser::new();
-            let (uid, _) = auction_house.new_account(&house_pp);
-            assert_eq!(uid, i);
-            auction_house.account_deposit(&house_pp, uid, 10000).unwrap();
-            user.confirm_deposit(&house_pp, 10000).unwrap();
-            user
-        }).collect::<Vec<TestUser>>();
+        let mut users = (0..10)
+            .map(|i| {
+                let mut user = TestUser::new();
+                let (uid, _) = auction_house.new_account(&house_pp);
+                assert_eq!(uid, i);
+                auction_house
+                    .account_deposit(&house_pp, uid, 10000)
+                    .unwrap();
+                user.confirm_deposit(&house_pp, 10000).unwrap();
+                user
+            })
+            .collect::<Vec<TestUser>>();
 
         // Start auctions
         let auction1_id = auction_house.new_auction(&house_pp, &auction1_pp);
@@ -573,216 +686,239 @@ mod tests {
         let auction3_id = auction_house.new_auction(&house_pp, &auction2_pp);
 
         // Bid on auction 1
-        let auction1_openings = users.iter_mut().enumerate().map(|(uid, user)| {
-            let bid = (uid as u32 + 1) * 100;
-            let (proposal, opening) = user.propose_bid(
-                &mut rng,
-                &house_pp,
-                &auction1_pp,
-                bid,
-            ).unwrap();
-            println!("Auction 1 bid: uid: {}", uid);
-            auction_house.account_bid(
-                &house_pp,
-                &auction1_pp,
-                auction1_id,
-                uid as u32,
-                &proposal,
-            ).unwrap();
-            user.confirm_bid(
-                &house_pp,
-                &auction1_pp,
-                auction1_id,
-                bid,
-                &proposal,
-                &opening,
-            ).unwrap();
-            opening
-        }).collect::<Vec<_>>();
+        let auction1_openings = users
+            .iter_mut()
+            .enumerate()
+            .map(|(uid, user)| {
+                let bid = (uid as u32 + 1) * 100;
+                let (proposal, opening) = user
+                    .propose_bid(&mut rng, &house_pp, &auction1_pp, bid)
+                    .unwrap();
+                println!("Auction 1 bid: uid: {}", uid);
+                auction_house
+                    .account_bid(&house_pp, &auction1_pp, auction1_id, uid as u32, &proposal)
+                    .unwrap();
+                user.confirm_bid(
+                    &house_pp,
+                    &auction1_pp,
+                    auction1_id,
+                    bid,
+                    &proposal,
+                    &opening,
+                )
+                .unwrap();
+                opening
+            })
+            .collect::<Vec<_>>();
 
         // Bid on auction 2
-        let _auction2_openings = users.iter_mut().enumerate().map(|(uid, user)| {
-            let bid = (uid as u32 + 1) * 200;
-            let (proposal, opening) = user.propose_bid(
-                &mut rng,
-                &house_pp,
-                &auction2_pp,
-                bid,
-            ).unwrap();
-            println!("Auction 2 bid: uid: {}", uid);
-            auction_house.account_bid(
-                &house_pp,
-                &auction2_pp,
-                auction2_id,
-                uid as u32,
-                &proposal,
-            ).unwrap();
-            user.confirm_bid(
-                &house_pp,
-                &auction2_pp,
-                auction2_id,
-                bid,
-                &proposal,
-                &opening,
-            ).unwrap();
-            opening
-        }).collect::<Vec<_>>();
+        let _auction2_openings = users
+            .iter_mut()
+            .enumerate()
+            .map(|(uid, user)| {
+                let bid = (uid as u32 + 1) * 200;
+                let (proposal, opening) = user
+                    .propose_bid(&mut rng, &house_pp, &auction2_pp, bid)
+                    .unwrap();
+                println!("Auction 2 bid: uid: {}", uid);
+                auction_house
+                    .account_bid(&house_pp, &auction2_pp, auction2_id, uid as u32, &proposal)
+                    .unwrap();
+                user.confirm_bid(
+                    &house_pp,
+                    &auction2_pp,
+                    auction2_id,
+                    bid,
+                    &proposal,
+                    &opening,
+                )
+                .unwrap();
+                opening
+            })
+            .collect::<Vec<_>>();
 
         // Withdrawal tests (uid9 balance 6000)
         assert_eq!(auction_house.accounts.get(&9).unwrap().balance, 9000);
         assert_eq!(users.get(9).unwrap().sum_active_bids, 3000);
 
         // Invalid withdrawal
-        assert!(users.get(9).unwrap().propose_withdrawal(
-            &mut rng,
-            &house_pp,
-            6250,
-        ).is_err());
+        assert!(users
+            .get(9)
+            .unwrap()
+            .propose_withdrawal(&mut rng, &house_pp, 6250,)
+            .is_err());
 
-        users.get_mut(9).unwrap().confirm_deposit(&house_pp, 1000).unwrap();
-        let invalid_withdraw_proof = users.get(9).unwrap().propose_withdrawal(
-            &mut rng,
-            &house_pp,
-            6250,
-        ).unwrap();
-        assert!(auction_house.account_withdrawal(
-            &house_pp,
-            9,
-            6250,
-            &invalid_withdraw_proof,
-        ).is_err());
-        users.get_mut(9).unwrap().confirm_withdrawal(&house_pp, 1000).unwrap();
+        users
+            .get_mut(9)
+            .unwrap()
+            .confirm_deposit(&house_pp, 1000)
+            .unwrap();
+        let invalid_withdraw_proof = users
+            .get(9)
+            .unwrap()
+            .propose_withdrawal(&mut rng, &house_pp, 6250)
+            .unwrap();
+        assert!(auction_house
+            .account_withdrawal(&house_pp, 9, 6250, &invalid_withdraw_proof,)
+            .is_err());
+        users
+            .get_mut(9)
+            .unwrap()
+            .confirm_withdrawal(&house_pp, 1000)
+            .unwrap();
 
         // Valid withdrawal
-        let withdraw_proof = users.get(9).unwrap().propose_withdrawal(
-            &mut rng,
-            &house_pp,
-            4000,
-        ).unwrap();
-        auction_house.account_withdrawal(
-            &house_pp,
-            9,
-            4000,
-            &withdraw_proof,
-        ).unwrap();
-        users.get_mut(9).unwrap().confirm_withdrawal(&house_pp, 4000).unwrap();
+        let withdraw_proof = users
+            .get(9)
+            .unwrap()
+            .propose_withdrawal(&mut rng, &house_pp, 4000)
+            .unwrap();
+        auction_house
+            .account_withdrawal(&house_pp, 9, 4000, &withdraw_proof)
+            .unwrap();
+        users
+            .get_mut(9)
+            .unwrap()
+            .confirm_withdrawal(&house_pp, 4000)
+            .unwrap();
         assert_eq!(auction_house.accounts.get(&9).unwrap().balance, 5000);
 
         // Invalid bid on auction 3
-        assert!(users.get(9).unwrap().propose_bid(
-            &mut rng,
-            &house_pp,
-            &auction2_pp,
-            1600,
-        ).is_err());
+        assert!(users
+            .get(9)
+            .unwrap()
+            .propose_bid(&mut rng, &house_pp, &auction2_pp, 1600,)
+            .is_err());
 
-        users.get_mut(9).unwrap().confirm_deposit(&house_pp, 500).unwrap();
-        let invalid_bid_proposal = users.get(9).unwrap().propose_bid(
-            &mut rng,
-            &house_pp,
-            &auction2_pp,
-            1600,
-        ).unwrap();
-        assert!(auction_house.account_bid(
-            &house_pp,
-            &auction2_pp,
-            auction3_id,
-            9,
-            &invalid_bid_proposal.0,
-        ).is_err());
-        users.get_mut(9).unwrap().confirm_withdrawal(&house_pp, 500).unwrap();
+        users
+            .get_mut(9)
+            .unwrap()
+            .confirm_deposit(&house_pp, 500)
+            .unwrap();
+        let invalid_bid_proposal = users
+            .get(9)
+            .unwrap()
+            .propose_bid(&mut rng, &house_pp, &auction2_pp, 1600)
+            .unwrap();
+        assert!(auction_house
+            .account_bid(
+                &house_pp,
+                &auction2_pp,
+                auction3_id,
+                9,
+                &invalid_bid_proposal.0,
+            )
+            .is_err());
+        users
+            .get_mut(9)
+            .unwrap()
+            .confirm_withdrawal(&house_pp, 500)
+            .unwrap();
 
         // Return self-opening rewards of auction 1
-        println!("Sleeping for Auction 1 bid collection: {} seconds", auction1_pp.auction_pp.t_bid_collection.as_secs());
+        println!(
+            "Sleeping for Auction 1 bid collection: {} seconds",
+            auction1_pp.auction_pp.t_bid_collection.as_secs()
+        );
         thread::sleep(auction1_pp.auction_pp.t_bid_collection);
 
-        users.iter_mut()
+        users
+            .iter_mut()
             .zip(auction1_openings.iter())
             .enumerate()
             .skip(1)
             .for_each(|(uid, (user, opening))| {
                 println!("Auction 1 self-open: uid: {}", uid);
                 let bid = (uid as u32 + 1) * 100;
-                auction_house.account_self_open(
-                    &house_pp,
-                    &auction1_pp,
-                    auction1_id,
-                    uid as u32,
-                    bid,
-                    opening,
-                ).unwrap();
+                auction_house
+                    .account_self_open(
+                        &house_pp,
+                        &auction1_pp,
+                        auction1_id,
+                        uid as u32,
+                        bid,
+                        opening,
+                    )
+                    .unwrap();
                 user.confirm_bid_self_open(&house_pp, &auction2_pp).unwrap();
             });
         assert_eq!(auction_house.accounts.get(&9).unwrap().balance, 5500);
 
         // Valid bid on auction 3
-        let bid_proposal = users.get(9).unwrap().propose_bid(
-            &mut rng,
-            &house_pp,
-            &auction2_pp,
-            1600,
-        ).unwrap();
-        auction_house.account_bid(
-            &house_pp,
-            &auction2_pp,
-            auction3_id,
-            9,
-            &bid_proposal.0,
-        ).unwrap();
-        users.get_mut(9).unwrap().confirm_bid(
-            &house_pp,
-            &auction2_pp,
-            auction3_id,
-            1600,
-            &bid_proposal.0,
-            &bid_proposal.1,
-        ).unwrap();
+        let bid_proposal = users
+            .get(9)
+            .unwrap()
+            .propose_bid(&mut rng, &house_pp, &auction2_pp, 1600)
+            .unwrap();
+        auction_house
+            .account_bid(&house_pp, &auction2_pp, auction3_id, 9, &bid_proposal.0)
+            .unwrap();
+        users
+            .get_mut(9)
+            .unwrap()
+            .confirm_bid(
+                &house_pp,
+                &auction2_pp,
+                auction3_id,
+                1600,
+                &bid_proposal.0,
+                &bid_proposal.1,
+            )
+            .unwrap();
         assert_eq!(auction_house.accounts.get(&9).unwrap().balance, 5000);
         assert_eq!(users.get(9).unwrap().sum_active_bids, 4600);
 
         // Complete auction 1
-        println!("Sleeping for Auction 1 bid self-open: {} seconds", auction1_pp.auction_pp.t_bid_self_open.as_secs());
+        println!(
+            "Sleeping for Auction 1 bid self-open: {} seconds",
+            auction1_pp.auction_pp.t_bid_self_open.as_secs()
+        );
         thread::sleep(auction1_pp.auction_pp.t_bid_self_open);
 
         assert_eq!(auction_house.accounts.get(&0).unwrap().balance, 9000);
         assert_eq!(users.get(0).unwrap().sum_active_bids, 300);
-        let (bid, force_opening) = auction_house.active_auctions.get(&auction1_id).unwrap().0.force_open_bid(&auction1_pp.auction_pp, 0).unwrap();
-        auction_house.account_force_open(
-            &house_pp,
-            &auction1_pp,
-            auction1_id,
-            9,
-            0,
-            bid,
-            &force_opening,
-        ).unwrap();
-        users.get_mut(9).unwrap().confirm_bid_force_open(
-            &house_pp,
-            &auction1_pp,
-        ).unwrap();
+        let (bid, force_opening) = auction_house
+            .active_auctions
+            .get(&auction1_id)
+            .unwrap()
+            .0
+            .force_open_bid(&auction1_pp.auction_pp, 0)
+            .unwrap();
+        auction_house
+            .account_force_open(
+                &house_pp,
+                &auction1_pp,
+                auction1_id,
+                9,
+                0,
+                bid,
+                &force_opening,
+            )
+            .unwrap();
+        users
+            .get_mut(9)
+            .unwrap()
+            .confirm_bid_force_open(&house_pp, &auction1_pp)
+            .unwrap();
         assert_eq!(auction_house.accounts.get(&9).unwrap().balance, 5300);
 
-        let (price, winners) = auction_house.complete_kplusone_price_auction(
-            &house_pp,
-            &auction1_pp,
-            auction1_id,
-            3,
-        ).unwrap();
+        let (price, winners) = auction_house
+            .complete_kplusone_price_auction(&house_pp, &auction1_pp, auction1_id, 3)
+            .unwrap();
 
         for uid in 0..10u32 {
             if winners.contains(&uid) {
-                users.get_mut(uid as usize).unwrap().confirm_auction_win(
-                    &house_pp,
-                    &auction1_pp,
-                    auction1_id,
-                    price,
-                ).unwrap();
+                users
+                    .get_mut(uid as usize)
+                    .unwrap()
+                    .confirm_auction_win(&house_pp, &auction1_pp, auction1_id, price)
+                    .unwrap();
             } else {
-                users.get_mut(uid as usize).unwrap().confirm_auction_loss(
-                    &house_pp,
-                    &auction1_pp,
-                    auction1_id,
-                ).unwrap();
+                users
+                    .get_mut(uid as usize)
+                    .unwrap()
+                    .confirm_auction_loss(&house_pp, &auction1_pp, auction1_id)
+                    .unwrap();
             }
         }
         assert_eq!(winners.len(), 3);
@@ -800,51 +936,49 @@ mod tests {
 
         // Continue bidding on auction 3
 
-        let bid_proposal = users.get(8).unwrap().propose_bid(
-            &mut rng,
-            &house_pp,
-            &auction2_pp,
-            6000,
-        ).unwrap();
-        auction_house.account_bid(
-            &house_pp,
-            &auction2_pp,
-            auction3_id,
-            8,
-            &bid_proposal.0,
-        ).unwrap();
-        users.get_mut(8).unwrap().confirm_bid(
-            &house_pp,
-            &auction2_pp,
-            auction3_id,
-            6000,
-            &bid_proposal.0,
-            &bid_proposal.1,
-        ).unwrap();
+        let bid_proposal = users
+            .get(8)
+            .unwrap()
+            .propose_bid(&mut rng, &house_pp, &auction2_pp, 6000)
+            .unwrap();
+        auction_house
+            .account_bid(&house_pp, &auction2_pp, auction3_id, 8, &bid_proposal.0)
+            .unwrap();
+        users
+            .get_mut(8)
+            .unwrap()
+            .confirm_bid(
+                &house_pp,
+                &auction2_pp,
+                auction3_id,
+                6000,
+                &bid_proposal.0,
+                &bid_proposal.1,
+            )
+            .unwrap();
         assert_eq!(auction_house.accounts.get(&8).unwrap().balance, 8300);
         assert_eq!(users.get(8).unwrap().sum_active_bids, 7800);
 
-        let bid_proposal = users.get(1).unwrap().propose_bid(
-            &mut rng,
-            &house_pp,
-            &auction2_pp,
-            8500,
-        ).unwrap();
-        auction_house.account_bid(
-            &house_pp,
-            &auction2_pp,
-            auction3_id,
-            1,
-            &bid_proposal.0,
-        ).unwrap();
-        users.get_mut(1).unwrap().confirm_bid(
-            &house_pp,
-            &auction2_pp,
-            auction3_id,
-            8500,
-            &bid_proposal.0,
-            &bid_proposal.1,
-        ).unwrap();
+        let bid_proposal = users
+            .get(1)
+            .unwrap()
+            .propose_bid(&mut rng, &house_pp, &auction2_pp, 8500)
+            .unwrap();
+        auction_house
+            .account_bid(&house_pp, &auction2_pp, auction3_id, 1, &bid_proposal.0)
+            .unwrap();
+        users
+            .get_mut(1)
+            .unwrap()
+            .confirm_bid(
+                &house_pp,
+                &auction2_pp,
+                auction3_id,
+                8500,
+                &bid_proposal.0,
+                &bid_proposal.1,
+            )
+            .unwrap();
         assert_eq!(auction_house.accounts.get(&1).unwrap().balance, 9000);
         assert_eq!(users.get(1).unwrap().sum_active_bids, 8900);
     }
