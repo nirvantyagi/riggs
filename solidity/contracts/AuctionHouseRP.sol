@@ -16,7 +16,7 @@ contract AuctionHouseRP is IERC721Receiver {
     mapping(uint256 => Auction) active_auctions;
     uint256 ctr_auction;
 
-        mapping(address => BN254.G1Point) active_bid_comms;
+    mapping(address => BN254.G1Point) active_bid_comms;
 
     struct Auction {
         uint256 start_block;
@@ -25,6 +25,7 @@ contract AuctionHouseRP is IERC721Receiver {
         uint256 reward_self_open;
         mapping(address => Pedersen.Comm) bidder_to_comm;
         mapping(address => uint256) bidder_to_bid;
+        mapping(address => bool) reclaimed_bidders;
         mapping(address => bool) bidders;
         address[] bidders_list;
         mapping(bytes32 => bool) comms;
@@ -179,12 +180,14 @@ contract AuctionHouseRP is IERC721Receiver {
         // Verify opening
         require(Pedersen.verify(auction.bidder_to_comm[msg.sender].g, bid, opening, Pedersen.publicParams()));
 
-        // Update winner, prices
-        if (bid > auction.first_price) {
-            auction.winner = msg.sender;
-            auction.second_price = auction.first_price;
-            auction.first_price = bid;
-        }
+        // // Update winner, prices
+        // if (bid > auction.first_price) {
+        //     auction.winner = msg.sender;
+        //     auction.second_price = auction.first_price;
+        //     auction.first_price = bid;
+        // }
+
+        // updateWinnerPrices(id, bidder, bid);
 
         // Update state
         incrementDeposit(msg.sender, auction.reward_self_open);
@@ -193,6 +196,18 @@ contract AuctionHouseRP is IERC721Receiver {
         auction.bids_to_open -= 1;
         if (bid > 0) { auction.total_valid_bids += 1; }
     }
+
+    function updateWinnerPrices(uint256 id, address bidder, uint256 bid) public {
+        Auction storage auction = active_auctions[id];
+        if (bid > auction.first_price) {
+            auction.winner = bidder;
+            auction.second_price = auction.first_price;
+            auction.first_price = bid;
+        } else if (bid > auction.second_price) {
+            auction.second_price = bid;
+        }
+    }
+
 
     // TODO: Provide compensation to user that completes auction
     // TODO: Ties are awarded to first bidder
@@ -240,17 +255,31 @@ contract AuctionHouseRP is IERC721Receiver {
             price = auction.second_price;
         }
 
-        // Update state
-        for (uint i; i < auction.bidders_list.length; i++) {  // Remove bid commitment from active bids
-            address bidder = auction.bidders_list[i];
-            BN254.G1Point storage active_bids_comm = active_bid_comms[bidder];
-            active_bid_comms[bidder] = BN254.g1add(active_bids_comm, BN254.g1negate(auction.bidder_to_comm[bidder].g));
-        }
+        // // Update state
+        // for (uint i; i < auction.bidders_list.length; i++) {  // Remove bid commitment from active bids
+        //     address bidder = auction.bidders_list[i];
+        //     BN254.G1Point storage active_bids_comm = active_bid_comms[bidder];
+        //     active_bid_comms[bidder] = BN254.g1add(active_bids_comm, BN254.g1negate(auction.bidder_to_comm[bidder].g));
+        // }
 
         decrementDeposit(winner, price);
         incrementDeposit(auction.owner, price);
         auction.token.transferFrom(address(this), winner, auction.token_id);
         auction.start_block = 0;
+    }
+
+    function reclaim(uint256 id) public {
+        Auction storage auction = active_auctions[id];
+
+        address bidder = msg.sender;
+
+        require(bidder!= auction.winner);
+        require(!auction.reclaimed_bidders[bidder]);  
+
+        BN254.G1Point storage active_bids_comm = active_bid_comms[bidder];
+        active_bid_comms[bidder] = BN254.g1add(active_bids_comm, BN254.g1negate(auction.bidder_to_comm[bidder].g));
+    
+        auction.reclaimed_bidders[bidder] = true;
     }
 
 }

@@ -8,26 +8,21 @@ use std::ops::Neg;
 use std::{collections::HashMap, marker::PhantomData};
 
 use rsa::{
-    bigint::{BigInt, nat_to_f},
+    bigint::{nat_to_f, BigInt},
     hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash},
 };
 
-use rsa::{
-    hog::{RsaGroupParams},
-    poe::{PoEParams},
-    hash_to_prime::HashToPrime,
-};
-use timed_commitments::{
-    PedComm,
-    PedersenParams,
-    basic_tc::{TimeParams},
-    lazy_tc::{LazyTC, Comm as TCComm, Opening as TCOpening},
-};
 use crate::{
     rp_auction::{Auction, AuctionParams, AuctionPhase},
     AuctionError, Error,
 };
 use range_proofs::bulletproofs::{Bulletproofs, Params as RangeProofParams, Proof as RangeProof};
+use rsa::{hash_to_prime::HashToPrime, hog::RsaGroupParams, poe::PoEParams};
+use timed_commitments::{
+    basic_tc::TimeParams,
+    lazy_tc::{Comm as TCComm, LazyTC, Opening as TCOpening},
+    PedComm, PedersenParams,
+};
 
 const BID_BITS: u32 = 32;
 
@@ -50,22 +45,16 @@ pub struct AccountSummary<G: ProjectiveCurve> {
     pub comm_active_bids: G,
 }
 
-pub struct AuctionHouse<
-    G: ProjectiveCurve,
-    H: Digest,
-> {
+pub struct AuctionHouse<G: ProjectiveCurve, H: Digest> {
     active_auctions: HashMap<u32, (Auction<G, H>, HashMap<u32, u32>)>, // auction_id -> (auction, (user_id -> bid_id))
-    accounts: HashMap<u32, AccountSummary<G>>, // user_id -> account_info
+    accounts: HashMap<u32, AccountSummary<G>>,                         // user_id -> account_info
     //TODO: Will eventually overflow, use hash or replace finished auction ids
     ctr_auction: u32,
     ctr_account: u32,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct AccountPrivateState<
-    G: ProjectiveCurve,
-    H: Digest,
-> {
+pub struct AccountPrivateState<G: ProjectiveCurve, H: Digest> {
     pub public_summary: AccountSummary<G>,
     pub active_bids: HashMap<u32, (u32, G::ScalarField, PedComm<G>)>, // auction_id -> (bid, opening, comm)
     pub sum_active_bids: u32,
@@ -79,9 +68,7 @@ pub struct BidProposal<G: ProjectiveCurve> {
     pub range_proof_balance: RangeProof<G>,
 }
 
-impl<G: ProjectiveCurve, H: Digest>
-    AccountPrivateState<G, H>
-{
+impl<G: ProjectiveCurve, H: Digest> AccountPrivateState<G, H> {
     pub fn new() -> Self {
         Self {
             public_summary: AccountSummary {
@@ -102,9 +89,7 @@ impl<G: ProjectiveCurve, H: Digest>
         auction_pp: &HouseAuctionParams<G>,
         bid: u32,
     ) -> Result<(BidProposal<G>, G::ScalarField), Error> {
-        if self.sum_active_bids + bid + auction_pp.reward_self_open
-            > self.public_summary.balance
-        {
+        if self.sum_active_bids + bid + auction_pp.reward_self_open > self.public_summary.balance {
             return Err(Box::new(AuctionError::InvalidBid));
         }
 
@@ -121,8 +106,7 @@ impl<G: ProjectiveCurve, H: Digest>
             BID_BITS as u64,
         )?;
         // Prove balance - reward - bid - active_bids > 0
-        let balance_less_reward = self.public_summary.balance
-            - auction_pp.reward_self_open;
+        let balance_less_reward = self.public_summary.balance - auction_pp.reward_self_open;
         let f_balance_less_reward = nat_to_f::<G::ScalarField>(&BigInt::from(balance_less_reward))?;
         let comm_balance = auction_pp
             .auction_pp
@@ -263,9 +247,7 @@ impl<G: ProjectiveCurve, H: Digest>
     }
 }
 
-impl<G: ProjectiveCurve, H: Digest>
-    AuctionHouse<G, H>
-{
+impl<G: ProjectiveCurve, H: Digest> AuctionHouse<G, H> {
     pub fn new(_house_pp: &HouseParams<G>) -> Self {
         Self {
             active_auctions: HashMap::new(),
@@ -374,8 +356,7 @@ impl<G: ProjectiveCurve, H: Digest>
             return Err(Box::new(AuctionError::InvalidBid));
         }
         // Verify balance - reward - bid - active_bids > 0
-        let balance_less_reward =
-            user_summary.balance - auction_pp.reward_self_open;
+        let balance_less_reward = user_summary.balance - auction_pp.reward_self_open;
         let f_balance_less_reward = nat_to_f::<G::ScalarField>(&BigInt::from(balance_less_reward))?;
         let comm_balance = house_pp.ped_pp.g.mul(&f_balance_less_reward.into_repr())
             - &bid.comm_bid.g
@@ -458,6 +439,7 @@ impl<G: ProjectiveCurve, H: Digest>
                 .collect::<Vec<_>>();
 
             for (uid, bid_id) in bid_map.iter() {
+                
                 let bid_comm = auction.bid_comms_i.get(&(*bid_id as usize)).unwrap();
                 self.accounts.get_mut(uid).unwrap().comm_active_bids -= bid_comm.g;
             }
@@ -466,7 +448,60 @@ impl<G: ProjectiveCurve, H: Digest>
             }
             (price, winners)
         };
-        self.active_auctions.remove(&auction_id);
+        //self.active_auctions.remove(&auction_id);
+        Ok((price, winners))
+    }
+
+    // Dummy function
+    pub fn complete_fixed_price(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        auction_pp: &HouseAuctionParams<G>,
+        auction_id: u32,
+        k: usize,
+    ) -> Result<(u32, Vec<u32>), Error> {
+        let (price, winners) = {
+            let (auction, bid_map) = self
+                .active_auctions
+                .get(&auction_id)
+                .ok_or(Box::new(AuctionError::InvalidID))?;
+            if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
+                // return Err(Box::new(AuctionError::InvalidPhase));
+            }
+            let mut bids = bid_map
+                .iter()
+                .map(|(uid, bid_id)| (*uid, auction.bid_openings.get(&(*bid_id as usize)).unwrap()))
+                .filter(|(_uid, bid)| bid.is_some())
+                .map(|(uid, bid)| (uid, bid.unwrap()))
+                .collect::<Vec<_>>();
+
+            assert!(bids.len() > k as usize);
+
+            // // TODO: Does not handle tie bids. Currently tie is broken by unstable selection algo.
+            // let k1_index = bids.len() - (k + 1);
+            // bids.select_nth_unstable_by_key(k1_index, |(_, bid)| *bid);
+            // let price = bids[k1_index].1;
+            // let winners = bids[k1_index + 1..]
+            //     .iter()
+            //     .map(|(uid, _)| *uid)
+            //     .collect::<Vec<_>>();
+
+            // let price = 0;
+            // let winners = vec![1];
+
+            // for (uid, bid_id) in bid_map.iter() {
+            //     let bid_comm = auction.bid_comms_i.get(&(*bid_id as usize)).unwrap();
+            //     self.accounts.get_mut(uid).unwrap().comm_active_bids -= bid_comm.ped_comm;
+            // }
+            // for uid in winners.iter() {
+            //     self.accounts.get_mut(uid).unwrap().balance -= price;
+            // }
+            // (price, winners)
+
+            self.accounts.get_mut(&1).unwrap().balance -= 0;
+            (0, vec![1])
+        };
+        // self.active_auctions.remove(&auction_id);
         Ok((price, winners))
     }
 }
@@ -521,23 +556,15 @@ mod tests {
         PocklingtonHash<TestPocklingtonParams, Keccak256>,
     >;
 
-
     pub type TestRangeProof = Bulletproofs<G, Keccak256>;
 
-    pub type TestAuctionHouse = AuctionHouse<
-        G,
-        Keccak256,
-    >;
+    pub type TestAuctionHouse = AuctionHouse<G, Keccak256>;
 
-    pub type TestUser = AccountPrivateState<
-        G,
-        Keccak256,
-    >;
+    pub type TestUser = AccountPrivateState<G, Keccak256>;
 
     #[test]
     #[ignore] // Expensive test, run with ``cargo test basic_auction_house_test -- --ignored --nocapture``
     fn rp_auction_house_test() {
-
         let mut rng = StdRng::seed_from_u64(0u64);
 
         let (time_pp, _) = TC::gen_time_params(40).unwrap();

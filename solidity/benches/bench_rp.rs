@@ -6,11 +6,11 @@ use primitive_types::U256;
 use rand::{rngs::StdRng, SeedableRng};
 use sha3::Keccak256;
 
-use std::{ops::Deref, str::FromStr};
+use std::{ops::Deref, str::FromStr, thread, time::Duration};
 
 use auction_house::{
   rp_auction::AuctionParams,
-  rp_house::{AccountPrivateState, HouseAuctionParams, HouseParams},
+  rp_house::{AccountPrivateState, AuctionHouse, HouseAuctionParams, HouseParams},
 };
 use range_proofs::bulletproofs::Bulletproofs;
 use rsa::{
@@ -83,6 +83,8 @@ pub type TC = LazyTC<
 
 pub type Account = AccountPrivateState<G, Keccak256>;
 
+pub type TestAuctionHouse = AuctionHouse<G, Keccak256>;
+
 use csv::Writer;
 use std::{io::stdout, string::String, time::Instant};
 
@@ -93,7 +95,7 @@ fn main() {
   // csv writer
   let mut csv_writer = Writer::from_writer(stdout());
   csv_writer
-    .write_record(&["client_time", "server_time", "gas_cost"])
+    .write_record(&["function", "client_time", "server_time", "gas_cost"])
     .unwrap();
   csv_writer.flush().unwrap();
 
@@ -106,8 +108,8 @@ fn main() {
   let bulletproofs_pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, NUM_BID_BITS);
   let auction_pp = HouseAuctionParams {
     auction_pp: AuctionParams {
-      t_bid_collection: Default::default(),
-      t_bid_self_open: Default::default(),
+      t_bid_collection: Duration::from_secs(5),
+      t_bid_self_open: Duration::from_secs(10),
       ped_pp: ped_pp.clone(),
     },
     reward_self_open: REWARD_SELF_OPEN,
@@ -495,7 +497,7 @@ fn main() {
 
   // Benchmark: Create House
   csv_writer
-    .write_record(&["0", "0", &create_result.gas.to_string()])
+    .write_record(&["create_house", "0", "0", &create_result.gas.to_string()])
     .unwrap();
   csv_writer.flush().unwrap();
 
@@ -553,14 +555,22 @@ fn main() {
   // Arasu: changed contract_addr to ah_coin_contract_addr
   // in many of these function calls
 
-  let n_bidders = 20_usize;
-  let max_balance = 1000;
+  let mut auction_house = TestAuctionHouse::new(&house_pp);
+
+  let n_bidders = 10_usize;
+  let max_balance = 10000;
 
   let mut bidders = {
     let mut bidders = Vec::new();
     for i in 0..n_bidders {
       let bidder_addr = Address::random(&mut rng);
-      evm.create_account(&bidder_addr, 1000);
+      evm.create_account(&bidder_addr, max_balance);
+
+      let (uid, _) = auction_house.new_account(&house_pp);
+      assert_eq!(uid, i as u32);
+      auction_house
+        .account_deposit(&house_pp, uid, max_balance)
+        .unwrap();
 
       let result = evm
         .call_payable(
@@ -569,7 +579,7 @@ fn main() {
             .unwrap(),
           &ah_coin_contract_addr,
           &bidder_addr,
-          U256::from(1000),
+          U256::from(max_balance),
         )
         .unwrap();
       // println!("Bidder {} exchanged ether for AHC: gas: {}", i, result.gas);
@@ -594,7 +604,7 @@ fn main() {
               "approve",
               &[
                 ah_coin_contract_addr.as_token(),
-                Token::Uint(U256::from(1000)),
+                Token::Uint(U256::from(max_balance)),
               ],
             )
             .unwrap(),
@@ -611,7 +621,7 @@ fn main() {
       let result = evm
         .call(
           ah_coin_contract
-            .encode_call_contract_bytes("deposit", &[Token::Uint(U256::from(1000))])
+            .encode_call_contract_bytes("deposit", &[Token::Uint(U256::from(max_balance))])
             .unwrap(),
           &ah_coin_contract_addr,
           &bidder_addr,
@@ -623,7 +633,7 @@ fn main() {
       // );
 
       let mut bidder = Account::new();
-      bidder.confirm_deposit(&house_pp, 1000).unwrap();
+      bidder.confirm_deposit(&house_pp, max_balance).unwrap();
 
       bidders.push((bidder, bidder_addr));
     }
@@ -652,9 +662,11 @@ fn main() {
   // println!("Owner created auction: gas: {}", result.gas);
   assert_eq!(&result.out, &to_be_bytes(&U256::from(0)));
 
+  let auction_id = auction_house.new_auction(&house_pp, &auction_pp);
+
   // Benchmark: Create New Auction
   csv_writer
-    .write_record(&["0", "0", &result.gas.to_string()])
+    .write_record(&["create_auction", "0", "0", &result.gas.to_string()])
     .unwrap();
   csv_writer.flush().unwrap();
   assert_eq!(&result.out, &to_be_bytes(&U256::from(0)));
@@ -673,7 +685,7 @@ fn main() {
       let (bid_proposal, opening) = bidder
         .propose_bid(&mut rng, &house_pp, &auction_pp, (i as u32 + 1) * 20)
         .unwrap();
-      end = start.elapsed().as_millis();
+      end = start.elapsed().as_micros();
 
       place_bid_client = place_bid_client + end as u64;
 
@@ -700,7 +712,6 @@ fn main() {
       // println!("Bidder {} placed bid: gas: {}", i, result.gas);
       //println!("{:?}", result);
 
-      start = Instant::now();
       bidder
         .confirm_bid(
           &house_pp,
@@ -711,12 +722,19 @@ fn main() {
           &opening,
         )
         .unwrap();
+
+      start = Instant::now();
+      let bidret = auction_house
+        .account_bid(&house_pp, &auction_pp, 0, i as u32, &bid_proposal)
+        .unwrap();
+      end = start.elapsed().as_micros();
       place_bid_server = place_bid_server + (end as u64);
     }
 
     // Benchmark: Submit Bid
     csv_writer
       .write_record(&[
+        "submit_bid",
         &(place_bid_client / place_bid_count).to_string(),
         &(place_bid_server / place_bid_count).to_string(),
         &(place_bid_gas / place_bid_count).to_string(),
@@ -743,11 +761,18 @@ fn main() {
   let mut self_open_count = 0;
 
   evm.set_block_number(25);
+  thread::sleep(auction_pp.auction_pp.t_bid_collection);
   {
     for i in 0..n_bidders {
       let (bidder, bidder_addr) = bidders.get_mut(i).unwrap();
 
-      let (bid, opening, _) = bidder.active_bids.get(&0).unwrap();
+      // ClientTime
+      start = Instant::now();
+      let bidder_clone = bidder.clone();
+      let (bid, opening, _) = bidder_clone.active_bids.get(&0).unwrap();
+      end = start.elapsed().as_micros();
+      self_open_client = self_open_client + (end as u64);
+
       let result = evm
         .call(
           contract
@@ -769,12 +794,16 @@ fn main() {
       self_open_gas = self_open_gas + result.gas;
       self_open_count = self_open_count + 1;
 
-      // ServerTime
-      start = Instant::now();
       bidder
         .confirm_bid_self_open(&house_pp, &auction_pp)
         .unwrap();
-      end = start.elapsed().as_nanos();
+
+      // ServerTime
+      start = Instant::now();
+      auction_house
+        .account_self_open(&house_pp, &auction_pp, 0, i as u32, *bid, opening)
+        .unwrap();
+      end = start.elapsed().as_micros();
       self_open_server = self_open_server + (end as u64);
     }
     let result = evm
@@ -792,18 +821,61 @@ fn main() {
   // Benchmark: Self Opening Bid
   csv_writer
     .write_record(&[
-      "0",
+      "self_open",
+      &(self_open_client / self_open_count).to_string(),
       &(self_open_server / self_open_count).to_string(),
       &(self_open_gas / self_open_count).to_string(),
     ])
     .unwrap();
   csv_writer.flush().unwrap();
 
+  let mut update_winnner_gas = 0;
+  // Benchmark: Update winner, prices
+  {
+    for i in 0..(n_bidders - 1) {
+      let (bidder, bidder_addr) = bidders.get_mut(i).unwrap();
+      // ClientTime
+      start = Instant::now();
+      let bidder_clone = bidder.clone();
+      let (bid, opening, _) = bidder_clone.active_bids.get(&0).unwrap();
+      end = start.elapsed().as_micros();
+      self_open_client = self_open_client + (end as u64);
+
+      let result = evm
+        .call(
+          contract
+            .encode_call_contract_bytes(
+              "updateWinnerPrices",
+              &[
+                Token::Uint(U256::from(0)),
+                bidder_addr.as_token(),
+                Token::Uint(U256::from(*bid)),
+              ],
+            )
+            .unwrap(),
+          &contract_addr,
+          &bidder_addr,
+        )
+        .unwrap();
+
+      update_winnner_gas = result.gas as u64;
+    }
+  }
+
+  // // Benchmark: Update Prices
+  // csv_writer
+  //   .write_record(&["update_prices", "0", "0", &update_winnner_gas.to_string()])
+  //   .unwrap();
+  // csv_writer.flush().unwrap();
+
   // // Force opening
   evm.set_block_number(35);
+  thread::sleep(auction_pp.auction_pp.t_bid_self_open);
 
   // Benchmark: Force Opening Bid
-  csv_writer.write_record(&["0", "0", "0"]).unwrap();
+  csv_writer
+    .write_record(&["force_open", "0", "0", "0"])
+    .unwrap();
   csv_writer.flush().unwrap();
 
   // {
@@ -875,6 +947,13 @@ fn main() {
   // }
 
   // Complete auction
+  let winner = n_bidders - 2;
+
+  let mut complete_server = 0;
+  let mut complete_server_fixed = 0;
+  let mut complete_gas = 0;
+  let mut complete_count = 0;
+
   {
     let result = evm
       .call(
@@ -898,30 +977,59 @@ fn main() {
       .unwrap();
     // println!("Complete auction: gas: {}", result.gas);
 
-    // Benchmark: Complete Auction
+    start = Instant::now();
+    let (price, winners) = auction_house
+      .complete_kplusone_price_auction(&house_pp, &auction_pp, 0, 0)
+      .unwrap();
+    end = start.elapsed().as_nanos();
+    complete_server = end as u64;
+
     csv_writer
-      .write_record(&["0", "0", &complete_result.gas.to_string()])
+      .write_record(&[
+        "complete_auction_full_calc",
+        "0",
+        &(complete_server).to_string(),
+        "0",
+      ])
       .unwrap();
     csv_writer.flush().unwrap();
 
-    // Check token was transferred to winning bidder
-    let result = evm
-      .call(
-        erc721_contract
-          .encode_call_contract_bytes(
-            "balanceOf",
-            &[bidders.get(n_bidders - 1).unwrap().1.as_token()],
-          )
-          .unwrap(),
-        &erc721_contract_addr,
-        &deployer,
-      )
+    start = Instant::now();
+    let (price, winners) = auction_house
+      .complete_fixed_price(&house_pp, &auction_pp, 0, 0)
       .unwrap();
-    assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-    println!(
-      "Bidder n_bidders-1 won and received token: gas: {}",
-      result.gas
-    );
+    end = start.elapsed().as_nanos();
+    complete_server_fixed = end as u64;
+
+    // Benchmark: Complete Auction
+    csv_writer
+      .write_record(&[
+        "complete_auction_fixed",
+        "0",
+        &(complete_server_fixed / 1).to_string(),
+        &(complete_gas / 1).to_string(),
+      ])
+      .unwrap();
+    csv_writer.flush().unwrap();
+
+    // // Check token was transferred to winning bidder
+    // let result = evm
+    //   .call(
+    //     erc721_contract
+    //       .encode_call_contract_bytes(
+    //         "balanceOf",
+    //         &[bidders.get(n_bidders - 1).unwrap().1.as_token()],
+    //       )
+    //       .unwrap(),
+    //     &erc721_contract_addr,
+    //     &deployer,
+    //   )
+    //   .unwrap();
+    // assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
+    // println!(
+    //   "Bidder n_bidders-1 won and received token: gas: {}",
+    //   result.gas
+    // );
 
     // Check owner was transferred winning funds
     // TODO: Optimization: Shouldn't need to provide range proof if no active bids
@@ -945,10 +1053,10 @@ fn main() {
         &owner,
       )
       .unwrap();
-    println!(
-      "Owner withdrew AHC from auction house balance: gas: {}",
-      result.gas
-    );
+    // println!(
+    //   "Owner withdrew AHC from auction house balance: gas: {}",
+    //   result.gas
+    // );
 
     bidders
       .get_mut(0)
@@ -970,32 +1078,70 @@ fn main() {
       .unwrap();
   }
 
-  // Withdrawal after active bids updated
-  {
-    let (bidder, bidder_addr) = bidders.get_mut(1).unwrap();
-    let withdrawal_proof = bidder
-      .propose_withdrawal(&mut rng, &house_pp, 1000)
-      .unwrap();
-    let result = evm
+  let mut reclaim_server = 0;
+  let mut reclaim_gas = 0;
+  let mut reclaim_count = 0;
+
+  for i in 0..n_bidders {
+    if i == winner {
+      continue;
+    }
+    let (bidder, bidder_addr) = bidders.get_mut(i).unwrap();
+    start = Instant::now();
+    let reclaim_result = evm
       .call(
         contract
-          .encode_call_contract_bytes(
-            "withdraw",
-            &[
-              Token::Uint(U256::from(1000)),
-              encode_bulletproof::<Bn254>(&withdrawal_proof),
-            ],
-          )
+          .encode_call_contract_bytes("reclaim", &[Token::Uint(U256::from(0))])
           .unwrap(),
         &contract_addr,
         &bidder_addr,
       )
       .unwrap();
-    println!(
-      "Bidder 2 withdrew AHC from auction house balance: gas: {}",
-      result.gas
-    );
-    //println!("{:?}", result);
-    bidder.confirm_withdrawal(&house_pp, 1000).unwrap();
+
+    if i == 1 {
+      // csv_writer
+      //   .write_record(&["reclaim", "0", "0", &(reclaim_result.gas).to_string()])
+      //   .unwrap();
+      // csv_writer.flush().unwrap();
+      reclaim_gas = reclaim_result.gas;
+    }
   }
+  csv_writer
+    .write_record(&[
+      "complete_auction_per_bidder",
+      "0",
+      &((complete_server - complete_server_fixed) / (n_bidders as u64)).to_string(),
+      &(reclaim_gas + update_winnner_gas).to_string(),
+    ])
+    .unwrap();
+  csv_writer.flush().unwrap();
+
+  // // Withdrawal after active bids updated
+  // {
+  //   let (bidder, bidder_addr) = bidders.get_mut(1).unwrap();
+  //   let withdrawal_proof = bidder
+  //     .propose_withdrawal(&mut rng, &house_pp, 1000)
+  //     .unwrap();
+  //   let result = evm
+  //     .call(
+  //       contract
+  //         .encode_call_contract_bytes(
+  //           "withdraw",
+  //           &[
+  //             Token::Uint(U256::from(1000)),
+  //             encode_bulletproof::<Bn254>(&withdrawal_proof),
+  //           ],
+  //         )
+  //         .unwrap(),
+  //       &contract_addr,
+  //       &bidder_addr,
+  //     )
+  //     .unwrap();
+  //   println!(
+  //     "Bidder 2 withdrew AHC from auction house balance: gas: {}",
+  //     result.gas
+  //   );
+  //   //println!("{:?}", result);
+  //   bidder.confirm_withdrawal(&house_pp, 1000).unwrap();
+  // }
 }
