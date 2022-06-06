@@ -1,5 +1,5 @@
 //! Implements Wesolowski's Proof of Exponentiation
-
+use std::io::{self, Write};
 use crate::{
     bigint::BigInt,
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
@@ -45,6 +45,30 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         // Compute quotient of exponent with challenge prime
         let q = BigInt::from(2).pow(t).div_floor(&l);
 
+        // Compute proof elements
+        Ok(Proof {
+            q: u.power(&q),
+            l,
+            cert,
+        })
+    }
+
+    pub fn prove_cheating(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u32, order: &BigInt) -> Result<Proof<RsaP, H>, Error> {
+        // Hash to challenge
+        let mut hash_input = vec![];
+        hash_input.append(&mut pad_to_32_byte_offset(u.n.to_bytes_be().1));
+        hash_input.append(&mut pad_to_32_byte_offset(v.n.to_bytes_be().1));
+        hash_input.extend_from_slice(&t.to_be_bytes());
+
+        let (l, cert) = H::hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input)?;
+
+        // Compute quotient of exponent with challenge prime
+        // let q = BigInt::from(2).pow(t).div_floor(&l);
+        
+        let (_, q) = (BigInt::from(2).pow(t).div_floor(&l)).div_rem(&order);
+
+        println!("NOE OVAH LEHRE");
+        io::stdout().flush().unwrap();
         // Compute proof elements
         Ok(Proof {
             q: u.power(&q),

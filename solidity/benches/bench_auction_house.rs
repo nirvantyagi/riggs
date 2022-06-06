@@ -1,11 +1,16 @@
 use ark_bn254::{Bn254, G1Projective as G};
 
+use ark_ec::ProjectiveCurve;
+use ark_ff::{biginteger::BigInteger, PrimeField};
 use ethabi::Token;
+use num_integer::Integer;
+use num_traits::FromPrimitive;
 use once_cell::sync::Lazy;
 use primitive_types::U256;
 use rand::{rngs::StdRng, SeedableRng};
 use sha3::Keccak256;
 
+use num_bigint::Sign;
 use std::{ops::Deref, str::FromStr, thread, time::Duration};
 
 use auction_house::{
@@ -14,7 +19,7 @@ use auction_house::{
 };
 use range_proofs::bulletproofs::Bulletproofs;
 use rsa::{
-  bigint::BigInt,
+  bigint::{nat_to_f, BigInt},
   hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash},
   hog::{RsaGroupParams, RsaHiddenOrderGroup},
   poe::PoEParams,
@@ -25,7 +30,9 @@ use solidity::{
   get_bulletproofs_verifier_contract_src, get_filename_src, get_fkps_src, get_pedersen_deploy_src,
   get_pedersen_library_src, get_rsa_library_src,
 };
-use solidity_test_utils::{address::Address, contract::Contract, evm::Evm, to_be_bytes};
+use solidity_test_utils::{
+  address::Address, contract::Contract, encode_field_element, evm::Evm, to_be_bytes,
+};
 use timed_commitments::{lazy_tc::LazyTC, PedersenComm};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -33,22 +40,22 @@ pub struct TestRsaParams;
 impl RsaGroupParams for TestRsaParams {
   const G: Lazy<BigInt> = Lazy::new(|| BigInt::from(2));
   const M: Lazy<BigInt> = Lazy::new(|| {
-    BigInt::from_str("2519590847565789349402718324004839857142928212620403202777713783604366202070\
-                          7595556264018525880784406918290641249515082189298559149176184502808489120072\
-                          8449926873928072877767359714183472702618963750149718246911650776133798590957\
-                          0009733045974880842840179742910064245869181719511874612151517265463228221686\
-                          9987549182422433637259085141865462043576798423387184774447920739934236584823\
-                          8242811981638150106748104516603773060562016196762561338441436038339044149526\
-                          3443219011465754445417842402092461651572335077870774981712577246796292638635\
-                          6373289912154831438167899885040445364023527381951378636564391212010397122822\
-                          120720357").unwrap()
-  });
+    BigInt::from_str("220221485961027482895807132690296630677486844071857248828102639779900826037\
+                          522817575171387188561253238223028895754955597267595588137098207226627715313\
+                          686049237996261509248457831215460282155642105163463527516323185300916088248\
+                          789771290659167975569920900762065967420098972398211591577160443790408101308\
+                          817972103247443575027202837913668619892210165571903754903981604693359583977\
+                          802099079979976465322630291407337945531372576140316723612803378607350692963\
+                          974127646284411621516308667435495842780676101093520710501949914086065977327\
+                          554104291784758074296814223591834286965337274202669433267036319135962442072\
+                          33293683841131181").unwrap()
+          });
 }
 
 pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 
 const MOD_BITS: usize = 2048;
-const TIME_PARAM: u32 = 40;
+const TIME_PARAM: u32 = 3000;
 const NUM_BID_BITS: u64 = 32;
 const LOG_NUM_BID_BITS: u64 = 5;
 
@@ -98,10 +105,21 @@ use csv::Writer;
 use std::{io::stdout, string::String, time::Instant};
 
 fn main() {
+
+  let order = BigInt::from_str("220221485961027482895807132690296630677486844071857248828102639779900826037\
+                522817575171387188561253238223028895754955597267595588137098207226627715313\
+                686049237996261509248457831215460282155642105163463527516323185300916088248\
+                789771290659167975569920900762065967420098972398211591577160443767729150998\
+                814909357423098257777268264247365382899876367590978535154987039555696635449\
+                479033630746473829352109992523017984438324929520913675495666843818457268371\
+                447341902888262499596643623902905552015345991769002075550880559006205833829\
+                780310095180709267067428790477468978775910299274821078714680960191595657081\
+                71734442332552864").unwrap();
+
   let n_bidders: usize = 10_usize;
   // cargo bench --bench tc --profile test
   let mut start = Instant::now();
-  let mut end = start.elapsed().as_micros();
+  let mut end = start.elapsed().as_millis();
 
   // csv writer
   let mut csv_writer = Writer::from_writer(stdout());
@@ -113,8 +131,36 @@ fn main() {
   // Begin benchmark
   let mut rng = StdRng::seed_from_u64(1u64);
 
+
+
+                  // some time tests
+
+  start = Instant::now();
+  let test_param = 2132;
+  let two = Hog::generator(); 
+
+  let (_, rem) = (&BigInt::from_i64(2).unwrap().pow(test_param)).div_rem(&order);
+
+  // let g = two.power(&BigInt::from_i64(2).unwrap().pow(&rem));
+  // let y = g.power(&BigInt::from_i64(2).unwrap().pow(&rem));
+  
+    let g = two.power(&order);
+  let y = g.power(&rem);
+  
+
+  end = start.elapsed().as_millis();
+  println!("time taken for 2^t is {}", end);
+
+
+
+  println!("Starting with generating time params");
+
   // Generate parameters
-  let (time_pp, _time_pp_proof) = TC::gen_time_params(TIME_PARAM).unwrap();
+  let (time_pp, _time_pp_proof) = TC::gen_time_params_cheating(TIME_PARAM, &order).unwrap();
+
+
+  println!("Done with generating time params");
+
   let ped_pp = PedersenComm::<G>::gen_pedersen_params(&mut rng);
   let bulletproofs_pp = Bulletproofs::<G, sha3::Keccak256>::gen_params(&mut rng, NUM_BID_BITS);
   let auction_pp = HouseAuctionParams {
@@ -131,6 +177,8 @@ fn main() {
     range_proof_pp: bulletproofs_pp.clone(),
     ped_pp: ped_pp.clone(),
   };
+
+
 
   // Setup EVM
   let mut evm = Evm::new();
@@ -716,7 +764,7 @@ fn main() {
       let (bid_proposal, opening) = bidder
         .propose_bid(&mut rng, &house_pp, &auction_pp, (i as u32 + 1) * 20)
         .unwrap();
-      end = start.elapsed().as_micros();
+      end = start.elapsed().as_nanos();
       place_bid_client = place_bid_client + (end as u64);
       let result = evm
         .call(
@@ -755,7 +803,7 @@ fn main() {
       let bidret = auction_house
         .account_bid(&house_pp, &auction_pp, 0, i as u32, &bid_proposal)
         .unwrap();
-      end = start.elapsed().as_micros();
+      end = start.elapsed().as_nanos();
       place_bid_server = place_bid_server + (end as u64);
     }
 
@@ -797,18 +845,29 @@ fn main() {
       start = Instant::now();
       let bidder_clone = bidder.clone();
       let (bid, opening, _) = bidder_clone.active_bids.get(&0).unwrap();
-      end = start.elapsed().as_micros();
+      end = start.elapsed().as_nanos();
       self_open_client = self_open_client + (end as u64);
+
+      let tc_m_copy = &(opening.tc_m).clone().unwrap();
+
+      let mut m_computed = tc_m_copy.to_vec();
+      // let f_bytes = <G::ScalarField as PrimeField>::BigInt::NUM_LIMBS * 8;
+      let f_bytes = 32;
+      let ped_opening = nat_to_f(&BigInt::from_bytes_be(
+        Sign::Plus,
+        &m_computed.split_off(m_computed.len() - f_bytes),
+      ))
+      .unwrap();
 
       let result = evm
         .call(
           contract
             .encode_call_contract_bytes(
-              "selfOpenAuction",
+              "selfOpenAuctionOptimized",
               &[
                 Token::Uint(U256::from(0)),
                 Token::Uint(U256::from(*bid)),
-                encode_tc_opening(opening),
+                encode_field_element::<Bn254>(&ped_opening),
               ],
             )
             .unwrap(),
@@ -827,9 +886,9 @@ fn main() {
       // ServerTime
       start = Instant::now();
       auction_house
-        .account_self_open(&house_pp, &auction_pp, 0, i as u32, *bid, opening)
+        .account_self_open_optimized(&house_pp, &auction_pp, 0, i as u32, *bid, &ped_opening)
         .unwrap();
-      end = start.elapsed().as_micros();
+      end = start.elapsed().as_nanos();
       self_open_server = self_open_server + (end as u64);
     }
     let result = evm
@@ -864,7 +923,7 @@ fn main() {
       start = Instant::now();
       let bidder_clone = bidder.clone();
       let (bid, opening, _) = bidder_clone.active_bids.get(&0).unwrap();
-      end = start.elapsed().as_micros();
+      end = start.elapsed().as_nanos();
       self_open_client = self_open_client + (end as u64);
 
       let result = evm
@@ -920,8 +979,8 @@ fn main() {
 
     // ClientTime
     start = Instant::now();
-    let (_, opening) = TC::force_open(&time_pp, &ped_pp, comm).unwrap();
-    end = start.elapsed().as_micros();
+    let (_, opening) = TC::force_open_cheating(&time_pp, &ped_pp, comm, &order).unwrap();
+    end = start.elapsed().as_nanos();
     force_open_client = force_open_client + (end as u64);
 
     let mut bidders_clone = bidders.clone();
@@ -983,7 +1042,7 @@ fn main() {
         &opening,
       )
       .unwrap();
-    end = start.elapsed().as_micros();
+    end = start.elapsed().as_nanos();
     force_open_server = force_open_server + (end as u64);
   }
 
@@ -1205,7 +1264,7 @@ fn main() {
     let (bidder, bidder_addr) = bidders.get_mut(1).unwrap();
     start = Instant::now();
     let withdrawal_proof = bidder.propose_withdrawal(&mut rng, &house_pp, 80).unwrap();
-    end = start.elapsed().as_micros();
+    end = start.elapsed().as_nanos();
     withdraw_client = end as u64;
 
     let withdraw_result = evm
@@ -1235,7 +1294,7 @@ fn main() {
 
     start = Instant::now();
     auction_house.account_withdrawal(&house_pp, 1, 80, &withdrawal_proof);
-    end = start.elapsed().as_micros();
+    end = start.elapsed().as_nanos();
     withdraw_server = end as u64;
 
     // Benchmark: Withdraw

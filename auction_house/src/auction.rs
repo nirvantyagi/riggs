@@ -13,7 +13,7 @@ use rsa::{hash_to_prime::HashToPrime, hog::RsaGroupParams, poe::PoEParams};
 use timed_commitments::{
     basic_tc::TimeParams,
     lazy_tc::{Comm as TCComm, LazyTC, Opening as TCOpening},
-    PedersenParams,
+    PedComm, PedersenParams,
 };
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -132,6 +132,30 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         } else {
             self.accept_opening(pp, Some(bid), bid_opening, bid_index)?;
             Ok(())
+        }
+    }
+
+    pub fn accept_self_opening_optimized(
+        &mut self,
+        pp: &AuctionParams<G, RsaP>,
+        bid: u32,
+        bid_opening: &G::ScalarField,
+        bid_index: usize,
+    ) -> Result<(), Error> {
+        if self.phase(pp) != AuctionPhase::BidSelfOpening {
+            Err(Box::new(AuctionError::InvalidPhase))
+        } else {
+            let comm = self
+                .bid_comms_i
+                .get(&bid_index)
+                .ok_or(Box::new(AuctionError::InvalidBid))?;
+            if PedComm::<G>::ver_open(&pp.ped_pp, &comm.ped_comm, &bid.to_le_bytes(), bid_opening)?
+            {
+                self.bid_openings.insert(bid_index, Some(bid));
+                Ok(())
+            } else {
+                Err(Box::new(AuctionError::InvalidBid))
+            }
         }
     }
 

@@ -1,4 +1,5 @@
 use crate::{bigint::BigInt, Error};
+use std::io::{self, Write};
 use digest::Digest;
 use num_bigint::Sign;
 use num_traits::One;

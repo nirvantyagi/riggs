@@ -74,6 +74,10 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         BasicTC::<PoEP, RsaP, H, H2P>::gen_time_params(t)
     }
 
+    pub fn gen_time_params_cheating(t: u32, order: &BigInt) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
+        BasicTC::<PoEP, RsaP, H, H2P>::gen_time_params_cheating(t, &order)
+    }
+
     pub fn ver_time_params(
         pp: &TimeParams<RsaP>,
         proof: &PoEProof<RsaP, H2P>,
@@ -107,6 +111,65 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         comm: &Comm<G, RsaP>,
     ) -> Result<(Option<Vec<u8>>, Opening<G, RsaP, H2P>), Error> {
         let (tc_m, tc_opening) = BasicTC::<PoEP, RsaP, H, H2P>::force_open(time_pp, &comm.tc_comm)?;
+        match &tc_m {
+            Some(tc_m_inner) => {
+                let mut m = tc_m_inner.to_vec();
+                let f_bytes = <G::ScalarField as PrimeField>::BigInt::NUM_LIMBS * 8;
+                match nat_to_f(&BigInt::from_bytes_be(
+                    Sign::Plus,
+                    &m.split_off(m.len() - f_bytes),
+                )) {
+                    Ok(ped_opening) => {
+                        let ped_valid =
+                            PedersenComm::<G>::ver_open(ped_pp, &comm.ped_comm, &m, &ped_opening)?;
+                        if ped_valid {
+                            Ok((
+                                Some(m),
+                                Opening {
+                                    tc_opening,
+                                    tc_m,
+                                    _ped_g: PhantomData,
+                                },
+                            ))
+                        } else {
+                            Ok((
+                                None,
+                                Opening {
+                                    tc_opening,
+                                    tc_m,
+                                    _ped_g: PhantomData,
+                                },
+                            ))
+                        }
+                    }
+                    Err(_) => Ok((
+                        None,
+                        Opening {
+                            tc_opening,
+                            tc_m,
+                            _ped_g: PhantomData,
+                        },
+                    )),
+                }
+            }
+            None => Ok((
+                None,
+                Opening {
+                    tc_opening,
+                    tc_m,
+                    _ped_g: PhantomData,
+                },
+            )),
+        }
+    }
+
+    pub fn force_open_cheating(
+        time_pp: &TimeParams<RsaP>,
+        ped_pp: &PedersenParams<G>,
+        comm: &Comm<G, RsaP>,
+        order: &BigInt
+    ) -> Result<(Option<Vec<u8>>, Opening<G, RsaP, H2P>), Error> {
+        let (tc_m, tc_opening) = BasicTC::<PoEP, RsaP, H, H2P>::force_open_cheating(time_pp, &comm.tc_comm, &order)?;
         match &tc_m {
             Some(tc_m_inner) => {
                 let mut m = tc_m_inner.to_vec();

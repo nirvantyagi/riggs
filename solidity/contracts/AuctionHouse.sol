@@ -204,6 +204,33 @@ contract AuctionHouse is IERC721Receiver {
         if (bid > 0) { auction.total_valid_bids += 1; }
     }
 
+    function selfOpenAuctionOptimized(uint256 id, uint256 bid, uint256 ped_opening) public {
+        require(getAuctionPhase(id) == AuctionPhase.BidSelfOpening);
+        Auction storage auction = active_auctions[id];
+        require(auction.bidders[msg.sender]);  // Check if bidder does not exist or already opened
+
+        // Verify opening
+        require(Pedersen.verify(auction.bidder_to_comm[msg.sender].ped, bid, ped_opening, Pedersen.publicParams()));
+
+        //require(TC.verOpen(auction.bidder_to_comm[msg.sender], opening, bid, TC.publicParams(auction.tc_partial)));
+
+        // Update winner, prices
+        // if (bid > auction.first_price) {
+        //     auction.winner = msg.sender;
+        //     auction.second_price = auction.first_price;
+        //     auction.first_price = bid;
+        // }
+
+        // updateWinnerPrices(id, msg.sender, bid);
+
+        // Update state
+        incrementDeposit(msg.sender, auction.reward_self_open + auction.reward_force_open);
+        auction.bidders[msg.sender] = false;  // TODO: Support multiple bids from single account
+        auction.bidder_to_bid[msg.sender] = bid;
+        auction.bids_to_open -= 1;
+        if (bid > 0) { auction.total_valid_bids += 1; }
+    }
+
     function forceOpenAuction(uint256 id, address bidder, uint256 bid, TC.ForceOpening memory opening) public {
         require(getAuctionPhase(id) == AuctionPhase.BidForceOpening);
         Auction storage auction = active_auctions[id];

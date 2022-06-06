@@ -1,3 +1,4 @@
+use std::io::{self, Write};
 use crate::{
     bigint::{BigInt, extended_euclidean_gcd},
     hash_to_prime::{
@@ -18,7 +19,7 @@ use std::{
 };
 
 use pari_factor::factor;
-
+use std::{io::stdout, string::String, time::Instant};
 /// https://www-sop.inria.fr/members/Benjamin.Gregoire/Publi/pock.pdf
 pub trait PocklingtonCertParams: Clone + Eq + Debug + Send + Sync {
     const NONCE_SIZE: usize;  // nonce size in bits
@@ -74,9 +75,15 @@ impl<P: PocklingtonCertParams, D: Digest> HashToPrime for PocklingtonHash<P, D> 
     type Certificate = PocklingtonCert;
 
     fn hash_to_prime(entropy: usize, input: &[u8]) -> Result<(BigInt, Self::Certificate), Error> {
+        let start = Instant::now();
+
+        let mut counter = 0;
         let mut inputs: Vec<u8> = input.iter().copied().collect();
         inputs.extend_from_slice(&0u32.to_le_bytes()); // Dummy to be removed on first iter
+        println!("ENTERING H2P LOOP");
         'nonce_loop: for nonce in 0..(1u32 << P::NONCE_SIZE) {
+            counter = counter + 1;
+            if counter%20 == 0 {println!("LOOP COUNTER {}", counter);}
             inputs.truncate(inputs.len() - 4);
             inputs.extend_from_slice(&nonce.to_be_bytes());
             let p_candidate = hash_to_integer::<D>(&inputs, Self::prime_bits(entropy));
@@ -86,6 +93,9 @@ impl<P: PocklingtonCertParams, D: Digest> HashToPrime for PocklingtonHash<P, D> 
             match Self::generate_pocklington_certificate_path(&p_candidate) {
                 Some(certs) => {
                     if certs.len() <= P::MAX_STEPS {
+                        let end = start.elapsed().as_millis();
+                        println!("H2P took {} millis", end);
+                        io::stdout().flush().unwrap();
                         return Ok((p_candidate, PocklingtonCert{ step_certificates: certs, nonce }))
                     } else {
                         continue 'nonce_loop

@@ -1,4 +1,5 @@
 use crate::Error;
+use num_integer::Integer;
 use rsa::{
     bigint::BigInt,
     hash_to_prime::HashToPrime,
@@ -63,6 +64,17 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         Ok((TimeParams { t, x: g, y }, proof))
     }
 
+    pub fn gen_time_params_cheating(t: u32, order: &BigInt) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
+        let two = Hog::<RsaP>::generator();
+        let (_, rem) = (&BigInt::from(2).pow(t)).div_rem(&order);
+        let g = two.power(&rem);
+        let y = g.power(&rem);
+
+        let proof = PoE::<PoEP, RsaP, H2P>::prove_cheating(&g, &y, t, &order)?;
+        
+        Ok((TimeParams { t, x: g, y }, proof))
+    }
+
     pub fn ver_time_params(
         pp: &TimeParams<RsaP>,
         proof: &PoEProof<RsaP, H2P>,
@@ -75,7 +87,7 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         pp: &TimeParams<RsaP>,
         m: &[u8],
     ) -> Result<(Comm<RsaP>, Opening<RsaP, H2P>), Error> {
-        // Sample randomizing factor
+        // Sample rando mizing factor
         let r = BigInt::from(rng.gen_biguint(128));
         let x = pp.x.power(&r);
         let y = pp.y.power(&r);
@@ -95,6 +107,30 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         // Compute and prove repeated square
         let y = comm.x.power(&BigInt::from(2).pow(pp.t));
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&comm.x, &y, pp.t)?;
+
+        // Derive key from repeated square
+        debug_assert_eq!(H::output_size(), 32);
+        let key = H::digest(&y.n.to_bytes_be().1).to_vec();
+        let ad = pp.t.to_be_bytes(); // Time parameter as associated data
+        let m = OneTimeKeyDeterministicAE::decrypt::<H>(&key, &comm.ct, &ad);
+
+        let opening = Opening::FORCE(y, proof);
+        match m {
+            Ok(m) => Ok((Some(m), opening)),
+            Err(_) => Ok((None, opening)),
+        }
+    }
+
+    pub fn force_open_cheating(
+        pp: &TimeParams<RsaP>,
+        comm: &Comm<RsaP>,
+        order: &BigInt
+    ) -> Result<(Option<Vec<u8>>, Opening<RsaP, H2P>), Error> {
+        // Compute and prove repeated square
+        let (_, rem) = BigInt::from(2).pow(pp.t).div_rem(&order);
+        let y = comm.x.power(&rem);
+
+        let proof = PoE::<PoEP, RsaP, H2P>::prove_cheating(&comm.x, &y, pp.t, order)?;
 
         // Derive key from repeated square
         debug_assert_eq!(H::output_size(), 32);

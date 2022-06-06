@@ -432,6 +432,37 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         Ok(())
     }
 
+    pub fn account_self_open_optimized(
+        &mut self,
+        _house_pp: &HouseParams<G>,
+        auction_pp: &HouseAuctionParams<G, RsaP>,
+        auction_id: u32,
+        user_id: u32,
+        bid: u32,
+        opening: &G::ScalarField,
+    ) -> Result<(), Error> {
+        let user_summary = self
+            .accounts
+            .get_mut(&user_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        let (auction, bid_map) = self
+            .active_auctions
+            .get_mut(&auction_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        let bid_id = bid_map
+            .get(&user_id)
+            .ok_or(Box::new(AuctionError::InvalidID))?;
+        // Update state
+        auction.accept_self_opening_optimized(
+            &auction_pp.auction_pp,
+            bid,
+            opening,
+            *bid_id as usize,
+        )?;
+        user_summary.balance += auction_pp.reward_self_open + auction_pp.reward_force_open;
+        Ok(())
+    }
+
     pub fn account_force_open(
         &mut self,
         _house_pp: &HouseParams<G>,
