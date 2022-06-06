@@ -23,7 +23,7 @@ use solidity::{
   encode_bulletproof, encode_new_auction, encode_ped_comm_struct, get_bigint_library_src,
   get_bn254_deploy_src, get_bn254_library_src, get_bulletproofs_verifier_contract_src,
   get_filename_src, get_fkps_src, get_pedersen_deploy_src, get_pedersen_library_src,
-  get_rsa_library_src,
+  get_rsa_library_src, mean, std_deviation
 };
 use solidity_test_utils::{
   address::Address, contract::Contract, encode_field_element, encode_group_element, evm::Evm,
@@ -85,17 +85,17 @@ pub type Account = AccountPrivateState<G, Keccak256>;
 
 pub type TestAuctionHouse = AuctionHouse<G, Keccak256>;
 
-use csv::Writer;
+use csv::{Writer, WriterBuilder};
 use std::{io::stdout, string::String, time::Instant};
 
 fn main() {
   let mut start = Instant::now();
-  let mut end = start.elapsed().as_micros();
+  let mut end = start.elapsed().as_nanos();
 
   // csv writer
-  let mut csv_writer = Writer::from_writer(stdout());
+  let mut csv_writer = WriterBuilder::new().delimiter(b' ').from_writer(stdout());
   csv_writer
-    .write_record(&["function", "client_time", "server_time", "gas_cost"])
+    .write_record(&["function", "client_time", "c_std", "server_time", "s_std","gas_cost"])
     .unwrap();
   csv_writer.flush().unwrap();
 
@@ -497,7 +497,7 @@ fn main() {
 
   // Benchmark: Create House
   csv_writer
-    .write_record(&["create_house", "0", "0", &create_result.gas.to_string()])
+    .write_record(&["create_house", "0", "0",  "0", "0",&create_result.gas.to_string()])
     .unwrap();
   csv_writer.flush().unwrap();
 
@@ -664,17 +664,16 @@ fn main() {
 
   let auction_id = auction_house.new_auction(&house_pp, &auction_pp);
 
-  // Benchmark: Create New Auction
+  // Benchmark: Create Auction
   csv_writer
-    .write_record(&["create_auction", "0", "0", &result.gas.to_string()])
+    .write_record(&["create_auction", "0", "0",  "0", "0", &result.gas.to_string()])
     .unwrap();
   csv_writer.flush().unwrap();
   assert_eq!(&result.out, &to_be_bytes(&U256::from(0)));
 
-  let mut place_bid_client: u64 = 0;
-  let mut place_bid_server: u64 = 0;
   let mut place_bid_gas: u64 = 0;
-  let mut place_bid_count: u64 = 0;
+  let mut place_bid_client_vec:Vec<u64> = Vec::new();
+  let mut place_bid_server_vec:Vec<u64> = Vec::new();
 
   // Bid collection
   evm.set_block_number(8);
@@ -685,9 +684,9 @@ fn main() {
       let (bid_proposal, opening) = bidder
         .propose_bid(&mut rng, &house_pp, &auction_pp, (i as u32 + 1) * 20)
         .unwrap();
-      end = start.elapsed().as_micros();
+      end = start.elapsed().as_nanos();
 
-      place_bid_client = place_bid_client + end as u64;
+      place_bid_client_vec.push(end as u64);
 
       let result = evm
         .call(
@@ -707,8 +706,8 @@ fn main() {
         )
         .unwrap();
 
-      place_bid_gas = place_bid_gas + result.gas;
-      place_bid_count = place_bid_count + 1;
+      if i==1 {place_bid_gas = result.gas;}
+      
       // println!("Bidder {} placed bid: gas: {}", i, result.gas);
       //println!("{:?}", result);
 
@@ -727,17 +726,19 @@ fn main() {
       let bidret = auction_house
         .account_bid(&house_pp, &auction_pp, 0, i as u32, &bid_proposal)
         .unwrap();
-      end = start.elapsed().as_micros();
-      place_bid_server = place_bid_server + (end as u64);
+      end = start.elapsed().as_nanos();
+      place_bid_server_vec.push(end as u64);
     }
 
     // Benchmark: Submit Bid
     csv_writer
       .write_record(&[
         "submit_bid",
-        &(place_bid_client / place_bid_count).to_string(),
-        &(place_bid_server / place_bid_count).to_string(),
-        &(place_bid_gas / place_bid_count).to_string(),
+        &mean(&place_bid_client_vec).unwrap().to_string(),
+        &std_deviation(&place_bid_client_vec).unwrap().to_string(),
+        &mean(&place_bid_server_vec).unwrap().to_string(),
+        &std_deviation(&place_bid_server_vec).unwrap().to_string(),
+        &(place_bid_gas).to_string(),
       ])
       .unwrap();
     csv_writer.flush().unwrap();
@@ -755,10 +756,9 @@ fn main() {
   }
 
   // Self opening
-  let mut self_open_client = 0;
-  let mut self_open_server = 0;
   let mut self_open_gas = 0;
-  let mut self_open_count = 0;
+  let mut self_open_client_vec:Vec<u64> = Vec::new();
+  let mut self_open_server_vec:Vec<u64> = Vec::new();
 
   evm.set_block_number(25);
   thread::sleep(auction_pp.auction_pp.t_bid_collection);
@@ -770,8 +770,8 @@ fn main() {
       start = Instant::now();
       let bidder_clone = bidder.clone();
       let (bid, opening, _) = bidder_clone.active_bids.get(&0).unwrap();
-      end = start.elapsed().as_micros();
-      self_open_client = self_open_client + (end as u64);
+      end = start.elapsed().as_nanos();
+      self_open_client_vec.push(end as u64);
 
       let result = evm
         .call(
@@ -791,8 +791,7 @@ fn main() {
         .unwrap();
       // println!("Bidder {} self-opened bid: gas: {}", i, result.gas);
 
-      self_open_gas = self_open_gas + result.gas;
-      self_open_count = self_open_count + 1;
+      if (i==1) {self_open_gas = result.gas as u64;}
 
       bidder
         .confirm_bid_self_open(&house_pp, &auction_pp)
@@ -803,8 +802,8 @@ fn main() {
       auction_house
         .account_self_open(&house_pp, &auction_pp, 0, i as u32, *bid, opening)
         .unwrap();
-      end = start.elapsed().as_micros();
-      self_open_server = self_open_server + (end as u64);
+      end = start.elapsed().as_nanos();
+      self_open_server_vec.push(end as u64);
     }
     let result = evm
       .call(
@@ -822,9 +821,12 @@ fn main() {
   csv_writer
     .write_record(&[
       "self_open",
-      &(self_open_client / self_open_count).to_string(),
-      &(self_open_server / self_open_count).to_string(),
-      &(self_open_gas / self_open_count).to_string(),
+        //&mean(&self_open_client_vec).unwrap().to_string(),
+        &format!("{:01}", (&mean(&self_open_client_vec).unwrap())),
+        &std_deviation(&self_open_client_vec).unwrap().to_string(),
+        &mean(&self_open_server_vec).unwrap().to_string(),
+        &std_deviation(&self_open_server_vec).unwrap().to_string(),
+        &self_open_gas.to_string(),
     ])
     .unwrap();
   csv_writer.flush().unwrap();
@@ -834,12 +836,10 @@ fn main() {
   {
     for i in 0..(n_bidders - 1) {
       let (bidder, bidder_addr) = bidders.get_mut(i).unwrap();
-      // ClientTime
-      start = Instant::now();
+
+
       let bidder_clone = bidder.clone();
       let (bid, opening, _) = bidder_clone.active_bids.get(&0).unwrap();
-      end = start.elapsed().as_micros();
-      self_open_client = self_open_client + (end as u64);
 
       let result = evm
         .call(
@@ -874,7 +874,7 @@ fn main() {
 
   // Benchmark: Force Opening Bid
   csv_writer
-    .write_record(&["force_open", "0", "0", "0"])
+    .write_record(&["force_open", "0", "0", "0", "0", "0"])
     .unwrap();
   csv_writer.flush().unwrap();
 
@@ -984,15 +984,17 @@ fn main() {
     end = start.elapsed().as_nanos();
     complete_server = end as u64;
 
-    csv_writer
-      .write_record(&[
-        "complete_auction_full_calc",
-        "0",
-        &(complete_server).to_string(),
-        "0",
-      ])
-      .unwrap();
-    csv_writer.flush().unwrap();
+    // csv_writer
+    //   .write_record(&[
+    //     "complete_auction_full_calc",
+    //     "0",
+    //     "0",
+    //     "0",
+    //     &(complete_server).to_string(),
+    //     "0",
+    //   ])
+    //   .unwrap();
+    // csv_writer.flush().unwrap();
 
     start = Instant::now();
     let (price, winners) = auction_house
@@ -1006,7 +1008,9 @@ fn main() {
       .write_record(&[
         "complete_auction_fixed",
         "0",
+        "0",
         &(complete_server_fixed / 1).to_string(),
+        "0",
         &(complete_gas / 1).to_string(),
       ])
       .unwrap();
@@ -1110,7 +1114,9 @@ fn main() {
     .write_record(&[
       "complete_auction_per_bidder",
       "0",
+      "0",
       &((complete_server - complete_server_fixed) / (n_bidders as u64)).to_string(),
+      "0",
       &(reclaim_gas + update_winnner_gas).to_string(),
     ])
     .unwrap();

@@ -1,5 +1,8 @@
+use ark_bls12_381::{Bls12_381, Fr as F};
 use ark_bn254::{Bn254, G1Projective as G};
+
 use ark_ec::{PairingEngine, ProjectiveCurve};
+use ark_ed_on_bls12_381::{constraints::EdwardsVar as GV, EdwardsProjective as G_Groth};
 
 use digest::Digest;
 use ethabi::Token;
@@ -23,6 +26,8 @@ use solidity_test_utils::{
 };
 use timed_commitments::{basic_tc, lazy_tc};
 
+use ark_groth16::VerifyingKey;
+
 use once_cell::sync::Lazy;
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
@@ -32,6 +37,32 @@ impl RsaGroupParams for TestRsaParams {
     const M: Lazy<BigInt> = Lazy::new(|| {
         BigInt::from_str("25195908475657893494027183240048398571429282126204032027777137836043662020707595556264018525880784406918290641249515082189298559149176184502808489120072844992687392807287776735971418347270261896375014971824691165077613379859095700097330459748808428401797429100642458691817195118746121515172654632282216869987549182422433637259085141865462043576798423387184774447920739934236584823824281198163815010674810451660377306056201619676256133844143603833904414952634432190114657544454178424020924616515723350778707749817125772467962926386356373289912154831438167899885040445364023527381951378636564391212010397122822120720357").unwrap()
     });
+}
+
+pub fn mean(data: &[u64]) -> Option<f64> {
+    let sum = data.iter().sum::<u64>() as f64;
+    let count = data.len();
+
+    match count {
+        positive if positive > 0 => Some((sum / count as f64)),
+        // positive if positive > 0 => Some("format!("{:01}", (sum / count as f64)").parse::<f64>().unwrap()),
+        _ => None,
+    }
+}
+
+pub fn std_deviation(data: &[u64]) -> Option<f64> {
+    match (mean(data), data.len()) {
+        (Some(data_mean), count) if count > 0 => {
+            let variance = data.iter().map(|value| {
+                let diff = data_mean - (*value as f64);
+                diff * diff
+            }).sum::<f64>() / count as f64;
+
+            Some(variance.sqrt())
+            // Some(format!("{:04}", variance.sqrt()).parse::<f64>().unwrap())
+        },
+        _ => None
+    }
 }
 
 pub fn get_bn254_library_src() -> String {
@@ -525,4 +556,29 @@ fn pad_to_32_byte_offset(mut bytes: Vec<u8>) -> Vec<u8> {
     debug_assert_eq!(bytes.len() % 32, 0);
     bytes.reverse();
     bytes
+}
+
+pub fn read_groth16_src(mut vk: VerifyingKey<Bls12_381>, as_contract: bool) -> String {
+    let contract_path = format!(
+        "{}/contracts/Groth16Verifier.sol",
+        env!("CARGO_MANIFEST_DIR")
+    );
+
+    println!("vk alpha g1: {}", vk.alpha_g1.to_string());
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    // src = src
+    //     .replace("\"", "\\\"")
+    //     .replace(
+    //         "<%con_or_lib%>",
+    //         if as_contract { "contract" } else { "library" },
+    //     )
+    //     .replace(
+    //         "<%visibility%>",
+    //         if as_contract { "public" } else { "internal" },
+    //     )
+    //     .replace("<%ipa_pp_len%>", &vk.alpha_g1.to_string());
+    src
 }
