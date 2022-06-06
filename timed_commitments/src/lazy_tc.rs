@@ -74,7 +74,7 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         BasicTC::<PoEP, RsaP, H, H2P>::gen_time_params(t)
     }
 
-    pub fn gen_time_params_cheating(t: u32, order: &BigInt) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
+    pub fn gen_time_params_cheating(t: u32, order: &BigInt) -> Result<(TimeParams<RsaP>), Error> {
         BasicTC::<PoEP, RsaP, H, H2P>::gen_time_params_cheating(t, &order)
     }
 

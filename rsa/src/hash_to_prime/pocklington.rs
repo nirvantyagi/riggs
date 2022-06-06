@@ -84,6 +84,7 @@ impl<P: PocklingtonCertParams, D: Digest> HashToPrime for PocklingtonHash<P, D> 
         'nonce_loop: for nonce in 0..(1u32 << P::NONCE_SIZE) {
             counter = counter + 1;
             if counter%20 == 0 {println!("LOOP COUNTER {}", counter);}
+                        io::stdout().flush().unwrap();
             inputs.truncate(inputs.len() - 4);
             inputs.extend_from_slice(&nonce.to_be_bytes());
             let p_candidate = hash_to_integer::<D>(&inputs, Self::prime_bits(entropy));

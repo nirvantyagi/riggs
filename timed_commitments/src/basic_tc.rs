@@ -61,18 +61,19 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         let g = two.power(&BigInt::from(2).pow(t));
         let y = g.power(&BigInt::from(2).pow(t));
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&g, &y, t)?;
+
         Ok((TimeParams { t, x: g, y }, proof))
     }
 
-    pub fn gen_time_params_cheating(t: u32, order: &BigInt) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
+    pub fn gen_time_params_cheating(t: u32, order: &BigInt) -> Result<(TimeParams<RsaP>), Error> {
         let two = Hog::<RsaP>::generator();
         let (_, rem) = (&BigInt::from(2).pow(t)).div_rem(&order);
         let g = two.power(&rem);
         let y = g.power(&rem);
 
-        let proof = PoE::<PoEP, RsaP, H2P>::prove_cheating(&g, &y, t, &order)?;
+        //let proof = PoE::<PoEP, RsaP, H2P>::prove_cheating(&g, &y, t, &order)?;
         
-        Ok((TimeParams { t, x: g, y }, proof))
+        Ok((TimeParams { t, x: g, y }))
     }
 
     pub fn ver_time_params(
