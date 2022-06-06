@@ -89,9 +89,9 @@ where
         PedersenComm::<G>::gen_pedersen_params(rng)
     }
 
-    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
+    pub fn gen_time_params(t: u64) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
         let g = Hog::<RsaP>::generator();
-        let y = g.power(&BigInt::from(2).pow(t));
+        let y = g.power(&BigInt::from(2).pow(t as u32));
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&g, &y, t)?;
         Ok((TimeParams { t, x: g, y }, proof))
     }
@@ -175,7 +175,7 @@ where
         comm: &Comm<G, RsaP>,
     ) -> Result<(Vec<u8>, Opening<G, RsaP, H2P>), Error> {
         // Compute and prove repeated square
-        let y = comm.x.power(&BigInt::from(2).pow(time_pp.t));
+        let y = comm.x.power(&BigInt::from(2).pow(time_pp.t as u32));
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&comm.x, &y, time_pp.t)?;
 
         // Hash y to get blinding pad

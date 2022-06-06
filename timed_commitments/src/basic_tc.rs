@@ -21,7 +21,7 @@ pub type Hog<P> = RsaHiddenOrderGroup<P>;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TimeParams<RsaP: RsaGroupParams> {
-    pub t: u32,
+    pub t: u64,
     pub x: Hog<RsaP>,
     pub y: Hog<RsaP>,
 }
@@ -56,18 +56,19 @@ pub struct BasicTC<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashTo
 impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
     BasicTC<PoEP, RsaP, H, H2P>
 {
-    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
+    pub fn gen_time_params(t: u64) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
+        //TODO: Not sure why g is being generated like this, revert back
         let two = Hog::<RsaP>::generator();
-        let g = two.power(&BigInt::from(2).pow(t));
-        let y = g.power(&BigInt::from(2).pow(t));
+        let g = two.power(&BigInt::from(2).pow(t as u32));
+        let y = g.power(&BigInt::from(2).pow(t as u32));
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&g, &y, t)?;
 
         Ok((TimeParams { t, x: g, y }, proof))
     }
 
-    pub fn gen_time_params_cheating(t: u32, order: &BigInt) -> Result<(TimeParams<RsaP>), Error> {
+    pub fn gen_time_params_cheating(t: u64, order: &BigInt) -> Result<(TimeParams<RsaP>), Error> {
         let two = Hog::<RsaP>::generator();
-        let (_, rem) = (&BigInt::from(2).pow(t)).div_rem(&order);
+        let rem = BigInt::from(2).modpow(&BigInt::from(t), &order);
         let g = two.power(&rem);
         let y = g.power(&rem);
 
@@ -106,7 +107,7 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         comm: &Comm<RsaP>,
     ) -> Result<(Option<Vec<u8>>, Opening<RsaP, H2P>), Error> {
         // Compute and prove repeated square
-        let y = comm.x.power(&BigInt::from(2).pow(pp.t));
+        let y = comm.x.power(&BigInt::from(2).pow(pp.t as u32));
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&comm.x, &y, pp.t)?;
 
         // Derive key from repeated square
@@ -128,7 +129,7 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         order: &BigInt
     ) -> Result<(Option<Vec<u8>>, Opening<RsaP, H2P>), Error> {
         // Compute and prove repeated square
-        let (_, rem) = BigInt::from(2).pow(pp.t).div_rem(&order);
+        let rem = BigInt::from(2).modpow(&BigInt::from(pp.t), &order);
         let y = comm.x.power(&rem);
 
         let proof = PoE::<PoEP, RsaP, H2P>::prove_cheating(&comm.x, &y, pp.t, order)?;

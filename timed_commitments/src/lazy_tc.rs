@@ -70,11 +70,11 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         PedersenComm::<G>::gen_pedersen_params(rng)
     }
 
-    pub fn gen_time_params(t: u32) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
+    pub fn gen_time_params(t: u64) -> Result<(TimeParams<RsaP>, PoEProof<RsaP, H2P>), Error> {
         BasicTC::<PoEP, RsaP, H, H2P>::gen_time_params(t)
     }
 
-    pub fn gen_time_params_cheating(t: u32, order: &BigInt) -> Result<(TimeParams<RsaP>), Error> {
+    pub fn gen_time_params_cheating(t: u64, order: &BigInt) -> Result<(TimeParams<RsaP>), Error> {
         BasicTC::<PoEP, RsaP, H, H2P>::gen_time_params_cheating(t, &order)
     }
 

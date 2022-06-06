@@ -21,7 +21,7 @@ import "./Pedersen.sol";
   struct PartialParams {
     RSA2048.Element h; 
     RSA2048.Element z;
-    uint32 t;
+    uint64 t;
   }
   
   struct SelfOpening {

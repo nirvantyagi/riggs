@@ -16,6 +16,10 @@ library BigInt {
         r.val = abi.encodePacked(n);
     }
 
+    function from_uint64(uint64 n) internal pure returns(BigInt memory r){
+        r.val = abi.encodePacked(n);
+    }
+
 
     /** @dev prepare_add: Initially prepare bignum instances for addition operation; internally calls actual addition/subtraction, depending on inputs.
       *                   In order to do correct addition or subtraction we have to handle the sign.

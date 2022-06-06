@@ -174,7 +174,7 @@ pub fn get_bigint_library_src() -> String {
     src
 }
 
-pub fn get_fkps_src(h: &BigInt, z: &BigInt, m_len: usize, t: u32, as_contract: bool) -> String {
+pub fn get_fkps_src(h: &BigInt, z: &BigInt, m_len: usize, t: u64, as_contract: bool) -> String {
     let contract_path = format!("{}/contracts/FKPS.sol", env!("CARGO_MANIFEST_DIR"));
 
     let mut src_file = File::open(contract_path).unwrap();

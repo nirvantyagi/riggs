@@ -55,7 +55,7 @@ impl RsaGroupParams for TestRsaParams {
 pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 
 const MOD_BITS: usize = 2048;
-const TIME_PARAM: u32 = 4000000000;
+const TIME_PARAM: u64 = 2 << 32;
 const NUM_BID_BITS: u64 = 32;
 const LOG_NUM_BID_BITS: u64 = 5;
 

@@ -11,7 +11,7 @@ import "./PoEVerifier.sol";
     RSA2048.Params rsa_pp;
     RSA2048.Element h;
     RSA2048.Element z;
-    uint32 t;
+    uint64 t;
   }
 
   struct Comm {
@@ -90,7 +90,7 @@ import "./PoEVerifier.sol";
   }
 
 
-  function decrypt(bytes32 key, bytes memory ct, uint32 ad) internal pure returns (bool mac_valid, bytes memory pt) {
+  function decrypt(bytes32 key, bytes memory ct, uint64 ad) internal pure returns (bool mac_valid, bytes memory pt) {
     require(ct.length > 32);
     // (enc_key, mac_key)
     bytes16[2] memory keys = split_bytes32(key);

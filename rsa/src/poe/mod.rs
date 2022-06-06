@@ -1,7 +1,8 @@
 //! Implements Wesolowski's Proof of Exponentiation
 use std::io::{self, Write};
+use num_traits::{Zero, One};
 use crate::{
-    bigint::BigInt,
+    bigint::{BigInt, extended_euclidean_gcd},
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
     hash_to_prime::{
         HashToPrime,
@@ -34,7 +35,7 @@ pub struct Proof<P: RsaGroupParams, H: HashToPrime> {
 
 // v = u^{2^t}
 impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
-    pub fn prove(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u32) -> Result<Proof<RsaP, H>, Error> {
+    pub fn prove(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u64) -> Result<Proof<RsaP, H>, Error> {
         // Hash to challenge
         let mut hash_input = vec![];
         hash_input.append(&mut pad_to_32_byte_offset(u.n.to_bytes_be().1));
@@ -43,7 +44,7 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         let (l, cert) = H::hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input)?;
 
         // Compute quotient of exponent with challenge prime
-        let q = BigInt::from(2).pow(t).div_floor(&l);
+        let q = BigInt::from(2).pow(t as u32).div_floor(&l);
 
         // Compute proof elements
         Ok(Proof {
@@ -53,7 +54,7 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         })
     }
 
-    pub fn prove_cheating(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u32, order: &BigInt) -> Result<Proof<RsaP, H>, Error> {
+    pub fn prove_cheating(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u64, order: &BigInt) -> Result<Proof<RsaP, H>, Error> {
         // Hash to challenge
         let mut hash_input = vec![];
         hash_input.append(&mut pad_to_32_byte_offset(u.n.to_bytes_be().1));
@@ -63,9 +64,9 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         let (l, cert) = H::hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input)?;
 
         // Compute quotient of exponent with challenge prime
-        // let q = BigInt::from(2).pow(t).div_floor(&l);
-        
-        let (_, q) = (BigInt::from(2).pow(t).div_floor(&l)).div_rem(&order);
+        //let q = BigInt::from(2).pow(t).div_floor(&l);
+
+        let q = (BigInt::one() << t).div_floor(&l).mod_floor(order);
 
         println!("NOE OVAH LEHRE");
         io::stdout().flush().unwrap();
@@ -80,7 +81,7 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
     pub fn verify(
         u: &Hog<RsaP>,
         v: &Hog<RsaP>,
-        t: u32,
+        t: u64,
         proof: &Proof<RsaP, H>,
     ) -> Result<bool, Error> {
         let mut hash_input = vec![];
