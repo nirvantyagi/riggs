@@ -46,23 +46,7 @@ contract Groth16Verifier {
         for (uint i = 0; i < input.length; i++) {
             require(input[i] < snark_scalar_field);
 
-            if (i==0) {
-                uint[3] memory input2;
-                input2[0] = vk.gamma_abc[i + 1].X;
-                input2[1] = vk.gamma_abc[i + 1].Y;
-                input2[2] = input[i];
-                uint[2] memory output;
-                bool success;
-                assembly {
-                    success := staticcall(gas(), 0x07, input2, 0x80, output, 0x60)
-                    // Use "invalid" to make gas estimation work
-                    switch success case 0 { invalid() }
-                }
-                vk_x = Pairing.scalar_mul(vk.gamma_abc[66], 2);
-                return 12;
-            } else {
-                vk_x = Pairing.addition(vk_x, Pairing.scalar_mul(vk.gamma_abc[i + 1], input[i]));
-            }
+            vk_x = Pairing.addition(vk_x, Pairing.scalar_mul(vk.gamma_abc[i + 1], input[i]));
         }
 
         vk_x = Pairing.addition(vk_x, vk.gamma_abc[0]);
