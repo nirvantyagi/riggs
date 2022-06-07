@@ -1,8 +1,9 @@
-use ark_bls12_381::{Bls12_381, Fr as F};
-use ark_bn254::{Bn254, G1Projective as G};
+// use ark_bls12_381::{Bls12_381, Fr as F};
+use ark_bn254::{Bn254, Fr as F, G1Projective as G};
 
-use ark_ec::{PairingEngine, ProjectiveCurve};
-use ark_ed_on_bls12_381::{constraints::EdwardsVar as GV, EdwardsProjective as G_Groth};
+use ark_ec::{PairingEngine, ProjectiveCurve, AffineCurve};
+// use ark_ed_on_bls12_381::{constraints::EdwardsVar as GV, EdwardsProjective as G_Groth};
+//use ark_ed_on_bn254::{constraints::EdwardsVar as GV, EdwardsProjective as EG};
 
 use digest::Digest;
 use ethabi::Token;
@@ -22,11 +23,11 @@ use rsa::{
     poe::Proof as PoEProof,
 };
 use solidity_test_utils::{
-    encode_field_element, encode_group_element, encode_int_from_bytes, parse_g1_to_solidity_string,
+    encode_field_element, encode_group_element, encode_g2_element, encode_int_from_bytes, parse_g1_to_solidity_string
 };
 use timed_commitments::{basic_tc, lazy_tc};
 
-use ark_groth16::VerifyingKey;
+use ark_groth16::{VerifyingKey, Proof as G16Proof};
 
 use once_cell::sync::Lazy;
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -558,27 +559,176 @@ fn pad_to_32_byte_offset(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes
 }
 
-pub fn read_groth16_src(mut vk: VerifyingKey<Bls12_381>, as_contract: bool) -> String {
+pub fn read_groth16_src(vk: &VerifyingKey<Bn254>, as_contract: bool) -> String {
     let contract_path = format!(
         "{}/contracts/Groth16Verifier.sol",
         env!("CARGO_MANIFEST_DIR")
     );
 
-    println!("vk alpha g1: {}", vk.alpha_g1.to_string());
+    //println!("vk alpha g1: {}", vk.alpha_g1.x.0.to_string());
 
+    // println!("(0x{}, 0x{})", &vk.alpha_g1.x.0.to_string().to_lowercase(), 
+    //             &vk.alpha_g1.y.0.to_string().to_lowercase());
+    
+    //println!("{}", &vk.beta_g2.to_string().as_str());
+
+    let mut populate_gamma_abc_points = String::new();
+    for i in 0..vk.gamma_abc_g1.len() {
+        populate_gamma_abc_points.push_str(&format!(
+            "vk.gamma_abc[{}] = Pairing.G1Point(0x{}, 0x{});\n",
+            i,
+            &vk.gamma_abc_g1.get(i).unwrap().x.0.to_string().to_lowercase(), 
+            &vk.gamma_abc_g1.get(i).unwrap().y.0.to_string().to_lowercase(), 
+        ));
+    }
+
+    // println!("{}", &populate_gamma_abc_points);
+    println!("{}", (vk.gamma_abc_g1.len()-1).to_string());
+    
     let mut src_file = File::open(contract_path).unwrap();
     let mut src = String::new();
     src_file.read_to_string(&mut src).unwrap();
-    // src = src
-    //     .replace("\"", "\\\"")
-    //     .replace(
-    //         "<%con_or_lib%>",
-    //         if as_contract { "contract" } else { "library" },
-    //     )
-    //     .replace(
-    //         "<%visibility%>",
-    //         if as_contract { "public" } else { "internal" },
-    //     )
-    //     .replace("<%ipa_pp_len%>", &vk.alpha_g1.to_string());
+    src = src
+        .replace("\"", "\\\"")
+        .replace(
+            "<%con_or_lib%>",
+            if as_contract { "contract" } else { "library" },
+        )
+        .replace(
+            "<%visibility%>", 
+            if as_contract { "public" } else { "internal" },
+        )
+        .replace("<%vk_alpha%>", &format!("0x{}, 0x{}", &vk.alpha_g1.x.0.to_string(), &vk.alpha_g1.y.0.to_string()))
+        .replace("<%vk_beta%>", &format!("[0x{}, 0x{}], [0x{}, 0x{}]",
+                    &vk.beta_g2.x.c0.0.to_string().to_lowercase(),
+                    &vk.beta_g2.x.c1.0.to_string().to_lowercase(),
+                    &vk.beta_g2.y.c0.0.to_string().to_lowercase(),
+                    &vk.beta_g2.y.c1.0.to_string().to_lowercase(),))
+        .replace("<%vk_gamma%>", &format!("[0x{}, 0x{}], [0x{}, 0x{}]",
+                    &vk.gamma_g2.x.c0.0.to_string().to_lowercase(),
+                    &vk.gamma_g2.x.c1.0.to_string().to_lowercase(),
+                    &vk.gamma_g2.y.c0.0.to_string().to_lowercase(),
+                    &vk.gamma_g2.y.c1.0.to_string().to_lowercase(),))
+        .replace("<%vk_delta%>", &format!("[0x{}, 0x{}], [0x{}, 0x{}]",
+                    &vk.delta_g2.x.c0.0.to_string().to_lowercase(),
+                    &vk.delta_g2.x.c1.0.to_string().to_lowercase(),
+                    &vk.delta_g2.y.c0.0.to_string().to_lowercase(),
+                    &vk.delta_g2.y.c1.0.to_string().to_lowercase(),))
+        .replace("<%vk_gamma_abc_length%>", &format!("{}",
+                    &vk.gamma_abc_g1.len().to_string()))
+        .replace("<%input_length%>", &format!("{}",
+                    &(vk.gamma_abc_g1.len()-1).to_string()))
+        .replace("<%vk_gamma_abc_pts%>", &format!("{}",
+                    &populate_gamma_abc_points))
+        ;
     src
 }
+
+pub fn encode_groth16_inputs<E: PairingEngine>(
+    public_inputs: &Vec<E::Fr>,
+) -> Token {
+    let mut tokens = Vec::new();
+    // println!("G16 inputs: {}", public_inputs.get(0).unwrap());
+    println!("len of public inputs: {}", public_inputs.len());
+    for i in 0..public_inputs.len() {
+        // tokens.push(encode_field_element::<E>(public_inputs.get(i).unwrap()));
+        tokens.push(encode_field_element::<E>(&public_inputs.get(i).unwrap()));
+    }
+    Token::FixedArray(tokens)
+}
+
+pub fn encode_groth16_inputs_struct<E: PairingEngine>(
+    public_inputs: &Vec<E::Fr>,
+) -> Token {
+    let mut tokens = Vec::new();
+    // println!("G16 inputs: {}", public_inputs.get(0).unwrap());
+    println!("len of public inputs: {}", public_inputs.len());
+    for i in 0..2 {
+        // tokens.push(encode_field_element::<E>(public_inputs.get(i).unwrap()));
+        tokens.push(encode_field_element::<E>(&public_inputs.get(i).unwrap()));
+    }
+    
+    let mut tokens2 = Vec::new();
+    tokens2.push(Token::Tuple(tokens));
+    Token::Tuple(tokens2)
+}
+
+use std::{fmt::Write, num::ParseIntError};
+
+pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
+        .collect()
+}
+
+pub fn encode_hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        write!(&mut s, "{:02x}", b).unwrap();
+    }
+    s
+}
+
+pub fn encode_groth16_input<E: PairingEngine>(
+    public_inputs: &Vec<E::Fr>,
+) -> Token {
+    // let mut tokens = Vec::new();
+    encode_field_element::<E>(&public_inputs.get(0).unwrap())
+    // Token::Tuple(tokens)
+    // Token::Uint(U256::from_big_endian(decode_hex(public_inputs.get(0).unwrap()).unwrap()))
+}
+
+
+/*
+proof.A = Pairing.G1Point(12873740738727497448187997291915224677121726020054032516825496230827252793177, 21804419174137094775122804775419507726154084057848719988004616848382402162497);
+proof.A_p = Pairing.G1Point(7742452358972543465462254569134860944739929848367563713587808717088650354556, 7324522103398787664095385319014038380128814213034709026832529060148225837366);
+proof.B = Pairing.G2Point(
+    [8176651290984905087450403379100573157708110416512446269839297438960217797614, 15588556568726919713003060429893850972163943674590384915350025440408631945055],
+    [15347511022514187557142999444367533883366476794364262773195059233657571533367, 4265071979090628150845437155927259896060451682253086069461962693761322642015]);
+proof.B_p = Pairing.G1Point(2979746655438963305714517285593753729335852012083057917022078236006592638393, 6470627481646078059765266161088786576504622012540639992486470834383274712950);
+proof.C = Pairing.G1Point(6851077925310461602867742977619883934042581405263014789956638244065803308498, 10336382210592135525880811046708757754106524561907815205241508542912494488506);
+proof.C_p = Pairing.G1Point(12491625890066296859584468664467427202390981822868257437245835716136010795448, 13818492518017455361318553880921248537817650587494176379915981090396574171686);
+proof.H = Pairing.G1Point(12091046215835229523641173286701717671667447745509192321596954139357866668225, 14446807589950902476683545679847436767890904443411534435294953056557941441758);
+proof.K = Pairing.G1Point(2134108797660991640940173
+*/
+
+// pub fn parse_g1(g1: &G1Affine) -> (Vec<u8>, Vec<u8>) {
+//     let mut bytes: Vec<u8> = Vec::new();
+//     g1.write(&mut bytes).unwrap();
+
+//     let element_length = (bytes.len() - 1) / 2; // [x, y, infinity] - infinity
+//     let mut x = bytes[0..element_length].to_vec();
+//     let mut y = bytes[element_length..2 * element_length].to_vec();
+//     x.reverse();
+//     y.reverse();
+//     (x, y)
+// }
+
+// pub fn encode_bn254_g1point<E: PairingEngine>(input: G1Affine) -> Token {
+//     let (x, y) = parse_g1(&input);
+//     let mut tokens = Vec::new();
+//     tokens.push(Token::Uint(U256::from_str_radix(input.x.to_string().as_str(), 16).unwrap()));
+//     tokens.push(Token::Uint(U256::from_str_radix(input.y.to_string().as_str(), 16).unwrap()));
+//     Token::Tuple(tokens)
+// }
+
+// pub fn encode_bn254_g2point(input: G2Affine) -> Token {
+//     let mut tokens = Vec::new();
+//     tokens.push(Token::Uint(U256::from_str_radix(input.x.c0.0.to_string().as_str(), 16).unwrap()));
+//     tokens.push(Token::Uint(U256::from_str_radix(input.x.c1.0.to_string().as_str(), 16).unwrap()));
+//     tokens.push(Token::Uint(U256::from_str_radix(input.y.c0.0.to_string().as_str(), 16).unwrap()));
+//     tokens.push(Token::Uint(U256::from_str_radix(input.y.c1.0.to_string().as_str(), 16).unwrap()));
+//     Token::Tuple(tokens)
+// }
+
+pub fn encode_groth16_proof<E: PairingEngine>(
+    proof: &G16Proof<E>
+) -> Token {
+    let mut tokens = Vec::new();
+    encode_group_element::<E>(&proof.a.into_projective());
+    encode_g2_element::<E>(&proof.b.into_projective());
+    encode_group_element::<E>(&proof.c.into_projective());
+    Token::Tuple(tokens)
+}
+

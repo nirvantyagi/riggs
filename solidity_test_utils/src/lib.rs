@@ -85,6 +85,65 @@ pub fn to_be_bytes(n: &U256) -> [u8; 32] {
     input_bytes
 }
 
+
+pub fn parse_g2<E: PairingEngine>(
+        e: &E::G2Affine,
+    ) ->  ((Vec<u8>, Vec<u8>),  (Vec<u8>, Vec<u8>) )  {
+    let mut bytes: Vec<u8> = Vec::new();
+    e.write(&mut bytes).unwrap();
+
+    let length = bytes.len() - 1; // [x, y, infinity] - infinity
+    let element_length = length / 4;
+
+    let mut elements = vec![];
+    for i in 0..4 {
+        let start = i * element_length;
+        let end = start + element_length;
+        let mut e = bytes[start..end].to_vec();
+        e.reverse();
+        elements.push(e);
+    }
+
+    (
+        (
+            elements[0].clone(),
+            elements[1].clone(),
+        ),
+        (
+            elements[2].clone(),
+            elements[3].clone(),
+        ),
+    )
+
+    // (
+    //     (
+    //         format!("0x{}", hex::encode(&elements[0])),
+    //         format!("0x{}", hex::encode(&elements[1])),
+    //     ),
+    //     (
+    //         format!("0x{}", hex::encode(&elements[2])),
+    //         format!("0x{}", hex::encode(&elements[3])),
+    //     ),
+    // )
+}
+
+
+pub fn encode_g2_element<E: PairingEngine>(g: &E::G2Projective) -> Token {
+    let ((x, y), (x2, y2))= parse_g2::<E>(&g.into_affine());
+    
+    let mut tokens = Vec::new();
+    tokens.push(Token::Tuple(vec![
+        Token::Uint(U256::from_big_endian(&x)),
+        Token::Uint(U256::from_big_endian(&y)),
+    ]));
+    tokens.push(Token::Tuple(vec![
+        Token::Uint(U256::from_big_endian(&x2)),
+        Token::Uint(U256::from_big_endian(&y2)),
+    ]));
+    Token::Tuple(tokens)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

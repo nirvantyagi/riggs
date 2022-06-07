@@ -148,6 +148,20 @@ where
         Ok((comm, Opening::SELF(ped_opening), proof))
     }
 
+    pub fn please_give_inputs(
+        pp: &TimeParams<RsaP>,
+        snark_pp: &PS::VerifyingKey,
+        comm: &Comm<G, RsaP>,
+        proof: &PS::Proof,
+    ) -> Result<Vec<F>, Error> {
+        Ok(TCCircuitPublicInput::<RsaP, IntP, G> {
+                time_params: pp.clone(),
+                comm: comm.clone(),
+                _int_params: PhantomData,
+            }
+            .to_field_elements().unwrap())
+    }
+
     pub fn ver_comm(
         pp: &TimeParams<RsaP>,
         snark_pp: &PS::VerifyingKey,
