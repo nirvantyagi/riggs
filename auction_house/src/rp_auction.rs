@@ -8,17 +8,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rsa::{
-    hog::{RsaGroupParams},
-    poe::{PoEParams},
-    hash_to_prime::HashToPrime,
-};
+use crate::{AuctionError, Error};
+use rsa::{hash_to_prime::HashToPrime, hog::RsaGroupParams, poe::PoEParams};
 use timed_commitments::{
+    basic_tc::TimeParams,
+    lazy_tc::{Comm as TCComm, LazyTC, Opening as TCOpening},
     PedComm, PedersenParams,
-    basic_tc::{TimeParams},
-    lazy_tc::{LazyTC, Comm as TCComm, Opening as TCOpening},
 };
-use crate::{Error, AuctionError};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AuctionParams<G: ProjectiveCurve> {
@@ -29,9 +25,9 @@ pub struct AuctionParams<G: ProjectiveCurve> {
 
 pub struct Auction<G: ProjectiveCurve, H: Digest> {
     t_start: Instant,
-    pub bid_comms_i: HashMap<usize, PedComm<G>>,  // index -> commitment
-    bid_comms_set: HashSet<PedComm<G>>,  // commitments
-    pub bid_openings: HashMap<usize, Option<u32>>,  // index -> bid
+    pub bid_comms_i: HashMap<usize, PedComm<G>>, // index -> commitment
+    bid_comms_set: HashSet<PedComm<G>>,          // commitments
+    pub bid_openings: HashMap<usize, Option<u32>>, // index -> bid
     _hash: PhantomData<H>,
 }
 
@@ -64,26 +60,41 @@ impl<G: ProjectiveCurve, H: Digest> Auction<G, H> {
         }
     }
 
-    pub fn client_create_bid<R: CryptoRng + Rng>(rng: &mut R, pp: &AuctionParams<G>, bid: u32) -> Result<(PedComm<G>, G::ScalarField), Error> {
+    pub fn client_create_bid<R: CryptoRng + Rng>(
+        rng: &mut R,
+        pp: &AuctionParams<G>,
+        bid: u32,
+    ) -> Result<(PedComm<G>, G::ScalarField), Error> {
         // LazyTC::<G, PoEP, RsaP, H, H2P>::commit(rng, &pp.time_pp, &pp.ped_pp, &bid.to_le_bytes())
-        let (comm_g, r_scalarfield) = PedComm::<G>::commit::<R>(rng, &pp.ped_pp, &bid.to_le_bytes()).unwrap();
-        Ok((PedComm{g: comm_g}, r_scalarfield))
+        let (comm_g, r_scalarfield) =
+            PedComm::<G>::commit::<R>(rng, &pp.ped_pp, &bid.to_le_bytes()).unwrap();
+        Ok((PedComm { g: comm_g }, r_scalarfield))
     }
 
-    pub fn accept_bid(&mut self, pp: &AuctionParams<G>, bid_comm: &PedComm<G>) -> Result<usize, Error> {
+    pub fn accept_bid(
+        &mut self,
+        pp: &AuctionParams<G>,
+        bid_comm: &PedComm<G>,
+    ) -> Result<usize, Error> {
         if self.phase(pp) != AuctionPhase::BidCollection {
             Err(Box::new(AuctionError::InvalidPhase))
-
         } else if (self.bid_comms_set.contains(bid_comm)) {
             Err(Box::new(AuctionError::InvalidBid))
         } else {
-            self.bid_comms_i.insert(self.bid_comms_set.len(), bid_comm.clone());
+            self.bid_comms_i
+                .insert(self.bid_comms_set.len(), bid_comm.clone());
             self.bid_comms_set.insert(bid_comm.clone());
             Ok(self.bid_comms_set.len() - 1)
         }
     }
 
-    pub fn accept_self_opening(&mut self, pp: &AuctionParams<G>, bid: u32, bid_opening: &G::ScalarField, bid_index: usize) -> Result<(), Error> {
+    pub fn accept_self_opening(
+        &mut self,
+        pp: &AuctionParams<G>,
+        bid: u32,
+        bid_opening: &G::ScalarField,
+        bid_index: usize,
+    ) -> Result<(), Error> {
         if self.phase(pp) != AuctionPhase::BidSelfOpening {
             Err(Box::new(AuctionError::InvalidPhase))
         } else {
@@ -92,13 +103,27 @@ impl<G: ProjectiveCurve, H: Digest> Auction<G, H> {
         }
     }
 
-    fn accept_opening(&mut self, pp: &AuctionParams<G>, bid: Option<u32>, bid_opening: &G::ScalarField, bid_index: usize) -> Result<(), Error> {
+    fn accept_opening(
+        &mut self,
+        pp: &AuctionParams<G>,
+        bid: Option<u32>,
+        bid_opening: &G::ScalarField,
+        bid_index: usize,
+    ) -> Result<(), Error> {
         if self.bid_openings.contains_key(&bid_index) {
             return Err(Box::new(AuctionError::InvalidBid));
         }
 
-        let comm = self.bid_comms_i.get(&bid_index).ok_or(Box::new(AuctionError::InvalidBid))?;
-        if PedComm::<G>::ver_open(&pp.ped_pp, &comm.g, &bid.unwrap().to_le_bytes(), bid_opening)? {
+        let comm = self
+            .bid_comms_i
+            .get(&bid_index)
+            .ok_or(Box::new(AuctionError::InvalidBid))?;
+        if PedComm::<G>::ver_open(
+            &pp.ped_pp,
+            &comm.g,
+            &bid.unwrap().to_le_bytes(),
+            bid_opening,
+        )? {
             self.bid_openings.insert(bid_index, bid);
             Ok(())
         } else {
@@ -110,15 +135,12 @@ impl<G: ProjectiveCurve, H: Digest> Auction<G, H> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ff::UniformRand;
     use ark_bls12_381::G1Projective as G;
+    use ark_ff::UniformRand;
     use once_cell::sync::Lazy;
     use rand::{rngs::StdRng, SeedableRng};
     use sha3::Keccak256;
-    use std::{
-        str::FromStr,
-        thread,
-    };
+    use std::{str::FromStr, thread};
 
     use rsa::{
         bigint::BigInt,
@@ -165,16 +187,10 @@ mod tests {
         PocklingtonHash<TestPocklingtonParams, Keccak256>,
     >;
 
-    pub type TestAuction = Auction<
-        G,
-        Keccak256,
-    >;
+    pub type TestAuction = Auction<G, Keccak256>;
 
     #[test]
     fn basic_rp_auction_test() {
-
-
-
         let mut rng = StdRng::seed_from_u64(0u64);
         let bid1 = u32::rand(&mut rng);
         let bid2 = u32::rand(&mut rng);
@@ -184,19 +200,19 @@ mod tests {
         let (time_pp, _) = TC::gen_time_params(40).unwrap();
         let ped_pp = TC::gen_pedersen_params(&mut rng);
 
-
-
         let auction_pp = AuctionParams {
             t_bid_collection: Duration::from_secs(2),
             t_bid_self_open: Duration::from_secs(2),
             ped_pp,
         };
 
-        let (comm1, opening1) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid1).unwrap();
-        let (comm2, opening2) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid2).unwrap();
-        let (comm3, opening3) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid3).unwrap();
+        let (comm1, opening1) =
+            TestAuction::client_create_bid(&mut rng, &auction_pp, bid1).unwrap();
+        let (comm2, opening2) =
+            TestAuction::client_create_bid(&mut rng, &auction_pp, bid2).unwrap();
+        let (comm3, opening3) =
+            TestAuction::client_create_bid(&mut rng, &auction_pp, bid3).unwrap();
         let (comm4, _) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid4).unwrap();
-
 
         // Create new auction
         let mut auction = TestAuction::new(&auction_pp);
@@ -208,7 +224,9 @@ mod tests {
         let index3 = auction.accept_bid(&auction_pp, &comm3).unwrap();
 
         assert!(auction.accept_bid(&auction_pp, &comm3).is_err());
-        assert!(auction.accept_self_opening(&auction_pp, bid1, &opening1, index1).is_err());
+        assert!(auction
+            .accept_self_opening(&auction_pp, bid1, &opening1, index1)
+            .is_err());
 
         // Self opening phase
         thread::sleep(auction_pp.t_bid_collection);
@@ -216,17 +234,27 @@ mod tests {
 
         assert!(auction.accept_bid(&auction_pp, &comm4).is_err());
 
-        auction.accept_self_opening(&auction_pp, bid1, &opening1, index1).unwrap();
-        assert!(auction.accept_self_opening(&auction_pp, bid1, &opening1, index1).is_err());
-        assert!(auction.accept_self_opening(&auction_pp, bid2, &opening2, index3).is_err());
+        auction
+            .accept_self_opening(&auction_pp, bid1, &opening1, index1)
+            .unwrap();
+        assert!(auction
+            .accept_self_opening(&auction_pp, bid1, &opening1, index1)
+            .is_err());
+        assert!(auction
+            .accept_self_opening(&auction_pp, bid2, &opening2, index3)
+            .is_err());
 
-        auction.accept_self_opening(&auction_pp, bid2, &opening2, index2).unwrap();
+        auction
+            .accept_self_opening(&auction_pp, bid2, &opening2, index2)
+            .unwrap();
         // assert!(auction.accept_force_opening(&auction_pp, Some(bid3), &opening3, index3).is_err());
 
         // Force opening phase
         thread::sleep(auction_pp.t_bid_self_open);
         // assert_eq!(auction.phase(&auction_pp), AuctionPhase::BidForceOpening);
-        assert!(auction.accept_self_opening(&auction_pp, bid3, &opening3, index3).is_err());
+        assert!(auction
+            .accept_self_opening(&auction_pp, bid3, &opening3, index3)
+            .is_err());
         assert!(auction.accept_bid(&auction_pp, &comm4).is_err());
         //auction.accept_force_opening(&auction_pp, Some(bid3), &opening3, index3).unwrap();
 
@@ -241,7 +269,6 @@ mod tests {
         let bid2 = u32::rand(&mut rng);
         let bid3 = u32::rand(&mut rng);
 
-
         let ped_pp = TC::gen_pedersen_params(&mut rng);
         let auction_pp = AuctionParams {
             t_bid_collection: Duration::from_secs(2),
@@ -249,10 +276,12 @@ mod tests {
             ped_pp,
         };
 
-        let (comm1, opening1) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid1).unwrap();
-        let (comm2, opening2) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid2).unwrap();
-        let (comm3, opening3) = TestAuction::client_create_bid(&mut rng, &auction_pp, bid3).unwrap();
-
+        let (comm1, opening1) =
+            TestAuction::client_create_bid(&mut rng, &auction_pp, bid1).unwrap();
+        let (comm2, opening2) =
+            TestAuction::client_create_bid(&mut rng, &auction_pp, bid2).unwrap();
+        let (comm3, opening3) =
+            TestAuction::client_create_bid(&mut rng, &auction_pp, bid3).unwrap();
 
         // Create new auction
         let mut auction = TestAuction::new(&auction_pp);
@@ -265,9 +294,15 @@ mod tests {
         // Self opening phase
         thread::sleep(auction_pp.t_bid_collection);
 
-        auction.accept_self_opening(&auction_pp, bid1, &opening1, index1).unwrap();
-        auction.accept_self_opening(&auction_pp, bid2, &opening2, index2).unwrap();
-        auction.accept_self_opening(&auction_pp, bid3, &opening3, index3).unwrap();
+        auction
+            .accept_self_opening(&auction_pp, bid1, &opening1, index1)
+            .unwrap();
+        auction
+            .accept_self_opening(&auction_pp, bid2, &opening2, index2)
+            .unwrap();
+        auction
+            .accept_self_opening(&auction_pp, bid3, &opening3, index3)
+            .unwrap();
 
         thread::sleep(auction_pp.t_bid_self_open);
         assert_eq!(auction.phase(&auction_pp), AuctionPhase::Complete);

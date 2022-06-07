@@ -26,6 +26,7 @@ contract AuctionHouse is IERC721Receiver {
         mapping(address => uint256) bidder_to_collateral;
         mapping(address => bytes32) bidder_to_comm;
         mapping(address => uint256) bidder_to_bid;
+        mapping(address => bool) reclaimed_bidders;
         mapping(address => bool) bidders;
         address[] bidders_list;
         mapping(bytes32 => bool) comms;
@@ -245,18 +246,31 @@ contract AuctionHouse is IERC721Receiver {
 
         // Return bids to those with valid bids
         // (collateral-bid was returned during self opening)
-        for (uint i; i < auction.bidders_list.length; i++) {  
-            address bidder = auction.bidders_list[i];
-            if (bidder != winner) {
-              incrementDeposit(bidder, auction.bidder_to_bid[bidder]); // should be 0 if bid was never opened
-            }
-        }
+        // for (uint i; i < auction.bidders_list.length; i++) {  
+        //     address bidder = auction.bidders_list[i];
+        //     if (bidder != winner) {
+        //       incrementDeposit(bidder, auction.bidder_to_bid[bidder]); // should be 0 if bid was never opened
+        //     }
+        // }
 
         decrementDeposit(winner, price);
         incrementDeposit(auction.owner, price);
         auction.token.transferFrom(address(this), winner, auction.token_id);
         auction.start_block = 0;
         return price;
+    }
+
+    function reclaim(uint256 id) public {
+        Auction storage auction = active_auctions[id];
+
+        address bidder = msg.sender;
+
+        require(bidder!= auction.winner);
+        require(!auction.reclaimed_bidders[bidder]);  
+
+        incrementDeposit(bidder, auction.bidder_to_bid[bidder]); // should be 0 if bid was never opened
+
+        auction.reclaimed_bidders[bidder] = true;
     }
 
 }

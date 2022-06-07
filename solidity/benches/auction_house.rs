@@ -213,6 +213,12 @@ fn main() {
       .replace("<%src%>", &tc_src);
 
     let contract = Contract::compile_from_config(&solc_config, "TC").unwrap();
+
+    // println!(
+    //   "TC SIZE: {}",
+    //   contract.encode_create_contract_bytes(&[]).unwrap().len()
+    // );
+
     let create_result = evm
       .deploy(
         contract.encode_create_contract_bytes(&[]).unwrap(),

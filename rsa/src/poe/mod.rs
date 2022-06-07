@@ -68,8 +68,8 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
 
         let q = (BigInt::one() << t).div_floor(&l).mod_floor(order);
 
-        println!("NOE OVAH LEHRE");
-        io::stdout().flush().unwrap();
+        //let (_, q) = (BigInt::from(2).pow(t).div_floor(&l)).div_rem(&order);
+        
         // Compute proof elements
         Ok(Proof {
             q: u.power(&q),

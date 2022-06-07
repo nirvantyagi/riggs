@@ -38,9 +38,9 @@ pub trait SnarkTCParams<F: PrimeField>: Clone + Eq + Debug + Send + Sync {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Comm<G: ProjectiveCurve, RsaP: RsaGroupParams> {
-    ped_comm: G,
-    x: Hog<RsaP>,
-    ct: Vec<u8>,
+    pub ped_comm: G,
+    pub x: Hog<RsaP>,
+    pub ct: Vec<u8>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -317,8 +317,7 @@ where
                 Ok(&self.time_pp_r)
             })?;
         debug_assert_eq!(self.m.len(), P::M_LEN);
-        let m =
-            <Vec<UInt8<F>>>::new_witness(ark_relations::ns!(cs, "m"), || Ok(self.m))?;
+        let m = <Vec<UInt8<F>>>::new_witness(ark_relations::ns!(cs, "m"), || Ok(self.m))?;
 
         // Generate constraints
         // Note: encoding of message must match PedersenComm encoding in src/lib.rs

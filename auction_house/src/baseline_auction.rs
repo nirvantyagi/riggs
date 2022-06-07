@@ -69,29 +69,27 @@ impl<H: Digest> Auction<H> {
         let mut bid_bytes = bid.to_be_bytes();
 
         let mut bid_buffer = [0u8; 32];
-        bid_buffer[32-(&bid_bytes.len())..].copy_from_slice(&bid_bytes);
-
+        bid_buffer[32 - (&bid_bytes.len())..].copy_from_slice(&bid_bytes);
 
         let r_bytes = r.to_be_bytes();
         let mut r_buffer = [0u8; 32];
-        r_buffer[32-(&r_bytes.len())..].copy_from_slice(&r_bytes);
+        r_buffer[32 - (&r_bytes.len())..].copy_from_slice(&r_bytes);
 
-        let comm: [u8; 32] = <[u8; 32]>::try_from(
-            H::digest([bid_buffer, r_buffer].concat().as_slice()).as_slice(),
-        )
-            .unwrap();
+        let comm: [u8; 32] =
+            <[u8; 32]>::try_from(H::digest([bid_buffer, r_buffer].concat().as_slice()).as_slice())
+                .unwrap();
         Ok((comm, r))
-        }
+    }
 
-        pub fn accept_bid(&mut self, pp: &AuctionParams, bid_comm: &[u8; 32]) -> Result<usize, Error> {
-            if self.phase(pp) != AuctionPhase::BidCollection {
-                Err(Box::new(AuctionError::InvalidPhase))
-            } else if self.bid_comms_set.contains(bid_comm) {
-                Err(Box::new(AuctionError::InvalidBid))
-            } else {
-                self.bid_comms_i
-                    .insert(self.bid_comms_set.len(), bid_comm.clone());
-                self.bid_comms_set.insert(bid_comm.clone());
+    pub fn accept_bid(&mut self, pp: &AuctionParams, bid_comm: &[u8; 32]) -> Result<usize, Error> {
+        if self.phase(pp) != AuctionPhase::BidCollection {
+            Err(Box::new(AuctionError::InvalidPhase))
+        } else if self.bid_comms_set.contains(bid_comm) {
+            Err(Box::new(AuctionError::InvalidBid))
+        } else {
+            self.bid_comms_i
+                .insert(self.bid_comms_set.len(), bid_comm.clone());
+            self.bid_comms_set.insert(bid_comm.clone());
             Ok(self.bid_comms_set.len() - 1)
         }
     }
@@ -127,10 +125,20 @@ impl<H: Digest> Auction<H> {
             .get(&bid_index)
             .ok_or(Box::new(AuctionError::InvalidBid))?;
 
-        if comm.clone() == <[u8; 32]>::try_from(
-            H::digest([bid.unwrap().to_be_bytes(), bid_opening.to_be_bytes()].concat().as_slice()).as_slice(),
-        )
-            .unwrap() {
+        let mut bid_bytes = bid.unwrap().to_be_bytes();
+
+        let mut bid_buffer = [0u8; 32];
+        bid_buffer[32 - (&bid_bytes.len())..].copy_from_slice(&bid_bytes);
+
+        let r_bytes = bid_opening.to_be_bytes();
+        let mut r_buffer = [0u8; 32];
+        r_buffer[32 - (&r_bytes.len())..].copy_from_slice(&r_bytes);
+        if comm.clone()
+            == <[u8; 32]>::try_from(
+                H::digest([bid_buffer, r_buffer].concat().as_slice()).as_slice(),
+            )
+            .unwrap()
+        {
             self.bid_openings.insert(bid_index, bid);
             Ok(())
         } else {
