@@ -130,3 +130,13 @@ harness = false
 name = "tc_snark"
 path = "benches/tc_snark.rs"
 harness = false
+
+[[bench]]
+name = "pedersen_baby"
+path = "benches/pedersen_baby.rs"
+harness = false
+
+[[bench]]
+name = "bulletproofs_verifier_baby"
+path = "benches/bulletproofs_verifier_baby.rs"
+harness = false

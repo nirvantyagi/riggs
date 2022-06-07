@@ -48,7 +48,33 @@ pub fn parse_g1_to_solidity_string<E: PairingEngine>(g1: &E::G1Affine) -> String
     format!("0x{}, 0x{}", hex::encode(&x), hex::encode(&y))
 }
 
+pub fn parse_g1_pc<G: ProjectiveCurve>(g1: &G) -> (Vec<u8>, Vec<u8>) {
+    let mut bytes: Vec<u8> = Vec::new();
+    g1.write(&mut bytes).unwrap();
+    let element_length = (bytes.len() - 1) / 2; // [x, y, infinity] - infinity
+    let mut x = bytes[0..element_length].to_vec();
+    let mut y = bytes[element_length..2 * element_length].to_vec();
+    x.reverse();
+    y.reverse();
+    // (x, y)
+    (x[x.len()-32..].to_vec(), y[y.len()-32..].to_vec())
+}
+
+pub fn parse_g1_to_solidity_string_pc<G: ProjectiveCurve>(g1: &G) -> String {
+    let (x, y) = parse_g1_pc::<G>(g1);
+    let hex_x = hex::encode(&x);
+    let hex_y = hex::encode(&y);
+    format!("0x{}, 0x{}", &hex_x[hex_x.len()-64..], &hex_y[hex_y.len()-64..])
+}
+
 pub fn parse_field<E: PairingEngine>(f: &E::Fr) -> Vec<u8> {
+    let mut bytes: Vec<u8> = Vec::new();
+    f.write(&mut bytes).unwrap();
+    bytes.reverse();
+    bytes
+}
+
+pub fn parse_field_pc<G: ProjectiveCurve>(f: &G::ScalarField) -> Vec<u8> {
     let mut bytes: Vec<u8> = Vec::new();
     f.write(&mut bytes).unwrap();
     bytes.reverse();
@@ -77,6 +103,18 @@ pub fn encode_group_element<E: PairingEngine>(g: &E::G1Projective) -> Token {
 
 pub fn encode_field_element<E: PairingEngine>(f: &E::Fr) -> Token {
     Token::Uint(U256::from_big_endian(&parse_field::<E>(f)))
+}
+
+pub fn encode_group_element_pc<G: ProjectiveCurve>(g: &G) -> Token {
+    let (x, y) = parse_g1_pc::<G>(&g);
+    Token::Tuple(vec![
+        Token::Uint(U256::from_big_endian(&x)),
+        Token::Uint(U256::from_big_endian(&y)),
+    ])
+}
+
+pub fn encode_field_element_pc<G: ProjectiveCurve>(f: &G::ScalarField) -> Token {
+    Token::Uint(U256::from_big_endian(&parse_field_pc::<G>(f)))
 }
 
 pub fn to_be_bytes(n: &U256) -> [u8; 32] {
@@ -132,11 +170,11 @@ pub fn encode_g2_element<E: PairingEngine>(g: &E::G2Projective) -> Token {
     let ((x, y), (x2, y2))= parse_g2::<E>(&g.into_affine());
     
     let mut tokens = Vec::new();
-    tokens.push(Token::Tuple(vec![
+    tokens.push(Token::FixedArray(vec![
         Token::Uint(U256::from_big_endian(&x)),
         Token::Uint(U256::from_big_endian(&y)),
     ]));
-    tokens.push(Token::Tuple(vec![
+    tokens.push(Token::FixedArray(vec![
         Token::Uint(U256::from_big_endian(&x2)),
         Token::Uint(U256::from_big_endian(&y2)),
     ]));

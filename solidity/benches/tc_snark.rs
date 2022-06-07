@@ -177,29 +177,6 @@ fn main() {
   //   (groth16_contract, contract_addr)
   // };
 
-
-  let mut evm = Evm::new();
-  let deployer = Address::random(&mut rng);
-  evm.create_account(&deployer, 0);
-
-    let result = evm
-        .call(
-          groth16_contract
-            .encode_call_contract_bytes(
-              "dummy",
-              &[
-                // encoded_inputs,
-                // encoded_proof,
-              ],
-            )
-            .unwrap(),
-          &groth16_lib_addr,
-          &deployer,
-        )
-        .unwrap();
-
-  println!("{:?}", &result);
-
   let proof_gen = start_timer!(|| "Compute proof");
   let (comm, self_opening, proof) 
       = TC::commit(&mut rng, &time_pp, &ped_pp, &pk, &m).unwrap();
@@ -216,10 +193,10 @@ fn main() {
         .call(
           groth16_contract
             .encode_call_contract_bytes(
-              "dummy",
+              "verify",
               &[
-                // encoded_inputs,
-                // encoded_proof,
+                encoded_inputs,
+                encoded_proof,
               ],
             )
             .unwrap(),

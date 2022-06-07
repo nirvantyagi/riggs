@@ -1,7 +1,7 @@
 // use ark_bls12_381::{Bls12_381, Fr as F};
 use ark_bn254::{Bn254, Fr as F, G1Projective as G};
-
-use ark_ec::{PairingEngine, ProjectiveCurve, AffineCurve};
+use ark_ed_on_bn254::{EdwardsAffine, constraints::EdwardsVar as GV, EdwardsProjective as E};
+use ark_ec::{PairingEngine, ProjectiveCurve, AffineCurve, bn};
 // use ark_ed_on_bls12_381::{constraints::EdwardsVar as GV, EdwardsProjective as G_Groth};
 //use ark_ed_on_bn254::{constraints::EdwardsVar as GV, EdwardsProjective as EG};
 
@@ -22,8 +22,8 @@ use rsa::{
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
     poe::Proof as PoEProof,
 };
-use solidity_test_utils::{
-    encode_field_element, encode_group_element, encode_g2_element, encode_int_from_bytes, parse_g1_to_solidity_string
+use solidity_test_utils::{ parse_g1_to_solidity_string_pc, parse_g1_pc, encode_group_element_pc,
+    encode_field_element, encode_field_element_pc, encode_group_element, encode_g2_element, encode_int_from_bytes, parse_g1_to_solidity_string
 };
 use timed_commitments::{basic_tc, lazy_tc};
 
@@ -91,6 +91,80 @@ pub fn get_bn254_deploy_src() -> String {
         .replace("<%visibility%>", "public");
     src
 }
+
+pub fn get_bulletproofs_verifier_contract_src_2<E: ProjectiveCurve>(
+    pp: &Params<E>,
+    ped_pp: &PedersenParams<E>,
+    n: u64,
+    lg_n: u64,
+    as_contract: bool,
+) -> String {
+    let pp_hash = {
+        let mut hash_input = Vec::<u8>::new();
+        hash_input.append(&mut serialize_group_elem(&ped_pp.g));
+        hash_input.append(&mut serialize_group_elem(&ped_pp.h));
+        for g in pp.g.iter() {
+            hash_input.append(&mut serialize_group_elem(g));
+        }
+        for h in pp.h.iter() {
+            hash_input.append(&mut serialize_group_elem(h));
+        }
+        hash_input.append(&mut serialize_group_elem(&pp.u));
+        hash_to_variable_output_length::<sha3::Keccak256>(&hash_input, 32)
+    };
+
+    let contract_path = format!(
+        "{}/contracts/BulletproofsVerifierBaby.sol",
+        env!("CARGO_MANIFEST_DIR")
+    );
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src
+        .replace("\"", "\\\"")
+        .replace(
+            "<%con_or_lib%>",
+            if as_contract { "contract" } else { "library" },
+        )
+        .replace(
+            "<%visibility%>",
+            if as_contract { "public" } else { "internal" },
+        )
+        .replace("<%pp_hash%>", &format!("0x{}", hex::encode(&pp_hash)))
+        .replace(
+            "<%ipa_pp_u%>",
+            &parse_g1_to_solidity_string_pc::<E>(&pp.u),
+        )
+        .replace("<%ipa_pp_len%>", &n.to_string())
+        .replace("<%ipa_log_len%>", &lg_n.to_string())
+        .replace(
+            "<%ipa_final_check_len%>",
+            &(2 * n + 2 * lg_n + 8).to_string(),
+        )
+        .replace("<%ipa_pp_vecs%>", &{
+            let mut populate_ipa_pp_vec = String::new();
+            for (i, (g, h)) in pp.g.iter().zip(pp.h.iter()).enumerate() {
+                populate_ipa_pp_vec.push_str(&format!(
+                    "pp.ipaG[{}] = BabyJubjub.G1Point({});",
+                    i,
+                    &parse_g1_to_solidity_string_pc::<E>(&g)
+                ));
+                populate_ipa_pp_vec.push_str("\n        ");
+                populate_ipa_pp_vec.push_str(&format!(
+                    "pp.ipaH[{}] = BabyJubjub.G1Point({});",
+                    i,
+                    &parse_g1_to_solidity_string_pc::<E>(&h)
+                ));
+                if i < pp.g.len() - 1 {
+                    populate_ipa_pp_vec.push_str("\n        ");
+                }
+            }
+            populate_ipa_pp_vec
+        });
+    src
+}
+
 
 pub fn get_bulletproofs_verifier_contract_src(
     pp: &Params<G>,
@@ -268,6 +342,33 @@ pub fn get_rsa_library_src(m: &BigInt, m_len: usize, as_contract: bool) -> Strin
     src
 }
 
+pub fn get_pedersen_library_src2<E: ProjectiveCurve>(ped_pp: &PedersenParams<E>, as_contract: bool) -> String {
+    let contract_path = format!("{}/contracts/PedersenBaby.sol", env!("CARGO_MANIFEST_DIR"));
+
+    let mut src_file = File::open(contract_path).unwrap();
+    let mut src = String::new();
+    src_file.read_to_string(&mut src).unwrap();
+    src = src
+        .replace("\"", "\\\"")
+        .replace(
+            "<%con_or_lib%>",
+            if as_contract { "contract" } else { "library" },
+        )
+        .replace(
+            "<%visibility%>",
+            if as_contract { "public" } else { "internal" },
+        )
+        .replace(
+            "<%ped_pp_g%>",
+            &parse_g1_to_solidity_string_pc::<E>(&ped_pp.g),
+        )
+        .replace(
+            "<%ped_pp_h%>",
+            &parse_g1_to_solidity_string_pc::<E>(&ped_pp.h),
+        );
+    src
+}
+
 pub fn get_pedersen_library_src(ped_pp: &PedersenParams<G>, as_contract: bool) -> String {
     let contract_path = format!("{}/contracts/Pedersen.sol", env!("CARGO_MANIFEST_DIR"));
 
@@ -367,6 +468,34 @@ pub fn encode_bulletproof<E: PairingEngine>(proof: &Proof<E::G1Projective>) -> T
     ));
     tokens.push(encode_field_element::<E>(&proof.base_a));
     tokens.push(encode_field_element::<E>(&proof.base_b));
+    Token::Tuple(tokens)
+}
+
+pub fn encode_bulletproof_2<E: ProjectiveCurve>(proof: &Proof<E>) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_group_element_pc::<E>(&proof.comm_bits));
+    tokens.push(encode_group_element_pc::<E>(&proof.comm_blind));
+    tokens.push(encode_group_element_pc::<E>(&proof.comm_lc1));
+    tokens.push(encode_group_element_pc::<E>(&proof.comm_lc2));
+    tokens.push(encode_field_element_pc::<E>(&proof.t_x));
+    tokens.push(encode_field_element_pc::<E>(&proof.r_t_x));
+    tokens.push(encode_field_element_pc::<E>(&proof.r_ab));
+    tokens.push(Token::Array(
+        proof
+            .comm_ipa
+            .iter()
+            .map(|(cl, _)| encode_group_element_pc::<E>(cl))
+            .collect::<Vec<_>>(),
+    ));
+    tokens.push(Token::Array(
+        proof
+            .comm_ipa
+            .iter()
+            .map(|(_, cr)| encode_group_element_pc::<E>(cr))
+            .collect::<Vec<_>>(),
+    ));
+    tokens.push(encode_field_element_pc::<E>(&proof.base_a));
+    tokens.push(encode_field_element_pc::<E>(&proof.base_b));
     Token::Tuple(tokens)
 }
 
@@ -483,6 +612,13 @@ pub fn encode_tc_opening<P: RsaGroupParams, HP: PocklingtonCertParams, D: Digest
 
 // Public Params
 
+pub fn encode_ped_pp_pc<G: ProjectiveCurve>(ped_pp: &PedersenParams<G>) -> Token {
+    let mut tokens = Vec::new();
+    tokens.push(encode_group_element_pc::<G>(&ped_pp.g));
+    tokens.push(encode_group_element_pc::<G>(&ped_pp.h));
+    Token::Tuple(tokens)
+}
+
 pub fn encode_ped_pp<E: PairingEngine>(ped_pp: &PedersenParams<E::G1Projective>) -> Token {
     let mut tokens = Vec::new();
     tokens.push(encode_group_element::<E>(&ped_pp.g));
@@ -576,15 +712,14 @@ pub fn read_groth16_src(vk: &VerifyingKey<Bn254>, as_contract: bool) -> String {
     for i in 0..vk.gamma_abc_g1.len() {
         populate_gamma_abc_points.push_str(&format!(
             "vk.gamma_abc[{}] = Pairing.G1Point(0x{}, 0x{});\n",
-            i,
-            &vk.gamma_abc_g1.get(i).unwrap().x.0.to_string().to_lowercase(), 
-            &vk.gamma_abc_g1.get(i).unwrap().y.0.to_string().to_lowercase(), 
+            i.to_string(),
+            &vk.gamma_abc_g1.get(i).unwrap().x.0.to_string(), 
+            &vk.gamma_abc_g1.get(i).unwrap().y.0.to_string(), 
         ));
     }
 
-    // println!("{}", &populate_gamma_abc_points);
-    println!("{}", (vk.gamma_abc_g1.len()-1).to_string());
-    
+    println!("{}", &populate_gamma_abc_points);
+
     let mut src_file = File::open(contract_path).unwrap();
     let mut src = String::new();
     src_file.read_to_string(&mut src).unwrap();
@@ -726,9 +861,28 @@ pub fn encode_groth16_proof<E: PairingEngine>(
     proof: &G16Proof<E>
 ) -> Token {
     let mut tokens = Vec::new();
-    encode_group_element::<E>(&proof.a.into_projective());
-    encode_g2_element::<E>(&proof.b.into_projective());
-    encode_group_element::<E>(&proof.c.into_projective());
+    tokens.push(encode_group_element::<E>(&proof.a.into_projective()));
+    tokens.push(encode_g2_element::<E>(&proof.b.into_projective()));
+    tokens.push(encode_group_element::<E>(&proof.c.into_projective()));
     Token::Tuple(tokens)
 }
+
+
+// pub fn encode_jubjub_g1<G: ProjectiveCurve>(x: &u8) -> String {
+//     let mut populate_m = String::new();
+//     for (i, u256digit) in m.to_u64_digits().1.chunks(4).rev().enumerate() {
+//         populate_m.push_str(&format!(
+//             "m_u256_digits[{}] = 0x{}{}{}{};",
+//             i,
+//             hex::encode(&u256digit[3].to_be_bytes()),
+//             hex::encode(&u256digit[2].to_be_bytes()),
+//             hex::encode(&u256digit[1].to_be_bytes()),
+//             hex::encode(&u256digit[0].to_be_bytes()),
+//         ));
+//         if i < m.to_u64_digits().1.len() / 4 - 1 {
+//             populate_m.push_str("\n        ");
+//         }
+//     }
+//     populate_m
+// }
 
