@@ -22,7 +22,7 @@ use rsa::{
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
     poe::Proof as PoEProof,
 };
-use solidity_test_utils::{ parse_g1_to_solidity_string_pc, parse_g1_pc, encode_group_element_pc,
+use solidity_test_utils::{parse_g2_to_solidity_string, parse_g1_to_solidity_string_pc, parse_g1_pc, encode_group_element_pc,
     encode_field_element, encode_field_element_pc, encode_group_element, encode_g2_element, encode_int_from_bytes, parse_g1_to_solidity_string
 };
 use timed_commitments::{basic_tc, lazy_tc};
@@ -711,14 +711,15 @@ pub fn read_groth16_src(vk: &VerifyingKey<Bn254>, as_contract: bool) -> String {
     let mut populate_gamma_abc_points = String::new();
     for i in 0..vk.gamma_abc_g1.len() {
         populate_gamma_abc_points.push_str(&format!(
-            "vk.gamma_abc[{}] = Pairing.G1Point(0x{}, 0x{});\n",
+            "vk.gamma_abc[{}] = Pairing.G1Point({});\n",
             i.to_string(),
-            &vk.gamma_abc_g1.get(i).unwrap().x.0.to_string(), 
-            &vk.gamma_abc_g1.get(i).unwrap().y.0.to_string(), 
+            parse_g1_to_solidity_string::<Bn254>( &vk.gamma_abc_g1.get(i).unwrap()),
+            // &vk.gamma_abc_g1.get(i).unwrap().x.0.to_string(), 
+            // &vk.gamma_abc_g1.get(i).unwrap().y.0.to_string(), 
         ));
     }
 
-    println!("{}", &populate_gamma_abc_points);
+    // println!("{}", &populate_gamma_abc_points);
 
     let mut src_file = File::open(contract_path).unwrap();
     let mut src = String::new();
@@ -733,22 +734,18 @@ pub fn read_groth16_src(vk: &VerifyingKey<Bn254>, as_contract: bool) -> String {
             "<%visibility%>", 
             if as_contract { "public" } else { "internal" },
         )
-        .replace("<%vk_alpha%>", &format!("0x{}, 0x{}", &vk.alpha_g1.x.0.to_string(), &vk.alpha_g1.y.0.to_string()))
-        .replace("<%vk_beta%>", &format!("[0x{}, 0x{}], [0x{}, 0x{}]",
-                    &vk.beta_g2.x.c0.0.to_string().to_lowercase(),
-                    &vk.beta_g2.x.c1.0.to_string().to_lowercase(),
-                    &vk.beta_g2.y.c0.0.to_string().to_lowercase(),
-                    &vk.beta_g2.y.c1.0.to_string().to_lowercase(),))
-        .replace("<%vk_gamma%>", &format!("[0x{}, 0x{}], [0x{}, 0x{}]",
-                    &vk.gamma_g2.x.c0.0.to_string().to_lowercase(),
-                    &vk.gamma_g2.x.c1.0.to_string().to_lowercase(),
-                    &vk.gamma_g2.y.c0.0.to_string().to_lowercase(),
-                    &vk.gamma_g2.y.c1.0.to_string().to_lowercase(),))
-        .replace("<%vk_delta%>", &format!("[0x{}, 0x{}], [0x{}, 0x{}]",
-                    &vk.delta_g2.x.c0.0.to_string().to_lowercase(),
-                    &vk.delta_g2.x.c1.0.to_string().to_lowercase(),
-                    &vk.delta_g2.y.c0.0.to_string().to_lowercase(),
-                    &vk.delta_g2.y.c1.0.to_string().to_lowercase(),))
+        .replace("<%vk_alpha%>", &format!("{}", parse_g1_to_solidity_string::<Bn254>( &vk.alpha_g1)))
+        // .replace("<%vk_beta%>", &format!("[0x{}, 0x{}], [0x{}, 0x{}]",
+        //             &vk.beta_g2.x.c0.0.to_string().to_lowercase(),
+        //             &vk.beta_g2.x.c1.0.to_string().to_lowercase(),
+        //             &vk.beta_g2.y.c0.0.to_string().to_lowercase(),
+        //             &vk.beta_g2.y.c1.0.to_string().to_lowercase(),))
+        .replace("<%vk_beta%>", &format!("{}", 
+                    parse_g2_to_solidity_string::<Bn254>(&vk.beta_g2)))
+        .replace("<%vk_gamma%>", &format!("{}", 
+                    parse_g2_to_solidity_string::<Bn254>(&vk.gamma_g2)))
+        .replace("<%vk_delta%>", &format!("{}", 
+                    parse_g2_to_solidity_string::<Bn254>(&vk.delta_g2)))
         .replace("<%vk_gamma_abc_length%>", &format!("{}",
                     &vk.gamma_abc_g1.len().to_string()))
         .replace("<%input_length%>", &format!("{}",
@@ -862,7 +859,7 @@ pub fn encode_groth16_proof<E: PairingEngine>(
 ) -> Token {
     let mut tokens = Vec::new();
     tokens.push(encode_group_element::<E>(&proof.a.into_projective()));
-    tokens.push(encode_g2_element::<E>(&proof.b.into_projective()));
+    tokens.push(encode_g2_element::<E>(&proof.b));
     tokens.push(encode_group_element::<E>(&proof.c.into_projective()));
     Token::Tuple(tokens)
 }

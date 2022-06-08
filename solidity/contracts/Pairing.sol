@@ -57,7 +57,7 @@ library Pairing {
 
 	/// return the product of a point on G1 and a scalar, i.e.
 	/// p == p.mul(1) and p.add(p) == p.mul(2) for all points p.
-	function scalar_mul(G1Point memory p, uint s) internal  returns (G1Point memory) {
+	function scalar_mul(G1Point memory p, uint s) internal view returns (G1Point memory) {
 		G1Point memory r;
 
 		uint[3] memory input;
@@ -76,7 +76,7 @@ library Pairing {
 	/// e(p1[0], p2[0]) *  .... * e(p1[n], p2[n]) == 1
 	/// For example pairing([P1(), P1().negate()], [P2(), P2()]) should
 	/// return true.
-	function pairing(G1Point[]  memory p1, G2Point[]  memory p2) internal  view returns (bool) {
+	function pairing(G1Point[]  memory p1, G2Point[]  memory p2) public  view returns (bool) {
 		require(p1.length == p2.length);
 		uint elements = p1.length;
 		uint inputSize = elements * 6;

@@ -1,4 +1,4 @@
-use ark_ec::{PairingEngine, ProjectiveCurve};
+use ark_ec::{PairingEngine, ProjectiveCurve, AffineCurve};
 use ark_ff::ToBytes;
 
 use ethabi::Token;
@@ -29,6 +29,7 @@ impl fmt::Display for EvmTestError {
         write!(f, "{}", self.0)
     }
 }
+
 
 /// Helper methods for parsing group structure
 /// https://github.com/Zokrates/ZoKrates/blob/develop/zokrates_core/src/proof_system/ark/mod.rs#L166
@@ -124,9 +125,49 @@ pub fn to_be_bytes(n: &U256) -> [u8; 32] {
 }
 
 
-pub fn parse_g2<E: PairingEngine>(
-        e: &E::G2Affine,
-    ) ->  ((Vec<u8>, Vec<u8>),  (Vec<u8>, Vec<u8>) )  {
+// pub fn parse_g2<E: PairingEngine>(
+//         e: &E::G2Affine,
+//     ) ->  ((Vec<u8>, Vec<u8>),  (Vec<u8>, Vec<u8>) )  {
+//     let mut bytes: Vec<u8> = Vec::new();
+//     e.write(&mut bytes).unwrap();
+
+//     let length = bytes.len() - 1; // [x, y, infinity] - infinity
+//     let element_length = length / 4;
+
+//     let mut elements = vec![];
+//     for i in 0..4 {
+//         let start = i * element_length;
+//         let end = start + element_length;
+//         let mut e = bytes[start..end].to_vec();
+//         e.reverse();
+//         elements.push(e);
+//     }
+
+//     (
+//         (
+//             elements[0].clone(),
+//             elements[1].clone(),
+//         ),
+//         (
+//             elements[2].clone(),
+//             elements[3].clone(),
+//         ),
+//     )
+
+//     // (
+//     //     (
+//     //         format!("0x{}", hex::encode(&elements[0])),
+//     //         format!("0x{}", hex::encode(&elements[1])),
+//     //     ),
+//     //     (
+//     //         format!("0x{}", hex::encode(&elements[2])),
+//     //         format!("0x{}", hex::encode(&elements[3])),
+//     //     ),
+//     // )
+// }
+
+
+pub fn parse_g2<E:PairingEngine>(e: &E::G2Affine,) ->  (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
     let mut bytes: Vec<u8> = Vec::new();
     e.write(&mut bytes).unwrap();
 
@@ -142,18 +183,12 @@ pub fn parse_g2<E: PairingEngine>(
         elements.push(e);
     }
 
-    (
-        (
-            elements[0].clone(),
-            elements[1].clone(),
-        ),
-        (
-            elements[2].clone(),
-            elements[3].clone(),
-        ),
-    )
+    (elements.get(0).unwrap().to_vec(), 
+        elements.get(1).unwrap().to_vec(),
+        elements.get(2).unwrap().to_vec(),
+        elements.get(3).unwrap().to_vec())
 
-    // (
+    // E::G2Affine(
     //     (
     //         format!("0x{}", hex::encode(&elements[0])),
     //         format!("0x{}", hex::encode(&elements[1])),
@@ -165,9 +200,15 @@ pub fn parse_g2<E: PairingEngine>(
     // )
 }
 
+pub fn parse_g2_to_solidity_string<E: PairingEngine>(g2: &E::G2Affine) -> String {
+    let (x, y, x2, y2) = parse_g2::<E>(&g2);
+    format!("[0x{}, 0x{}], [0x{}, 0x{}]", hex::encode(&x), hex::encode(&y), hex::encode(&x2), hex::encode(&y2))
+}
 
-pub fn encode_g2_element<E: PairingEngine>(g: &E::G2Projective) -> Token {
-    let ((x, y), (x2, y2))= parse_g2::<E>(&g.into_affine());
+
+pub fn encode_g2_element<E: PairingEngine>(g: &E::G2Affine) -> Token {
+    // let ((x, y), (x2, y2))= parse_g2::<E>(&g.into_affine());
+    let (x, y, x2, y2) = parse_g2::<E>(&g);
     
     let mut tokens = Vec::new();
     tokens.push(Token::FixedArray(vec![

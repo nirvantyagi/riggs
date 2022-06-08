@@ -41,21 +41,27 @@ contract Groth16Verifier {
         VerifyingKey memory vk = verifyingKey();
         require(input.length + 1 == vk.gamma_abc.length);
         // Compute the linear combination vk_x
-        Pairing.G1Point memory vk_x = Pairing.G1Point(0, 0);
+
+        Pairing.G1Point memory vk_x = Pairing.G1Point(0,0);
 
         for (uint i = 0; i < input.length; i++) {
             require(input[i] < snark_scalar_field);
-
             vk_x = Pairing.addition(vk_x, Pairing.scalar_mul(vk.gamma_abc[i + 1], input[i]));
         }
 
         vk_x = Pairing.addition(vk_x, vk.gamma_abc[0]);
-        
+
         // if(!Pairing.pairingProd4(
-        //      proof.a, proof.b,
-        //      Pairing.negate(vk_x), vk.gamma,
-        //      Pairing.negate(proof.c), vk.delta,
-        //      Pairing.negate(vk.alpha), vk.beta)) return 1;
+        //     proof.a, Pairing.P2(),
+        //     Pairing.negate(vk_x), Pairing.P2(),
+        //     Pairing.negate(proof.c), Pairing.P2(),
+        //     Pairing.negate(vk.alpha), Pairing.P2())) return 1;
+
+        if(!Pairing.pairingProd4(
+             proof.a, proof.b,
+             Pairing.negate(vk_x), vk.gamma,
+             Pairing.negate(proof.c), vk.delta,
+             Pairing.negate(vk.alpha), vk.beta)) return 1;
         return 0;
     }
 
