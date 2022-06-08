@@ -57,6 +57,16 @@ impl<G: ProjectiveCurve, P: RsaGroupParams> Hash for Comm<G, P> {
     }
 }
 
+impl<G: ProjectiveCurve, RsaP: RsaGroupParams, H2P: HashToPrime> Opening<G, RsaP, H2P> {
+    // Parses Pedersen opening from opening and panics if invalid
+    pub fn get_ped_opening(&self) -> G::ScalarField {
+        match self {
+            Opening::SELF(r) => r.clone(),
+            Opening::FORCE(_, _) => panic!("Should not be called"),
+        }
+    }
+}
+
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SnarkTC<

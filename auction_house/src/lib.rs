@@ -10,7 +10,7 @@ pub mod house;
 pub mod rp_auction;
 pub mod rp_house;
 pub mod snark_auction;
-//pub mod snark_house;
+pub mod snark_house;
 
 pub type Error = Box<dyn ErrorTrait>;
 
