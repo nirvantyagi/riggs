@@ -26,7 +26,7 @@ use rsa::{
 
 use crate::{basic_tc::TimeParams, Error, PedersenComm, PedersenParams};
 use rsa::bigint::nat_to_limbs;
-use std::{fmt::Debug, marker::PhantomData, ops::Deref};
+use std::{fmt::Debug, marker::PhantomData, ops::Deref, hash::{Hash, Hasher}};
 
 pub type Hog<P> = RsaHiddenOrderGroup<P>;
 
@@ -49,7 +49,15 @@ pub enum Opening<G: ProjectiveCurve, RsaP: RsaGroupParams, H2P: HashToPrime> {
     FORCE(Hog<RsaP>, PoEProof<RsaP, H2P>),
 }
 
-/// Non-malleable timed commitment using key-committing authenticated encryption
+impl<G: ProjectiveCurve, P: RsaGroupParams> Hash for Comm<G, P> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.ped_comm.hash(state);
+        self.x.hash(state);
+        self.ct.hash(state);
+    }
+}
+
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SnarkTC<
     F: PrimeField,
@@ -94,6 +102,14 @@ where
         let y = g.power(&BigInt::from(2).pow(t as u32));
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&g, &y, t)?;
         Ok((TimeParams { t, x: g, y }, proof))
+    }
+
+    pub fn gen_snark_params<R: CryptoRng + Rng>(
+        rng: &mut R,
+        time_pp: &TimeParams<RsaP>,
+        ped_pp: &PedersenParams<G>,
+    ) -> (PS::ProvingKey, PS::VerifyingKey) {
+        PS::circuit_specific_setup(TCCircuit::<F, P, RsaP, IntP, G, GV>::default(time_pp, ped_pp), rng).unwrap()
     }
 
     pub fn ver_time_params(
