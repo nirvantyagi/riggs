@@ -735,14 +735,9 @@ pub fn read_groth16_src(vk: &VerifyingKey<Bn254>, as_contract: bool) -> String {
             if as_contract { "public" } else { "internal" },
         )
         .replace("<%vk_alpha%>", &format!("{}", parse_g1_to_solidity_string::<Bn254>( &vk.alpha_g1)))
-        // .replace("<%vk_beta%>", &format!("[0x{}, 0x{}], [0x{}, 0x{}]",
-        //             &vk.beta_g2.x.c0.0.to_string().to_lowercase(),
-        //             &vk.beta_g2.x.c1.0.to_string().to_lowercase(),
-        //             &vk.beta_g2.y.c0.0.to_string().to_lowercase(),
-        //             &vk.beta_g2.y.c1.0.to_string().to_lowercase(),))
-        .replace("<%vk_beta%>", &format!("{}", 
+        .replace("<%vk_beta%>", &format!("{}",
                     parse_g2_to_solidity_string::<Bn254>(&vk.beta_g2)))
-        .replace("<%vk_gamma%>", &format!("{}", 
+        .replace("<%vk_gamma%>", &format!("{}",
                     parse_g2_to_solidity_string::<Bn254>(&vk.gamma_g2)))
         .replace("<%vk_delta%>", &format!("{}", 
                     parse_g2_to_solidity_string::<Bn254>(&vk.delta_g2)))

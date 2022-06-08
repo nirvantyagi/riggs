@@ -49,6 +49,31 @@ pub fn parse_g1_to_solidity_string<E: PairingEngine>(g1: &E::G1Affine) -> String
     format!("0x{}, 0x{}", hex::encode(&x), hex::encode(&y))
 }
 
+pub fn parse_g2<E:PairingEngine>(e: &E::G2Affine,) ->  (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
+    let mut bytes: Vec<u8> = Vec::new();
+    e.write(&mut bytes).unwrap();
+    let length = bytes.len() - 1; // [x, y, infinity] - infinity
+    println!("g2 length: {}", length);
+    let element_length = length / 4;
+    let mut elements = vec![];
+    for i in 0..4 {
+        let start = i * element_length;
+        let end = start + element_length;
+        let mut e = bytes[start..end].to_vec();
+        e.reverse();
+        elements.push(e);
+    }
+    (elements.get(1).unwrap().to_vec(),
+     elements.get(0).unwrap().to_vec(),
+     elements.get(3).unwrap().to_vec(),
+     elements.get(2).unwrap().to_vec())
+}
+
+pub fn parse_g2_to_solidity_string<E: PairingEngine>(g2: &E::G2Affine) -> String {
+    let (x1, x2, y1,  y2) = parse_g2::<E>(&g2);
+    format!("[0x{}, 0x{}], [0x{}, 0x{}]", hex::encode(&x1), hex::encode(&x2), hex::encode(&y1), hex::encode(&y2))
+}
+
 pub fn parse_g1_pc<G: ProjectiveCurve>(g1: &G) -> (Vec<u8>, Vec<u8>) {
     let mut bytes: Vec<u8> = Vec::new();
     g1.write(&mut bytes).unwrap();
@@ -102,6 +127,20 @@ pub fn encode_group_element<E: PairingEngine>(g: &E::G1Projective) -> Token {
     ])
 }
 
+pub fn encode_g2_element<E: PairingEngine>(g: &E::G2Affine) -> Token {
+    let (x1, x2, y1, y2) = parse_g2::<E>(&g);
+    let mut tokens = Vec::new();
+    tokens.push(Token::FixedArray(vec![
+        Token::Uint(U256::from_big_endian(&x1)),
+        Token::Uint(U256::from_big_endian(&x2)),
+    ]));
+    tokens.push(Token::FixedArray(vec![
+        Token::Uint(U256::from_big_endian(&y1)),
+        Token::Uint(U256::from_big_endian(&y2)),
+    ]));
+    Token::Tuple(tokens)
+}
+
 pub fn encode_field_element<E: PairingEngine>(f: &E::Fr) -> Token {
     Token::Uint(U256::from_big_endian(&parse_field::<E>(f)))
 }
@@ -122,104 +161,6 @@ pub fn to_be_bytes(n: &U256) -> [u8; 32] {
     let mut input_bytes: [u8; 32] = [0; 32];
     n.to_big_endian(&mut input_bytes);
     input_bytes
-}
-
-
-// pub fn parse_g2<E: PairingEngine>(
-//         e: &E::G2Affine,
-//     ) ->  ((Vec<u8>, Vec<u8>),  (Vec<u8>, Vec<u8>) )  {
-//     let mut bytes: Vec<u8> = Vec::new();
-//     e.write(&mut bytes).unwrap();
-
-//     let length = bytes.len() - 1; // [x, y, infinity] - infinity
-//     let element_length = length / 4;
-
-//     let mut elements = vec![];
-//     for i in 0..4 {
-//         let start = i * element_length;
-//         let end = start + element_length;
-//         let mut e = bytes[start..end].to_vec();
-//         e.reverse();
-//         elements.push(e);
-//     }
-
-//     (
-//         (
-//             elements[0].clone(),
-//             elements[1].clone(),
-//         ),
-//         (
-//             elements[2].clone(),
-//             elements[3].clone(),
-//         ),
-//     )
-
-//     // (
-//     //     (
-//     //         format!("0x{}", hex::encode(&elements[0])),
-//     //         format!("0x{}", hex::encode(&elements[1])),
-//     //     ),
-//     //     (
-//     //         format!("0x{}", hex::encode(&elements[2])),
-//     //         format!("0x{}", hex::encode(&elements[3])),
-//     //     ),
-//     // )
-// }
-
-
-pub fn parse_g2<E:PairingEngine>(e: &E::G2Affine,) ->  (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
-    let mut bytes: Vec<u8> = Vec::new();
-    e.write(&mut bytes).unwrap();
-
-    let length = bytes.len() - 1; // [x, y, infinity] - infinity
-    let element_length = length / 4;
-
-    let mut elements = vec![];
-    for i in 0..4 {
-        let start = i * element_length;
-        let end = start + element_length;
-        let mut e = bytes[start..end].to_vec();
-        e.reverse();
-        elements.push(e);
-    }
-
-    (elements.get(0).unwrap().to_vec(), 
-        elements.get(1).unwrap().to_vec(),
-        elements.get(2).unwrap().to_vec(),
-        elements.get(3).unwrap().to_vec())
-
-    // E::G2Affine(
-    //     (
-    //         format!("0x{}", hex::encode(&elements[0])),
-    //         format!("0x{}", hex::encode(&elements[1])),
-    //     ),
-    //     (
-    //         format!("0x{}", hex::encode(&elements[2])),
-    //         format!("0x{}", hex::encode(&elements[3])),
-    //     ),
-    // )
-}
-
-pub fn parse_g2_to_solidity_string<E: PairingEngine>(g2: &E::G2Affine) -> String {
-    let (x, y, x2, y2) = parse_g2::<E>(&g2);
-    format!("[0x{}, 0x{}], [0x{}, 0x{}]", hex::encode(&x), hex::encode(&y), hex::encode(&x2), hex::encode(&y2))
-}
-
-
-pub fn encode_g2_element<E: PairingEngine>(g: &E::G2Affine) -> Token {
-    // let ((x, y), (x2, y2))= parse_g2::<E>(&g.into_affine());
-    let (x, y, x2, y2) = parse_g2::<E>(&g);
-    
-    let mut tokens = Vec::new();
-    tokens.push(Token::FixedArray(vec![
-        Token::Uint(U256::from_big_endian(&x)),
-        Token::Uint(U256::from_big_endian(&y)),
-    ]));
-    tokens.push(Token::FixedArray(vec![
-        Token::Uint(U256::from_big_endian(&x2)),
-        Token::Uint(U256::from_big_endian(&y2)),
-    ]));
-    Token::Tuple(tokens)
 }
 
 
