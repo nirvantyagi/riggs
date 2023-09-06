@@ -1,14 +1,12 @@
 //! Implements Wesolowski's Proof of Exponentiation
-use std::io::{self, Write};
-use num_traits::{Zero, One};
 use crate::{
-    bigint::{BigInt, extended_euclidean_gcd},
+    bigint::{extended_euclidean_gcd, BigInt},
+    hash_to_prime::HashToPrime,
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
-    hash_to_prime::{
-        HashToPrime,
-    },
     Error,
 };
+use num_traits::{One, Zero};
+use std::io::{self, Write};
 
 use num_integer::Integer;
 use std::{fmt::Debug, marker::PhantomData};
@@ -20,7 +18,7 @@ pub trait PoEParams: Clone + Eq + Debug {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct PoE<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime > {
+pub struct PoE<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> {
     _params: PhantomData<P>,
     _rsa_params: PhantomData<RsaP>,
     _hash: PhantomData<H>,
@@ -54,7 +52,12 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         })
     }
 
-    pub fn prove_cheating(u: &Hog<RsaP>, v: &Hog<RsaP>, t: u64, order: &BigInt) -> Result<Proof<RsaP, H>, Error> {
+    pub fn prove_cheating(
+        u: &Hog<RsaP>,
+        v: &Hog<RsaP>,
+        t: u64,
+        order: &BigInt,
+    ) -> Result<Proof<RsaP, H>, Error> {
         // Hash to challenge
         let mut hash_input = vec![];
         hash_input.append(&mut pad_to_32_byte_offset(u.n.to_bytes_be().1));
@@ -69,7 +72,7 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         let q = (BigInt::one() << t).div_floor(&l).mod_floor(order);
 
         //let (_, q) = (BigInt::from(2).pow(t).div_floor(&l)).div_rem(&order);
-        
+
         // Compute proof elements
         Ok(Proof {
             q: u.power(&q),
@@ -88,7 +91,8 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         hash_input.append(&mut pad_to_32_byte_offset(u.n.to_bytes_be().1));
         hash_input.append(&mut pad_to_32_byte_offset(v.n.to_bytes_be().1));
         hash_input.extend_from_slice(&t.to_be_bytes());
-        let b = H::verify_hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input, &proof.l, &proof.cert)?;
+        let b =
+            H::verify_hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input, &proof.l, &proof.cert)?;
         let r = BigInt::from(2).modpow(&BigInt::from(t), &proof.l);
 
         // Verify proof
@@ -106,7 +110,6 @@ fn pad_to_32_byte_offset(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,7 +117,7 @@ mod tests {
     use sha3::Sha3_256;
     use std::str::FromStr;
 
-    use crate::hash_to_prime::pocklington::{PocklingtonHash, PocklingtonCertParams};
+    use crate::hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash};
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
@@ -148,9 +151,9 @@ mod tests {
         const INCLUDE_SOLIDITY_WITNESSES: bool = false;
     }
 
-
     pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
-    pub type TestWesolowski = PoE<TestPoEParams, TestRsaParams, PocklingtonHash<TestPocklingtonParams, Sha3_256>>;
+    pub type TestWesolowski =
+        PoE<TestPoEParams, TestRsaParams, PocklingtonHash<TestPocklingtonParams, Sha3_256>>;
 
     #[test]
     fn proof_of_exponentiation_test() {

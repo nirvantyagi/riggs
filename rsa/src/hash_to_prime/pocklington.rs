@@ -1,39 +1,32 @@
-use std::io::{self, Write};
 use crate::{
-    bigint::{BigInt, extended_euclidean_gcd},
+    bigint::{extended_euclidean_gcd, BigInt},
     hash_to_prime::{
-        HashToPrime,
-        HashToPrimeError,
-        hash_to_integer,
-        miller_rabin,
-        miller_rabin_32b,
+        hash_to_integer, miller_rabin, miller_rabin_32b, HashToPrime, HashToPrimeError,
     },
     Error,
 };
 use digest::Digest;
-use num_integer::{Integer};
+use num_integer::Integer;
 use num_traits::{One, Zero};
-use std::{
-    fmt::{Debug},
-    marker::PhantomData,
-};
+use std::io::{self, Write};
+use std::{fmt::Debug, marker::PhantomData};
 
 use pari_factor::factor;
 use std::{io::stdout, string::String, time::Instant};
 /// https://www-sop.inria.fr/members/Benjamin.Gregoire/Publi/pock.pdf
 pub trait PocklingtonCertParams: Clone + Eq + Debug + Send + Sync {
-    const NONCE_SIZE: usize;  // nonce size in bits
-    const MAX_STEPS: usize;  // max number of pocklington steps in certificate
-    const INCLUDE_SOLIDITY_WITNESSES: bool;  // flag to include witnesses for solidity verification
+    const NONCE_SIZE: usize; // nonce size in bits
+    const MAX_STEPS: usize; // max number of pocklington steps in certificate
+    const INCLUDE_SOLIDITY_WITNESSES: bool; // flag to include witnesses for solidity verification
 }
 
-pub struct PocklingtonHash<P: PocklingtonCertParams, D: Digest>{
+pub struct PocklingtonHash<P: PocklingtonCertParams, D: Digest> {
     _params: PhantomData<P>,
     _hash: PhantomData<D>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StepCert{
+pub struct StepCert {
     pub f: BigInt,
     pub n: u32,
     pub n2: u32,
@@ -52,14 +45,17 @@ pub struct StepCert{
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PocklingtonCert{
+pub struct PocklingtonCert {
     pub step_certificates: Vec<StepCert>,
     pub nonce: u32,
 }
 
 impl<P: PocklingtonCertParams, D: Digest> Clone for PocklingtonHash<P, D> {
     fn clone(&self) -> Self {
-        Self { _params: PhantomData, _hash: PhantomData }
+        Self {
+            _params: PhantomData,
+            _hash: PhantomData,
+        }
     }
 }
 
@@ -83,8 +79,10 @@ impl<P: PocklingtonCertParams, D: Digest> HashToPrime for PocklingtonHash<P, D> 
         println!("ENTERING H2P LOOP");
         'nonce_loop: for nonce in 0..(1u32 << P::NONCE_SIZE) {
             counter = counter + 1;
-            if counter%20 == 0 {println!("LOOP COUNTER {}", counter);}
-                        io::stdout().flush().unwrap();
+            if counter % 20 == 0 {
+                println!("LOOP COUNTER {}", counter);
+            }
+            io::stdout().flush().unwrap();
             inputs.truncate(inputs.len() - 4);
             inputs.extend_from_slice(&nonce.to_be_bytes());
             let p_candidate = hash_to_integer::<D>(&inputs, Self::prime_bits(entropy));
@@ -97,24 +95,48 @@ impl<P: PocklingtonCertParams, D: Digest> HashToPrime for PocklingtonHash<P, D> 
                         let end = start.elapsed().as_millis();
                         println!("H2P took {} millis", end);
                         io::stdout().flush().unwrap();
-                        return Ok((p_candidate, PocklingtonCert{ step_certificates: certs, nonce }))
+                        return Ok((
+                            p_candidate,
+                            PocklingtonCert {
+                                step_certificates: certs,
+                                nonce,
+                            },
+                        ));
                     } else {
-                        continue 'nonce_loop
+                        continue 'nonce_loop;
                     }
-                },
+                }
                 None => continue 'nonce_loop,
             }
         }
         Err(Box::new(HashToPrimeError::NoValidNonce))
     }
 
-    fn verify_hash_to_prime(entropy: usize, input: &[u8], p: &BigInt, cert: &Self::Certificate) -> Result<bool, Error> {
+    fn verify_hash_to_prime(
+        entropy: usize,
+        input: &[u8],
+        p: &BigInt,
+        cert: &Self::Certificate,
+    ) -> Result<bool, Error> {
         let mut inputs: Vec<u8> = input.iter().copied().collect();
         inputs.extend_from_slice(&cert.nonce.to_be_bytes());
-        let p_curr= hash_to_integer::<D>(&inputs, Self::prime_bits(entropy));
+        let p_curr = hash_to_integer::<D>(&inputs, Self::prime_bits(entropy));
         let check1 = &p_curr == p;
-        let p_path = vec![p_curr].iter().chain(cert.step_certificates.iter().map(|c| c.f.clone()).collect::<Vec<BigInt>>().iter()).cloned().collect::<Vec<BigInt>>();
-        let check2 = cert.step_certificates.iter().zip(p_path.iter())
+        let p_path = vec![p_curr]
+            .iter()
+            .chain(
+                cert.step_certificates
+                    .iter()
+                    .map(|c| c.f.clone())
+                    .collect::<Vec<BigInt>>()
+                    .iter(),
+            )
+            .cloned()
+            .collect::<Vec<BigInt>>();
+        let check2 = cert
+            .step_certificates
+            .iter()
+            .zip(p_path.iter())
             .all(|(c, p)| Self::verify_pocklington_step(p, c));
         let p_last = p_path.last().unwrap();
         let check3 = p_last.bits() < 32 && miller_rabin_32b(&p_last);
@@ -147,10 +169,23 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
         let factors = factor(&(p - BigInt::one()));
         debug_assert_eq!(factors[0].0, BigInt::from(2));
         let n2 = factors[0].1;
-        let (f, n, u, v, s, expr_sqrt) = factors.iter().skip(1).find_map(|(f, n)| Self::test_pocklington_f(p, f, *n, n2))?;
+        let (f, n, u, v, s, expr_sqrt) = factors
+            .iter()
+            .skip(1)
+            .find_map(|(f, n)| Self::test_pocklington_f(p, f, *n, n2))?;
         let ((bu, bv), gcd) = extended_euclidean_gcd(&u, &v);
         debug_assert_eq!(gcd, BigInt::one());
-        let (a, (p_less_one_div_f, p_less_one_div_two, b_p_div_f1, b_p_div_f2, b_p_div_two1, b_p_div_two2)) = {
+        let (
+            a,
+            (
+                p_less_one_div_f,
+                p_less_one_div_two,
+                b_p_div_f1,
+                b_p_div_f2,
+                b_p_div_two1,
+                b_p_div_two2,
+            ),
+        ) = {
             let mut out = None;
             let mut a_candidate = BigInt::from(2);
             while a_candidate < p - BigInt::one() {
@@ -163,41 +198,97 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
             out
         }?;
         Some(StepCert {
-            f,n, n2, a, bu, bv,
-            v: if P::INCLUDE_SOLIDITY_WITNESSES { Some(v) } else { None },
-            s: if P::INCLUDE_SOLIDITY_WITNESSES { Some(s) } else { None },
-            expr_sqrt: if P::INCLUDE_SOLIDITY_WITNESSES { Some(expr_sqrt) } else { None },
-            p_less_one_div_f: if P::INCLUDE_SOLIDITY_WITNESSES { Some(p_less_one_div_f) } else { None },
-            p_less_one_div_two: if P::INCLUDE_SOLIDITY_WITNESSES { Some(p_less_one_div_two) } else { None },
-            b_p_div_f1: if P::INCLUDE_SOLIDITY_WITNESSES { Some(b_p_div_f1) } else { None },
-            b_p_div_f2: if P::INCLUDE_SOLIDITY_WITNESSES { Some(b_p_div_f2) } else { None },
-            b_p_div_two1: if P::INCLUDE_SOLIDITY_WITNESSES { Some(b_p_div_two1) } else { None },
-            b_p_div_two2: if P::INCLUDE_SOLIDITY_WITNESSES { Some(b_p_div_two2) } else { None },
+            f,
+            n,
+            n2,
+            a,
+            bu,
+            bv,
+            v: if P::INCLUDE_SOLIDITY_WITNESSES {
+                Some(v)
+            } else {
+                None
+            },
+            s: if P::INCLUDE_SOLIDITY_WITNESSES {
+                Some(s)
+            } else {
+                None
+            },
+            expr_sqrt: if P::INCLUDE_SOLIDITY_WITNESSES {
+                Some(expr_sqrt)
+            } else {
+                None
+            },
+            p_less_one_div_f: if P::INCLUDE_SOLIDITY_WITNESSES {
+                Some(p_less_one_div_f)
+            } else {
+                None
+            },
+            p_less_one_div_two: if P::INCLUDE_SOLIDITY_WITNESSES {
+                Some(p_less_one_div_two)
+            } else {
+                None
+            },
+            b_p_div_f1: if P::INCLUDE_SOLIDITY_WITNESSES {
+                Some(b_p_div_f1)
+            } else {
+                None
+            },
+            b_p_div_f2: if P::INCLUDE_SOLIDITY_WITNESSES {
+                Some(b_p_div_f2)
+            } else {
+                None
+            },
+            b_p_div_two1: if P::INCLUDE_SOLIDITY_WITNESSES {
+                Some(b_p_div_two1)
+            } else {
+                None
+            },
+            b_p_div_two2: if P::INCLUDE_SOLIDITY_WITNESSES {
+                Some(b_p_div_two2)
+            } else {
+                None
+            },
         })
     }
 
     fn verify_pocklington_step(p: &BigInt, cert: &StepCert) -> bool {
-        match (Self::test_pocklington_f(p, &cert.f, cert.n, cert.n2), Self::test_pocklington_a(p, &cert.f, &cert.a)) {
+        match (
+            Self::test_pocklington_f(p, &cert.f, cert.n, cert.n2),
+            Self::test_pocklington_a(p, &cert.f, &cert.a),
+        ) {
             (Some((_, _, u, v, _, _)), Some(_)) => {
                 let test_parity = u.is_even() && v.is_odd();
                 let test_prod = &u * &v == p - BigInt::one();
                 let test_coprime = &cert.bu * &u + &cert.bv * &v == BigInt::one();
                 test_parity && test_prod && test_coprime
-            },
+            }
             _ => false,
         }
     }
 
-    fn test_pocklington_f(p: &BigInt, f: &BigInt, n: u32, n2: u32) -> Option<(BigInt, u32, BigInt, BigInt, BigInt, BigInt)> {
+    fn test_pocklington_f(
+        p: &BigInt,
+        f: &BigInt,
+        n: u32,
+        n2: u32,
+    ) -> Option<(BigInt, u32, BigInt, BigInt, BigInt, BigInt)> {
         let u = BigInt::from(2).pow(n2) * f.pow(n);
         let v = (p - BigInt::one()).div_floor(&u);
         let r = v.mod_floor(&(BigInt::from(2) * &u));
         let s = v.div_floor(&(BigInt::from(2) * &u));
 
         let expr = r.pow(2) - BigInt::from(8) * &s;
-        let expr_sqrt = if expr >= BigInt::zero() { expr.sqrt() } else { BigInt::zero() };
-        let test1 = &((&u + BigInt::one()) * (BigInt::from(2) * u.pow(2) + (&r - BigInt::one()) * &u + BigInt::one())) > p;
-        let test2 = (s == BigInt::zero()) || (expr >= BigInt::zero() && !(expr_sqrt.pow(2) == expr));
+        let expr_sqrt = if expr >= BigInt::zero() {
+            expr.sqrt()
+        } else {
+            BigInt::zero()
+        };
+        let test1 = &((&u + BigInt::one())
+            * (BigInt::from(2) * u.pow(2) + (&r - BigInt::one()) * &u + BigInt::one()))
+            > p;
+        let test2 =
+            (s == BigInt::zero()) || (expr >= BigInt::zero() && !(expr_sqrt.pow(2) == expr));
         if test1 && test2 {
             Some((f.clone(), n, u, v, s, expr_sqrt))
         } else {
@@ -205,17 +296,30 @@ impl<P: PocklingtonCertParams, D: Digest> PocklingtonHash<P, D> {
         }
     }
 
-    fn test_pocklington_a(p: &BigInt, f: &BigInt, a: &BigInt) -> Option<(BigInt, BigInt, BigInt, BigInt, BigInt, BigInt)> {
+    fn test_pocklington_a(
+        p: &BigInt,
+        f: &BigInt,
+        a: &BigInt,
+    ) -> Option<(BigInt, BigInt, BigInt, BigInt, BigInt, BigInt)> {
         let p_less_one = p - BigInt::one();
         let p_less_one_div_f = p_less_one.div_floor(f);
         let p_less_one_div_two = p_less_one.div_floor(&BigInt::from(2));
         let test1 = a.modpow(&p_less_one, p) == BigInt::one();
-        let ((b_p_div_f1, b_p_div_f2), gcd_div_f) = extended_euclidean_gcd(&(a.modpow(&p_less_one_div_f, p) - BigInt::one()), p);
+        let ((b_p_div_f1, b_p_div_f2), gcd_div_f) =
+            extended_euclidean_gcd(&(a.modpow(&p_less_one_div_f, p) - BigInt::one()), p);
         let test2 = gcd_div_f == BigInt::one();
-        let ((b_p_div_two1, b_p_div_two2), gcd_div_two) = extended_euclidean_gcd(&(a.modpow(&p_less_one_div_two, p) - BigInt::one()), p);
+        let ((b_p_div_two1, b_p_div_two2), gcd_div_two) =
+            extended_euclidean_gcd(&(a.modpow(&p_less_one_div_two, p) - BigInt::one()), p);
         let test3 = gcd_div_two == BigInt::one();
         if test1 && test2 && test3 {
-            Some((p_less_one_div_f, p_less_one_div_two, b_p_div_f1, b_p_div_f2, b_p_div_two1, b_p_div_two2))
+            Some((
+                p_less_one_div_f,
+                p_less_one_div_two,
+                b_p_div_f1,
+                b_p_div_f2,
+                b_p_div_two1,
+                b_p_div_two2,
+            ))
         } else {
             None
         }

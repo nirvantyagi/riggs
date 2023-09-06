@@ -1,20 +1,13 @@
-use ark_ff::{PrimeField};
-use ark_relations::r1cs::{SynthesisError, Namespace, ConstraintSystemRef};
-use ark_r1cs_std::{
-    prelude::*,
-};
+use ark_ff::PrimeField;
+use ark_r1cs_std::prelude::*;
+use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 
 use crate::{
-    bigint::{
-        constraints::{BigIntCircuitParams, BigIntVar},
-    },
-    hog::{RsaHiddenOrderGroup, RsaGroupParams},
+    bigint::constraints::{BigIntCircuitParams, BigIntVar},
+    hog::{RsaGroupParams, RsaHiddenOrderGroup},
 };
 
-use std::{
-    borrow::Borrow,
-    marker::PhantomData,
-};
+use std::{borrow::Borrow, marker::PhantomData};
 
 #[derive(Clone)]
 pub struct RsaHogVar<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams> {
@@ -22,19 +15,16 @@ pub struct RsaHogVar<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: Bi
     _rsa_params: PhantomData<RsaP>,
 }
 
-impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams> AllocVar<RsaHiddenOrderGroup<RsaP>, ConstraintF>
-for RsaHogVar<ConstraintF, RsaP, CircuitP> {
+impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams>
+    AllocVar<RsaHiddenOrderGroup<RsaP>, ConstraintF> for RsaHogVar<ConstraintF, RsaP, CircuitP>
+{
     fn new_variable<T: Borrow<RsaHiddenOrderGroup<RsaP>>>(
         cs: impl Into<Namespace<ConstraintF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
         mode: AllocationMode,
     ) -> Result<Self, SynthesisError> {
         f().and_then(|val| {
-            let nat_var = BigIntVar::new_variable(
-                cs,
-                || Ok(&val.borrow().n),
-                mode,
-            )?;
+            let nat_var = BigIntVar::new_variable(cs, || Ok(&val.borrow().n), mode)?;
             Ok(RsaHogVar {
                 n: nat_var,
                 _rsa_params: PhantomData,
@@ -43,8 +33,9 @@ for RsaHogVar<ConstraintF, RsaP, CircuitP> {
     }
 }
 
-impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams> R1CSVar<ConstraintF>
-for RsaHogVar<ConstraintF, RsaP, CircuitP> {
+impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams>
+    R1CSVar<ConstraintF> for RsaHogVar<ConstraintF, RsaP, CircuitP>
+{
     type Value = RsaHiddenOrderGroup<RsaP>;
 
     fn cs(&self) -> ConstraintSystemRef<ConstraintF> {
@@ -56,9 +47,14 @@ for RsaHogVar<ConstraintF, RsaP, CircuitP> {
     }
 }
 
-impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams> CondSelectGadget<ConstraintF>
-for RsaHogVar<ConstraintF, RsaP, CircuitP> {
-    fn conditionally_select(cond: &Boolean<ConstraintF>, true_value: &Self, false_value: &Self) -> Result<Self, SynthesisError> {
+impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams>
+    CondSelectGadget<ConstraintF> for RsaHogVar<ConstraintF, RsaP, CircuitP>
+{
+    fn conditionally_select(
+        cond: &Boolean<ConstraintF>,
+        true_value: &Self,
+        false_value: &Self,
+    ) -> Result<Self, SynthesisError> {
         Ok(RsaHogVar {
             n: BigIntVar::conditionally_select(cond, &true_value.n, &false_value.n)?,
             _rsa_params: PhantomData,
@@ -66,28 +62,35 @@ for RsaHogVar<ConstraintF, RsaP, CircuitP> {
     }
 }
 
-impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams> EqGadget<ConstraintF>
-for RsaHogVar<ConstraintF, RsaP, CircuitP> {
+impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams>
+    EqGadget<ConstraintF> for RsaHogVar<ConstraintF, RsaP, CircuitP>
+{
     fn is_eq(&self, other: &Self) -> Result<Boolean<ConstraintF>, SynthesisError> {
         self.n.is_eq(&other.n)
     }
 
-    fn conditional_enforce_equal(&self, other: &Self, should_enforce: &Boolean<ConstraintF>) -> Result<(), SynthesisError> {
+    fn conditional_enforce_equal(
+        &self,
+        other: &Self,
+        should_enforce: &Boolean<ConstraintF>,
+    ) -> Result<(), SynthesisError> {
         self.n.conditional_enforce_equal(&other.n, should_enforce)
     }
 }
 
-impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams> ToBytesGadget<ConstraintF>
-for RsaHogVar<ConstraintF, RsaP, CircuitP> {
+impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams>
+    ToBytesGadget<ConstraintF> for RsaHogVar<ConstraintF, RsaP, CircuitP>
+{
     fn to_bytes(&self) -> Result<Vec<UInt8<ConstraintF>>, SynthesisError> {
         self.n.to_bytes()
     }
 }
 
-impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams> RsaHogVar<ConstraintF, RsaP, CircuitP> {
-
+impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParams>
+    RsaHogVar<ConstraintF, RsaP, CircuitP>
+{
     pub fn constant(elem: &RsaHiddenOrderGroup<RsaP>) -> Result<Self, SynthesisError> {
-        Ok(RsaHogVar{
+        Ok(RsaHogVar {
             n: BigIntVar::constant(&elem.n)?,
             _rsa_params: PhantomData,
         })
@@ -104,7 +107,11 @@ impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParam
     // Performs modulo multiplication of op without deduplicating by selecting minimum group element
     // In RSA quotient groups, elements a and M - a are equivalent
     #[tracing::instrument(target = "r1cs", skip(self, other, modulus))]
-    pub fn op_allow_duplicate(&self, other: &Self, modulus: &BigIntVar<ConstraintF, CircuitP>) -> Result<Self, SynthesisError> {
+    pub fn op_allow_duplicate(
+        &self,
+        other: &Self,
+        modulus: &BigIntVar<ConstraintF, CircuitP>,
+    ) -> Result<Self, SynthesisError> {
         Ok(Self {
             n: self.n.mult_mod(&other.n, modulus)?,
             _rsa_params: PhantomData,
@@ -128,7 +135,10 @@ impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParam
 
     // Deduplicates self by selecting minimum of self and M - self.
     #[tracing::instrument(target = "r1cs", skip(self, modulus))]
-    pub fn deduplicate(&self, modulus: &BigIntVar<ConstraintF, CircuitP>) -> Result<Self, SynthesisError> {
+    pub fn deduplicate(
+        &self,
+        modulus: &BigIntVar<ConstraintF, CircuitP>,
+    ) -> Result<Self, SynthesisError> {
         Ok(Self {
             n: self.n.min(&modulus.sub(&self.n)?)?,
             _rsa_params: PhantomData,
@@ -136,10 +146,14 @@ impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParam
     }
 
     #[tracing::instrument(target = "r1cs", skip(self, other, modulus))]
-    pub fn op(&self, other: &Self, modulus: &BigIntVar<ConstraintF, CircuitP>) -> Result<Self, SynthesisError> {
-        Ok(self.op_allow_duplicate(other, modulus)?
-            .deduplicate(modulus)?
-        )
+    pub fn op(
+        &self,
+        other: &Self,
+        modulus: &BigIntVar<ConstraintF, CircuitP>,
+    ) -> Result<Self, SynthesisError> {
+        Ok(self
+            .op_allow_duplicate(other, modulus)?
+            .deduplicate(modulus)?)
     }
 
     #[tracing::instrument(target = "r1cs", skip(self, exp, modulus))]
@@ -149,37 +163,31 @@ impl<ConstraintF: PrimeField, RsaP: RsaGroupParams, CircuitP: BigIntCircuitParam
         modulus: &BigIntVar<ConstraintF, CircuitP>,
         num_exp_bits: usize,
     ) -> Result<Self, SynthesisError> {
-        Ok(self.power_allow_duplicate(exp, modulus, num_exp_bits)?
-            .deduplicate(modulus)?
-        )
+        Ok(self
+            .power_allow_duplicate(exp, modulus, num_exp_bits)?
+            .deduplicate(modulus)?)
     }
 
     /// Constrain `self` to be equal to `other`, assumes both have been deduplicated.
     #[tracing::instrument(target = "r1cs", skip(self, other))]
-    pub fn enforce_equal(
-        &self,
-        other: &Self,
-    ) -> Result<(), SynthesisError> {
+    pub fn enforce_equal(&self, other: &Self) -> Result<(), SynthesisError> {
         self.n.enforce_equal_when_carried(&other.n)
     }
-
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ed_on_bls12_381::{Fq};
-    use ark_relations::r1cs::{ConstraintSystem, ConstraintLayer};
+    use crate::bigint::BigInt;
+    use ark_ed_on_bls12_381::Fq;
+    use ark_relations::r1cs::{ConstraintLayer, ConstraintSystem};
     use tracing_subscriber::layer::SubscriberExt;
-    use crate::{bigint::BigInt};
 
-
-    use rand::{rngs::StdRng, SeedableRng};
-    use once_cell::sync::Lazy;
     use num_bigint::RandBigInt;
-    use std::str::FromStr;
+    use once_cell::sync::Lazy;
+    use rand::{rngs::StdRng, SeedableRng};
     use std::ops::Deref;
+    use std::str::FromStr;
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct TestRsaParams;
@@ -205,14 +213,16 @@ mod tests {
     impl RsaGroupParams for TestRsa512Params {
         const G: Lazy<BigInt> = Lazy::new(|| BigInt::from(2));
         const M: Lazy<BigInt> = Lazy::new(|| {
-            BigInt::from_str("11834783464130424096695514462778\
+            BigInt::from_str(
+                "11834783464130424096695514462778\
                                      87028026498993885732873780720562\
                                      30692915355259527228479136942963\
                                      92927890261736769191982212777933\
-                                     726583565708193466779811767").unwrap()
+                                     726583565708193466779811767",
+            )
+            .unwrap()
         });
     }
-
 
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct BigNatTestParams;
@@ -245,30 +255,30 @@ mod tests {
             let cs = ConstraintSystem::<Fq>::new_ref();
             let a = Hog::from_nat(BigInt::from(30));
             let inv_a = a.inverse().unwrap();
-            let a_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "a"),
-                || Ok(&a),
-            ).unwrap();
-            let inv_a_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "inv_a"),
-                || Ok(&inv_a),
-            ).unwrap();
-            let mod_var = BigIntVar::<Fq, BigNatTestParams>::constant(TestRsaParams::M.deref()).unwrap();
-            HogVar::enforce_equal(&HogVar::identity().unwrap(), &a_var.op(&inv_a_var, &mod_var).unwrap()).unwrap();
+            let a_var = HogVar::new_witness(ark_relations::ns!(cs, "a"), || Ok(&a)).unwrap();
+            let inv_a_var =
+                HogVar::new_witness(ark_relations::ns!(cs, "inv_a"), || Ok(&inv_a)).unwrap();
+            let mod_var =
+                BigIntVar::<Fq, BigNatTestParams>::constant(TestRsaParams::M.deref()).unwrap();
+            HogVar::enforce_equal(
+                &HogVar::identity().unwrap(),
+                &a_var.op(&inv_a_var, &mod_var).unwrap(),
+            )
+            .unwrap();
 
             // Large value a
             let a = Hog::from_nat(BigInt::from(-30) + TestRsaParams::M.deref());
             let inv_a = a.inverse().unwrap();
-            let a_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "a"),
-                || Ok(&a),
-            ).unwrap();
-            let inv_a_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "inv_a"),
-                || Ok(&inv_a),
-            ).unwrap();
-            let mod_var = BigIntVar::<Fq, BigNatTestParams>::constant(TestRsaParams::M.deref()).unwrap();
-            HogVar::enforce_equal(&HogVar::identity().unwrap(), &a_var.op(&inv_a_var, &mod_var).unwrap()).unwrap();
+            let a_var = HogVar::new_witness(ark_relations::ns!(cs, "a"), || Ok(&a)).unwrap();
+            let inv_a_var =
+                HogVar::new_witness(ark_relations::ns!(cs, "inv_a"), || Ok(&inv_a)).unwrap();
+            let mod_var =
+                BigIntVar::<Fq, BigNatTestParams>::constant(TestRsaParams::M.deref()).unwrap();
+            HogVar::enforce_equal(
+                &HogVar::identity().unwrap(),
+                &a_var.op(&inv_a_var, &mod_var).unwrap(),
+            )
+            .unwrap();
 
             println!("Number of constraints: {}", cs.num_constraints());
             if !cs.is_satisfied().unwrap() {
@@ -280,7 +290,6 @@ mod tests {
             assert!(cs.is_satisfied().unwrap());
         })
     }
-
 
     #[test]
     fn valid_multiple_ops_without_dedup_test() {
@@ -294,34 +303,27 @@ mod tests {
             let c = Hog::from_nat(BigInt::from(50)).inverse().unwrap();
             let d = Hog::from_nat(BigInt::from(60)).inverse().unwrap();
             let result = a.op(&b).op(&c).op(&d);
-            let a_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "a"),
-                || Ok(&a),
-            ).unwrap();
-            let b_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "b"),
-                || Ok(&b),
-            ).unwrap();
-            let c_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "c"),
-                || Ok(&c),
-            ).unwrap();
-            let d_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "d"),
-                || Ok(&d),
-            ).unwrap();
-            let result_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "result"),
-                || Ok(&result),
-            ).unwrap();
-            let mod_var = BigIntVar::<Fq, BigNatTestParams>::constant(TestRsaParams::M.deref()).unwrap();
+            let a_var = HogVar::new_witness(ark_relations::ns!(cs, "a"), || Ok(&a)).unwrap();
+            let b_var = HogVar::new_witness(ark_relations::ns!(cs, "b"), || Ok(&b)).unwrap();
+            let c_var = HogVar::new_witness(ark_relations::ns!(cs, "c"), || Ok(&c)).unwrap();
+            let d_var = HogVar::new_witness(ark_relations::ns!(cs, "d"), || Ok(&d)).unwrap();
+            let result_var =
+                HogVar::new_witness(ark_relations::ns!(cs, "result"), || Ok(&result)).unwrap();
+            let mod_var =
+                BigIntVar::<Fq, BigNatTestParams>::constant(TestRsaParams::M.deref()).unwrap();
             HogVar::enforce_equal(
                 &result_var,
-                &a_var.op_allow_duplicate(&b_var, &mod_var).unwrap()
-                    .op_allow_duplicate(&c_var, &mod_var).unwrap()
-                    .op_allow_duplicate(&d_var, &mod_var).unwrap()
-                    .deduplicate(&mod_var).unwrap()
-            ).unwrap();
+                &a_var
+                    .op_allow_duplicate(&b_var, &mod_var)
+                    .unwrap()
+                    .op_allow_duplicate(&c_var, &mod_var)
+                    .unwrap()
+                    .op_allow_duplicate(&d_var, &mod_var)
+                    .unwrap()
+                    .deduplicate(&mod_var)
+                    .unwrap(),
+            )
+            .unwrap();
 
             println!("Number of constraints: {}", cs.num_constraints());
             if !cs.is_satisfied().unwrap() {
@@ -344,23 +346,18 @@ mod tests {
             let a = Hog::from_nat(BigInt::from(30)).inverse().unwrap();
             let exp1 = BigInt::from(450);
             let result = a.power(&exp1);
-            let a_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "a"),
-                || Ok(&a),
-            ).unwrap();
+            let a_var = HogVar::new_witness(ark_relations::ns!(cs, "a"), || Ok(&a)).unwrap();
             let exp1_var = BigIntVar::<Fq, BigNatTestParams>::new_witness(
                 ark_relations::ns!(cs, "exp1"),
                 || Ok(&exp1),
-            ).unwrap();
-            let result_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "result"),
-                || Ok(&result),
-            ).unwrap();
-            let mod_var = BigIntVar::<Fq, BigNatTestParams>::constant(TestRsaParams::M.deref()).unwrap();
-            HogVar::enforce_equal(
-                &result_var,
-                &a_var.power(&exp1_var, &mod_var, 16).unwrap()
-            ).unwrap();
+            )
+            .unwrap();
+            let result_var =
+                HogVar::new_witness(ark_relations::ns!(cs, "result"), || Ok(&result)).unwrap();
+            let mod_var =
+                BigIntVar::<Fq, BigNatTestParams>::constant(TestRsaParams::M.deref()).unwrap();
+            HogVar::enforce_equal(&result_var, &a_var.power(&exp1_var, &mod_var, 16).unwrap())
+                .unwrap();
 
             println!("Number of constraints: {}", cs.num_constraints());
             if !cs.is_satisfied().unwrap() {
@@ -372,7 +369,6 @@ mod tests {
             assert!(cs.is_satisfied().unwrap());
         })
     }
-
 
     #[test]
     #[ignore] // Expensive test, run with ``cargo test valid_power_2048_256_test --release -- --ignored --nocapture``
@@ -386,23 +382,18 @@ mod tests {
             let a = Hog::from_nat(BigInt::from(30)).inverse().unwrap();
             let exp1 = BigInt::from(rng.gen_biguint(256));
             let result = a.power(&exp1);
-            let a_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "a"),
-                || Ok(&a),
-            ).unwrap();
+            let a_var = HogVar::new_witness(ark_relations::ns!(cs, "a"), || Ok(&a)).unwrap();
             let exp1_var = BigIntVar::<Fq, BigNatTestParams>::new_witness(
                 ark_relations::ns!(cs, "exp1"),
                 || Ok(&exp1),
-            ).unwrap();
-            let result_var = HogVar::new_witness(
-                ark_relations::ns!(cs, "result"),
-                || Ok(&result),
-            ).unwrap();
-            let mod_var = BigIntVar::<Fq, BigNatTestParams>::constant(TestRsaParams::M.deref()).unwrap();
-            HogVar::enforce_equal(
-                &result_var,
-                &a_var.power(&exp1_var, &mod_var, 256).unwrap()
-            ).unwrap();
+            )
+            .unwrap();
+            let result_var =
+                HogVar::new_witness(ark_relations::ns!(cs, "result"), || Ok(&result)).unwrap();
+            let mod_var =
+                BigIntVar::<Fq, BigNatTestParams>::constant(TestRsaParams::M.deref()).unwrap();
+            HogVar::enforce_equal(&result_var, &a_var.power(&exp1_var, &mod_var, 256).unwrap())
+                .unwrap();
 
             println!("Number of constraints: {}", cs.num_constraints());
             if !cs.is_satisfied().unwrap() {
@@ -414,7 +405,6 @@ mod tests {
             assert!(cs.is_satisfied().unwrap());
         })
     }
-
 
     #[test]
     fn valid_power_512_16_test() {
@@ -427,23 +417,18 @@ mod tests {
             let a = Hog512::from_nat(BigInt::from(30)).inverse().unwrap();
             let exp1 = BigInt::from(rng.gen_biguint(16));
             let result = a.power(&exp1);
-            let a_var = HogVar512::new_witness(
-                ark_relations::ns!(cs, "a"),
-                || Ok(&a),
-            ).unwrap();
+            let a_var = HogVar512::new_witness(ark_relations::ns!(cs, "a"), || Ok(&a)).unwrap();
             let exp1_var = BigIntVar::<Fq, BigNatTestParams>::new_witness(
                 ark_relations::ns!(cs, "exp1"),
                 || Ok(&exp1),
-            ).unwrap();
-            let result_var = HogVar512::new_witness(
-                ark_relations::ns!(cs, "result"),
-                || Ok(&result),
-            ).unwrap();
-            let mod_var = BigIntVar::<Fq, BigNatTestParams>::constant(TestRsa512Params::M.deref()).unwrap();
-            HogVar512::enforce_equal(
-                &result_var,
-                &a_var.power(&exp1_var, &mod_var, 16).unwrap()
-            ).unwrap();
+            )
+            .unwrap();
+            let result_var =
+                HogVar512::new_witness(ark_relations::ns!(cs, "result"), || Ok(&result)).unwrap();
+            let mod_var =
+                BigIntVar::<Fq, BigNatTestParams>::constant(TestRsa512Params::M.deref()).unwrap();
+            HogVar512::enforce_equal(&result_var, &a_var.power(&exp1_var, &mod_var, 16).unwrap())
+                .unwrap();
 
             println!("Number of constraints: {}", cs.num_constraints());
             if !cs.is_satisfied().unwrap() {
@@ -455,7 +440,6 @@ mod tests {
             assert!(cs.is_satisfied().unwrap());
         })
     }
-
 
     #[test]
     fn valid_multiple_power_without_dedup_512_16_test() {
@@ -470,34 +454,41 @@ mod tests {
             let exp2 = BigInt::from(rng.gen_biguint(16));
             let exp3 = BigInt::from(rng.gen_biguint(16));
             let result = a.power(&exp1).power(&exp2).power(&exp3);
-            let a_var = HogVar512All::new_witness(
-                ark_relations::ns!(cs, "a"),
-                || Ok(&a),
-            ).unwrap();
+            let a_var = HogVar512All::new_witness(ark_relations::ns!(cs, "a"), || Ok(&a)).unwrap();
             let exp1_var = BigIntVar::<Fq, BigNat512TestParams>::new_witness(
                 ark_relations::ns!(cs, "exp1"),
                 || Ok(&exp1),
-            ).unwrap();
+            )
+            .unwrap();
             let exp2_var = BigIntVar::<Fq, BigNat512TestParams>::new_witness(
                 ark_relations::ns!(cs, "exp2"),
                 || Ok(&exp2),
-            ).unwrap();
+            )
+            .unwrap();
             let exp3_var = BigIntVar::<Fq, BigNat512TestParams>::new_witness(
                 ark_relations::ns!(cs, "exp3"),
                 || Ok(&exp3),
-            ).unwrap();
-            let result_var = HogVar512All::new_witness(
-                ark_relations::ns!(cs, "result"),
-                || Ok(&result),
-            ).unwrap();
-            let mod_var = BigIntVar::<Fq, BigNat512TestParams>::constant(TestRsa512Params::M.deref()).unwrap();
+            )
+            .unwrap();
+            let result_var =
+                HogVar512All::new_witness(ark_relations::ns!(cs, "result"), || Ok(&result))
+                    .unwrap();
+            let mod_var =
+                BigIntVar::<Fq, BigNat512TestParams>::constant(TestRsa512Params::M.deref())
+                    .unwrap();
             HogVar512All::enforce_equal(
                 &result_var,
-                &a_var.power_allow_duplicate(&exp1_var, &mod_var, 16).unwrap()
-                    .power_allow_duplicate(&exp2_var, &mod_var, 16).unwrap()
-                    .power_allow_duplicate(&exp3_var, &mod_var, 16).unwrap()
-                    .deduplicate(&mod_var).unwrap()
-            ).unwrap();
+                &a_var
+                    .power_allow_duplicate(&exp1_var, &mod_var, 16)
+                    .unwrap()
+                    .power_allow_duplicate(&exp2_var, &mod_var, 16)
+                    .unwrap()
+                    .power_allow_duplicate(&exp3_var, &mod_var, 16)
+                    .unwrap()
+                    .deduplicate(&mod_var)
+                    .unwrap(),
+            )
+            .unwrap();
 
             println!("Number of constraints: {}", cs.num_constraints());
             if !cs.is_satisfied().unwrap() {

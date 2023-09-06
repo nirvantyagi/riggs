@@ -1,14 +1,13 @@
 use crate::{bigint::BigInt, Error};
-use std::io::{self, Write};
 use digest::Digest;
 use num_bigint::Sign;
+use num_integer::Integer;
 use num_traits::One;
 use std::{
     error::Error as ErrorTrait,
     fmt::{self, Debug},
     marker::PhantomData,
 };
-use num_integer::Integer;
 
 pub mod pocklington;
 
@@ -17,10 +16,15 @@ pub trait HashToPrime: Clone + Eq {
 
     fn hash_to_prime(entropy: usize, input: &[u8]) -> Result<(BigInt, Self::Certificate), Error>;
 
-    fn verify_hash_to_prime(entropy: usize, input: &[u8], p: &BigInt, cert: &Self::Certificate) -> Result<bool, Error>;
+    fn verify_hash_to_prime(
+        entropy: usize,
+        input: &[u8],
+        p: &BigInt,
+        cert: &Self::Certificate,
+    ) -> Result<bool, Error>;
 }
 
-pub struct MillerRabinRejectionSample<D: Digest>{
+pub struct MillerRabinRejectionSample<D: Digest> {
     _hash: PhantomData<D>,
 }
 
@@ -45,7 +49,12 @@ impl<D: Digest> HashToPrime for MillerRabinRejectionSample<D> {
         hash_to_prime::<D>(input, Self::prime_bits(entropy))
     }
 
-    fn verify_hash_to_prime(entropy: usize, input: &[u8], p: &BigInt, cert: &Self::Certificate) -> Result<bool, Error> {
+    fn verify_hash_to_prime(
+        entropy: usize,
+        input: &[u8],
+        p: &BigInt,
+        cert: &Self::Certificate,
+    ) -> Result<bool, Error> {
         let mut input = input.to_vec();
         input.extend_from_slice(&cert.to_le_bytes());
         let p_comp = hash_to_integer::<D>(&input, Self::prime_bits(entropy));
@@ -63,7 +72,6 @@ impl<D: Digest> MillerRabinRejectionSample<D> {
         // Size of prime needed if any nonce of valid length is allowed
         n_bits + nonce_bits
     }
-
 }
 
 /// Returns whether `n` passes Miller-Rabin checks with the first `rounds` primes as bases
@@ -86,10 +94,12 @@ pub fn miller_rabin(n: &BigInt, rounds: usize) -> bool {
 
 /// Returns whether `n` passes a Miller-Rabin check with base `b`.
 fn miller_rabin_round(n: &BigInt, b: &BigInt) -> bool {
-    if n.is_even() { return false };
+    if n.is_even() {
+        return false;
+    };
     let n_less_one = n - BigInt::one();
     let s = n_less_one.trailing_zeros().expect("Input must be > 1");
-    let d =  &n_less_one >> s as u32;
+    let d = &n_less_one >> s as u32;
     let mut pow = b.modpow(&d, &n);
     if pow == BigInt::one() || pow == n_less_one {
         return true;
@@ -186,8 +196,8 @@ impl fmt::Display for HashToPrimeError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
     use sha3::Sha3_256;
+    use std::str::FromStr;
 
     #[test]
     fn hash_to_integer_test() {
@@ -202,10 +212,14 @@ mod tests {
 
     #[test]
     fn miller_rabin_rejection_sample_prime_test() {
-        let (h, cert) = MillerRabinRejectionSample::<Sha3_256>::hash_to_prime(128, &vec![0]).unwrap();
+        let (h, cert) =
+            MillerRabinRejectionSample::<Sha3_256>::hash_to_prime(128, &vec![0]).unwrap();
         println!("mr: {}", h);
         println!("nonce: {}", cert);
-        assert!(MillerRabinRejectionSample::<Sha3_256>::verify_hash_to_prime(128, &vec![0], &h, &cert).unwrap());
+        assert!(
+            MillerRabinRejectionSample::<Sha3_256>::verify_hash_to_prime(128, &vec![0], &h, &cert)
+                .unwrap()
+        );
     }
 
     #[test]

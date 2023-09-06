@@ -40,7 +40,6 @@ impl<P: RsaGroupParams> Hash for RsaHiddenOrderGroup<P> {
 }
 
 impl<P: RsaGroupParams> RsaHiddenOrderGroup<P> {
-
     pub fn from_nat(n: BigInt) -> Self {
         let mut a = n;
         assert!(a > BigInt::zero());

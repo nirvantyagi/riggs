@@ -2,13 +2,13 @@ use ark_ff::fields::{FpParameters, PrimeField};
 use num_bigint::BigInt as NumBigInt;
 use num_integer::{ExtendedGcd, Integer};
 
+use num_traits::Signed;
 use std::{
     borrow::Borrow,
     convert::TryInto,
     error::Error as ErrorTrait,
     fmt::{self, Debug},
 };
-use num_traits::Signed;
 use tracing::debug;
 
 use crate::Error;

@@ -5,7 +5,7 @@ use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use crate::bigint::{f_to_nat, fit_nat_to_limbs, limbs_to_nat, nat_to_f, nat_to_limbs, BigInt};
 
 use num_integer::Integer;
-use num_traits::{Zero, One, Signed};
+use num_traits::{One, Signed, Zero};
 use std::{
     borrow::Borrow,
     cmp::{max, min},
@@ -21,13 +21,15 @@ pub trait BigIntCircuitParams: Clone + Debug + Eq + PartialEq {
 //TODO: Track word_size in number of bits rather than value
 #[derive(Clone)]
 pub struct BigIntVar<ConstraintF: PrimeField, P: BigIntCircuitParams> {
-    pub limbs: Vec<FpVar<ConstraintF>>,  // Must be of length P::N_LIMBS
+    pub limbs: Vec<FpVar<ConstraintF>>, // Must be of length P::N_LIMBS
     pub value: BigInt,
     word_size: BigInt,
     _params: PhantomData<P>,
 }
 
-impl<ConstraintF: PrimeField, P: BigIntCircuitParams> AllocVar<BigInt, ConstraintF> for BigIntVar<ConstraintF, P> {
+impl<ConstraintF: PrimeField, P: BigIntCircuitParams> AllocVar<BigInt, ConstraintF>
+    for BigIntVar<ConstraintF, P>
+{
     fn new_variable<T: Borrow<BigInt>>(
         cs: impl Into<Namespace<ConstraintF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -35,11 +37,7 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> AllocVar<BigInt, Constrain
     ) -> Result<Self, SynthesisError> {
         f().and_then(|val| {
             let limbs = nat_to_limbs(val.borrow(), P::LIMB_WIDTH, P::N_LIMBS).unwrap();
-            let limb_vars = Vec::<FpVar<ConstraintF>>::new_variable(
-                cs,
-                || Ok(&limbs[..]),
-                mode,
-            )?;
+            let limb_vars = Vec::<FpVar<ConstraintF>>::new_variable(cs, || Ok(&limbs[..]), mode)?;
             Ok(BigIntVar {
                 limbs: limb_vars,
                 value: val.borrow().clone(),
@@ -50,7 +48,9 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> AllocVar<BigInt, Constrain
     }
 }
 
-impl<ConstraintF: PrimeField, P: BigIntCircuitParams> R1CSVar<ConstraintF> for BigIntVar<ConstraintF, P> {
+impl<ConstraintF: PrimeField, P: BigIntCircuitParams> R1CSVar<ConstraintF>
+    for BigIntVar<ConstraintF, P>
+{
     type Value = BigInt;
 
     fn cs(&self) -> ConstraintSystemRef<ConstraintF> {
@@ -59,8 +59,10 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> R1CSVar<ConstraintF> for B
 
     fn value(&self) -> Result<Self::Value, SynthesisError> {
         debug_assert_eq!(self.limbs.len(), P::N_LIMBS);
-        let limbs = self.limbs.iter()
-            .map(|f|  f.value() )
+        let limbs = self
+            .limbs
+            .iter()
+            .map(|f| f.value())
             .collect::<Result<Vec<ConstraintF>, SynthesisError>>()?;
         let value = limbs_to_nat::<ConstraintF>(&limbs, P::LIMB_WIDTH);
         debug_assert_eq!(self.value, value);
@@ -68,12 +70,13 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> R1CSVar<ConstraintF> for B
     }
 }
 
-
 impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> {
     // Create constant without reference to constraint system
     pub fn constant(nat: &BigInt) -> Result<Self, SynthesisError> {
         let limbs = nat_to_limbs::<ConstraintF>(nat, P::LIMB_WIDTH, P::N_LIMBS).unwrap();
-        let limb_vars = limbs.iter().map(|l| <FpVar<ConstraintF>>::constant(l.clone()))
+        let limb_vars = limbs
+            .iter()
+            .map(|l| <FpVar<ConstraintF>>::constant(l.clone()))
             .collect::<Vec<FpVar<ConstraintF>>>();
         Ok(BigIntVar {
             limbs: limb_vars,
@@ -102,10 +105,12 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         if word_size.bits() > <ConstraintF::Params as FpParameters>::CAPACITY as u64 {
             self.reduce()?.add(&other.reduce()?)
         } else {
-            let limbs = self.limbs.iter().zip(&other.limbs)
-                .map(|(l1, l2)| {
-                    l1 + l2
-                }).collect::<Vec<FpVar<ConstraintF>>>();
+            let limbs = self
+                .limbs
+                .iter()
+                .zip(&other.limbs)
+                .map(|(l1, l2)| l1 + l2)
+                .collect::<Vec<FpVar<ConstraintF>>>();
             Ok(Self {
                 limbs: limbs,
                 value: BigInt::from(&self.value + &other.value),
@@ -115,13 +120,9 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         }
     }
 
-
     /// Constrain `result` to be equal to `self` - `other`.
     #[tracing::instrument(target = "r1cs", skip(self, other))]
-    pub fn sub(
-        &self,
-        other: &Self,
-    ) -> Result<Self, SynthesisError> {
+    pub fn sub(&self, other: &Self) -> Result<Self, SynthesisError> {
         let cs = self.cs().or(other.cs());
         let diff_val = &self.value - &other.value;
         assert!(!diff_val.is_negative());
@@ -140,10 +141,7 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
     //TODO: Will panic if 2 values are multiplied to a product larger than fits in N_LIMBS
     /// Constrain `result` to be equal to `self * other`.
     #[tracing::instrument(target = "r1cs", skip(self, other))]
-    pub fn mult(
-        &self,
-        other: &Self,
-    ) -> Result<Self, SynthesisError> {
+    pub fn mult(&self, other: &Self) -> Result<Self, SynthesisError> {
         let cs = self.cs().or(other.cs());
         let product_value = BigInt::from(&self.value * &other.value);
         if cs == ConstraintSystemRef::None {
@@ -151,8 +149,13 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         }
 
         // Reduce values so that multiplication doesn't overflow
-        debug_assert!(2 * (P::LIMB_WIDTH as u64) + log2(P::N_LIMBS) <= <ConstraintF::Params as FpParameters>::CAPACITY as u64);
-        if &self.word_size.bits() + &other.word_size.bits() + log2(P::N_LIMBS) > <ConstraintF::Params as FpParameters>::CAPACITY as u64 {
+        debug_assert!(
+            2 * (P::LIMB_WIDTH as u64) + log2(P::N_LIMBS)
+                <= <ConstraintF::Params as FpParameters>::CAPACITY as u64
+        );
+        if &self.word_size.bits() + &other.word_size.bits() + log2(P::N_LIMBS)
+            > <ConstraintF::Params as FpParameters>::CAPACITY as u64
+        {
             return self.reduce()?.mult(&other.reduce()?);
         }
 
@@ -179,34 +182,35 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         Ok(product)
     }
 
-
     /// Constrain `result` to be equal to `(self * other) % modulus`.
     //TODO: Assumes constant modulus bit length
     //TODO: Allow variable N_LIMBS so as not to need to apply modulus for every mult
     #[tracing::instrument(target = "r1cs", skip(self, other, modulus))]
-    pub fn mult_mod(
-        &self,
-        other: &Self,
-        modulus: &Self,
-    ) -> Result<Self, SynthesisError> {
+    pub fn mult_mod(&self, other: &Self, modulus: &Self) -> Result<Self, SynthesisError> {
         let cs = self.cs().or(other.cs()).or(modulus.cs());
 
         // Reduce values so that multiplication doesn't overflow
-        debug_assert!(2 * (P::LIMB_WIDTH as u64) + log2(P::N_LIMBS) <= <ConstraintF::Params as FpParameters>::CAPACITY as u64);
-        if &self.word_size.bits() + &other.word_size.bits() + log2(P::N_LIMBS) > <ConstraintF::Params as FpParameters>::CAPACITY as u64 {
+        debug_assert!(
+            2 * (P::LIMB_WIDTH as u64) + log2(P::N_LIMBS)
+                <= <ConstraintF::Params as FpParameters>::CAPACITY as u64
+        );
+        if &self.word_size.bits() + &other.word_size.bits() + log2(P::N_LIMBS)
+            > <ConstraintF::Params as FpParameters>::CAPACITY as u64
+        {
             return self.reduce()?.mult_mod(&other.reduce()?, modulus);
         }
 
         // Compute and allocate quotient and remainder
         let (quotient_value, rem_value) = (&self.value * &other.value).div_rem(&modulus.value);
         if cs == ConstraintSystemRef::None {
-            return Ok(Self::constant(&rem_value.clone())?)
+            return Ok(Self::constant(&rem_value.clone())?);
         }
         let rem = Self::new_witness(cs.clone(), || Ok(rem_value))?;
         // Since quotient may require more than P::N_LIMBS to allocate, we do not allocate it as a BigIntVar
         // Compute deterministic upper bound on number of quotient limbs and pad to it
         let num_left_bits = P::LIMB_WIDTH * (P::N_LIMBS - 1) + (self.word_size.bits() as usize) + 1; //TODO: +1 differs from bellman-bignat
-        let num_right_bits = P::LIMB_WIDTH * (P::N_LIMBS - 1) + (other.word_size.bits() as usize) + 1;
+        let num_right_bits =
+            P::LIMB_WIDTH * (P::N_LIMBS - 1) + (other.word_size.bits() as usize) + 1;
         //TODO: Take mod_bits as input
         let num_mod_bits = modulus.value.bits() as usize;
         let num_quotient_bits = (num_left_bits + num_right_bits).saturating_sub(num_mod_bits);
@@ -215,30 +219,39 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         let mut quotient_value_limbs = fit_nat_to_limbs(&quotient_value, P::LIMB_WIDTH).unwrap();
         assert!(num_quotient_limbs >= quotient_value_limbs.len());
         quotient_value_limbs.resize(num_quotient_limbs, ConstraintF::zero());
-        let quotient_limbs = Vec::<FpVar<ConstraintF>>::new_witness(cs.clone(), || Ok(&quotient_value_limbs[..]))?;
+        let quotient_limbs =
+            Vec::<FpVar<ConstraintF>>::new_witness(cs.clone(), || Ok(&quotient_value_limbs[..]))?;
 
         // Constrain remainder to appropriate size
         rem.enforce_fits_in_bits(num_mod_bits)?;
 
         // left (self) * right (other)
-        let mut lr_prod_limbs = vec![<FpVar<ConstraintF>>::zero(); P::N_LIMBS + num_quotient_limbs - 1]; // Same length as below
+        let mut lr_prod_limbs =
+            vec![<FpVar<ConstraintF>>::zero(); P::N_LIMBS + num_quotient_limbs - 1]; // Same length as below
         for i in 0..P::N_LIMBS {
             for j in 0..P::N_LIMBS {
                 lr_prod_limbs[i + j] = &lr_prod_limbs[i + j] + (&self.limbs[i] * &other.limbs[j]);
             }
         }
-        let lr_word_size = BigInt::from(&self.word_size * &other.word_size) * BigInt::from(P::N_LIMBS);
+        let lr_word_size =
+            BigInt::from(&self.word_size * &other.word_size) * BigInt::from(P::N_LIMBS);
 
         // mod * quotient + remainder
-        debug_assert!(2 * (P::LIMB_WIDTH as u64) + log2(num_quotient_limbs) + 1 <= <ConstraintF::Params as FpParameters>::CAPACITY as u64);
-        let mut mqr_prod_limbs = vec![<FpVar<ConstraintF>>::zero(); P::N_LIMBS + num_quotient_limbs - 1];
+        debug_assert!(
+            2 * (P::LIMB_WIDTH as u64) + log2(num_quotient_limbs) + 1
+                <= <ConstraintF::Params as FpParameters>::CAPACITY as u64
+        );
+        let mut mqr_prod_limbs =
+            vec![<FpVar<ConstraintF>>::zero(); P::N_LIMBS + num_quotient_limbs - 1];
         for i in 0..P::N_LIMBS {
             for j in 0..num_quotient_limbs {
-                mqr_prod_limbs[i + j] = &mqr_prod_limbs[i + j] + (&modulus.limbs[i] * &quotient_limbs[j]);
+                mqr_prod_limbs[i + j] =
+                    &mqr_prod_limbs[i + j] + (&modulus.limbs[i] * &quotient_limbs[j]);
             }
             mqr_prod_limbs[i] = &mqr_prod_limbs[i] + &rem.limbs[i];
         }
-        let mqr_word_size = BigInt::from(&rem.word_size * &modulus.word_size) * BigInt::from(num_quotient_limbs)
+        let mqr_word_size = BigInt::from(&rem.word_size * &modulus.word_size)
+            * BigInt::from(num_quotient_limbs)
             + &rem.word_size; // rem and quotient word size is default
 
         Self::enforce_limbs_equal_when_carried(
@@ -259,7 +272,7 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         num_exp_bits: usize,
     ) -> Result<Self, SynthesisError> {
         if exp.word_size >= (BigInt::one() << P::LIMB_WIDTH as u32) {
-            return self.pow_mod(&exp.reduce()?, modulus, num_exp_bits)
+            return self.pow_mod(&exp.reduce()?, modulus, num_exp_bits);
         }
         let exp_bits = exp.enforce_fits_in_bits(num_exp_bits)?;
         self.pow_mod_bits(&exp_bits, modulus)
@@ -280,7 +293,9 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         let mut k: usize = 1;
         let window_size = loop {
             let fk = k as f64;
-            if (num_exp_bits as f64) < (fk * (fk + 1.0) * 2f64.powf(2.0 * fk)) / (2f64.powf(fk + 1.0) - fk - 2.0) + 1.0 {
+            if (num_exp_bits as f64)
+                < (fk * (fk + 1.0) * 2f64.powf(2.0 * fk)) / (2f64.powf(fk + 1.0) - fk - 2.0) + 1.0
+            {
                 break k;
             }
             k += 1;
@@ -289,13 +304,10 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
 
         // Compute base powers
         let base_powers = {
-            let mut base_powers = vec![Self::new_constant(cs.clone(), BigInt::one())?, self.clone()];
+            let mut base_powers =
+                vec![Self::new_constant(cs.clone(), BigInt::one())?, self.clone()];
             for _ in 2..(1 << window_size) {
-                base_powers.push(
-                    base_powers
-                        .last().unwrap()
-                        .mult_mod(self, modulus)?
-                );
+                base_powers.push(base_powers.last().unwrap().mult_mod(self, modulus)?);
             }
             base_powers
         };
@@ -322,14 +334,12 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
             let chunk_len = chunk.len();
             //println!("Chunk: {:?}", chunk.iter().map(|b| b.value().unwrap_or_default()).collect::<Vec<bool>>());
             let base_power = select_index(&base_powers[..(1 << chunk_len)], chunk)?;
-            if exp_chunks.len() > 0 { // If not first chunk, then compute accumulated value
-                let mut acc = Self::bauer_power_helper(
-                    cs.clone(),
-                    base_powers,
-                    exp_chunks,
-                    modulus,
-                )?;
-                for _ in 0..chunk_len { // Square for each bit in the chunk
+            if exp_chunks.len() > 0 {
+                // If not first chunk, then compute accumulated value
+                let mut acc =
+                    Self::bauer_power_helper(cs.clone(), base_powers, exp_chunks, modulus)?;
+                for _ in 0..chunk_len {
+                    // Square for each bit in the chunk
                     acc = acc.mult_mod(&acc, &modulus)?
                 }
                 Ok(acc.mult_mod(&base_power, &modulus)?)
@@ -341,11 +351,15 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         }
     }
 
-
     /// Combines limbs into groups.
-    fn group_limbs(limbs: &Vec<FpVar<ConstraintF>>, limbs_per_group: usize) -> Vec<FpVar<ConstraintF>> {
+    fn group_limbs(
+        limbs: &Vec<FpVar<ConstraintF>>,
+        limbs_per_group: usize,
+    ) -> Vec<FpVar<ConstraintF>> {
         let mut grouped_limbs = vec![];
-        let limb_block = <FpVar<ConstraintF>>::constant(nat_to_f(&(BigInt::from(1) << (P::LIMB_WIDTH as u32))).unwrap());
+        let limb_block = <FpVar<ConstraintF>>::constant(
+            nat_to_f(&(BigInt::from(1) << (P::LIMB_WIDTH as u32))).unwrap(),
+        );
         for limbs_to_group in limbs.as_slice().chunks(limbs_per_group) {
             let mut shift = <FpVar<ConstraintF>>::one();
             let mut grouped_limb = <FpVar<ConstraintF>>::zero();
@@ -360,14 +374,15 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
 
     /// Constrain `self` to be equal to `other`, after carrying both.
     #[tracing::instrument(target = "r1cs", skip(self, other))]
-    pub fn enforce_equal_when_carried(
-        &self,
-        other: &Self,
-    ) -> Result<(), SynthesisError> {
+    pub fn enforce_equal_when_carried(&self, other: &Self) -> Result<(), SynthesisError> {
         let cs = self.cs().or(other.cs());
         let current_word_size = max(&self.word_size, &other.word_size);
         Self::conditional_enforce_limbs_equal_when_carried(
-            cs, &self.limbs, &other.limbs, current_word_size, &Boolean::TRUE,
+            cs,
+            &self.limbs,
+            &other.limbs,
+            current_word_size,
+            &Boolean::TRUE,
         )
     }
 
@@ -381,7 +396,11 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         let cs = self.cs().or(other.cs());
         let current_word_size = max(&self.word_size, &other.word_size);
         Self::conditional_enforce_limbs_equal_when_carried(
-            cs, &self.limbs, &other.limbs, current_word_size, condition,
+            cs,
+            &self.limbs,
+            &other.limbs,
+            current_word_size,
+            condition,
         )
     }
 
@@ -394,12 +413,19 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         current_word_size: &BigInt,
     ) -> Result<(), SynthesisError> {
         Self::conditional_enforce_limbs_equal_when_carried(
-            cs, left_limbs, right_limbs, current_word_size, &Boolean::TRUE,
+            cs,
+            left_limbs,
+            right_limbs,
+            current_word_size,
+            &Boolean::TRUE,
         )
     }
 
     /// Constrain `limbs` to be equal to `other_limbs`, after carrying both.
-    #[tracing::instrument(target = "r1cs", skip(cs, left_limbs, right_limbs, current_word_size, condition))]
+    #[tracing::instrument(
+        target = "r1cs",
+        skip(cs, left_limbs, right_limbs, current_word_size, condition)
+    )]
     fn conditional_enforce_limbs_equal_when_carried(
         cs: impl Into<Namespace<ConstraintF>>,
         left_limbs: &Vec<FpVar<ConstraintF>>,
@@ -408,7 +434,10 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         condition: &Boolean<ConstraintF>,
     ) -> Result<(), SynthesisError> {
         assert_eq!(left_limbs.len(), right_limbs.len());
-        assert!(current_word_size.clone() < BigInt::one() << <ConstraintF::Params as FpParameters>::CAPACITY);
+        assert!(
+            current_word_size.clone()
+                < BigInt::one() << <ConstraintF::Params as FpParameters>::CAPACITY
+        );
         let ns = cs.into();
         let cs = ns.cs();
 
@@ -417,20 +446,24 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         let carry_bits = (current_word_size.bits() as usize - P::LIMB_WIDTH + 1) as usize;
 
         // Regroup limbs to take advantage of field size and reduce the amount of carrying
-        let limbs_per_group = (<ConstraintF::Params as FpParameters>::CAPACITY as usize - carry_bits) / P::LIMB_WIDTH;
+        let limbs_per_group =
+            (<ConstraintF::Params as FpParameters>::CAPACITY as usize - carry_bits) / P::LIMB_WIDTH;
         let grouped_base = BigInt::one() << (P::LIMB_WIDTH * limbs_per_group) as u32;
         let grouped_word_size = (0..limbs_per_group).fold(BigInt::zero(), |mut acc, i| {
             acc.set_bit((i * P::LIMB_WIDTH) as u64, true);
             acc
         }) * current_word_size.clone();
-        let grouped_carry_bits = (grouped_word_size.bits() as usize - P::LIMB_WIDTH * limbs_per_group + 1) as usize;
-
+        let grouped_carry_bits =
+            (grouped_word_size.bits() as usize - P::LIMB_WIDTH * limbs_per_group + 1) as usize;
 
         // Propagate carries over grouped limbs.
         let mut carry_in = <FpVar<ConstraintF>>::zero();
         let mut accumulated_extra = BigInt::zero();
-        for (i, (left_limb, right_limb)) in Self::group_limbs(left_limbs, limbs_per_group).iter()
-            .zip(Self::group_limbs(right_limbs, limbs_per_group)).enumerate() {
+        for (i, (left_limb, right_limb)) in Self::group_limbs(left_limbs, limbs_per_group)
+            .iter()
+            .zip(Self::group_limbs(right_limbs, limbs_per_group))
+            .enumerate()
+        {
             //println!("Round {}:", i);
             let left_limb_value = left_limb.value().unwrap_or_default();
             let right_limb_value = right_limb.value().unwrap_or_default();
@@ -438,11 +471,12 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
             //println!("left: {}, right: {}, carry_in: {}", f_to_nat(&left_limb_value), f_to_nat(&right_limb_value), f_to_nat(&carry_in_value));
 
             let carry_value = nat_to_f::<ConstraintF>(
-                &(
-                    (f_to_nat(&left_limb_value) + f_to_nat(&carry_in_value) - f_to_nat(&right_limb_value) + grouped_word_size.clone())
-                        / grouped_base.clone()
-                )
-            ).unwrap();
+                &((f_to_nat(&left_limb_value) + f_to_nat(&carry_in_value)
+                    - f_to_nat(&right_limb_value)
+                    + grouped_word_size.clone())
+                    / grouped_base.clone()),
+            )
+            .unwrap();
             //println!("carry: {}", f_to_nat(&carry_value));
             let carry = <FpVar<ConstraintF>>::new_witness(cs.clone(), || Ok(carry_value))?;
 
@@ -453,11 +487,10 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
             //println!("accumulated_extra: {}", accumulated_extra.clone());
             let remainder_limb = nat_to_f::<ConstraintF>(&remainder).unwrap();
 
-            let eqn_left: FpVar<ConstraintF> = left_limb
-                + &carry_in - right_limb
+            let eqn_left: FpVar<ConstraintF> = left_limb + &carry_in - right_limb
                 + nat_to_f::<ConstraintF>(&grouped_word_size).unwrap();
-            let eqn_right = &carry * nat_to_f::<ConstraintF>(&grouped_base).unwrap()
-                + remainder_limb;
+            let eqn_right =
+                &carry * nat_to_f::<ConstraintF>(&grouped_base).unwrap() + remainder_limb;
             //println!("eqn_right: {}, eqn_left: {}, i: {}", f_to_nat(&eqn_right.value().unwrap()), f_to_nat(&eqn_left.value().unwrap()), i);
             eqn_left.conditional_enforce_equal(&eqn_right, condition)?;
 
@@ -465,7 +498,9 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
                 Self::conditional_enforce_limb_fits_in_bits(&carry, grouped_carry_bits, condition)?;
             } else {
                 carry.conditional_enforce_equal(
-                    &FpVar::<ConstraintF>::Constant(nat_to_f::<ConstraintF>(&accumulated_extra).unwrap()),
+                    &FpVar::<ConstraintF>::Constant(
+                        nat_to_f::<ConstraintF>(&accumulated_extra).unwrap(),
+                    ),
                     condition,
                 )?;
             }
@@ -487,7 +522,10 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
             if i < num_limbs {
                 bit_vars.append(&mut Self::enforce_limb_fits_in_bits(limb, P::LIMB_WIDTH)?);
             } else if i == num_limbs {
-                bit_vars.append(&mut Self::enforce_limb_fits_in_bits(limb, n_bits % P::LIMB_WIDTH)?);
+                bit_vars.append(&mut Self::enforce_limb_fits_in_bits(
+                    limb,
+                    n_bits % P::LIMB_WIDTH,
+                )?);
             } else {
                 limb.enforce_equal(&<FpVar<ConstraintF>>::zero())?;
             }
@@ -526,7 +564,8 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
 
         let mut bit_vars = vec![];
         if cs != ConstraintSystemRef::None {
-            for b in bits.iter().rev() { // Switch to little-endian
+            for b in bits.iter().rev() {
+                // Switch to little-endian
                 bit_vars.push(Boolean::<ConstraintF>::new_witness(
                     ark_relations::ns!(cs, "bit"),
                     || Ok(b),
@@ -543,10 +582,7 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
 
     /// Constrains `self` assumed to be in normal form to be equal to bit vector `bits`
     #[tracing::instrument(target = "r1cs", skip(self, bits))]
-    pub fn enforce_equals_bits(
-        &self,
-        bits: &[Boolean<ConstraintF>],
-    ) -> Result<(), SynthesisError> {
+    pub fn enforce_equals_bits(&self, bits: &[Boolean<ConstraintF>]) -> Result<(), SynthesisError> {
         self.conditional_enforce_equals_bits(bits, &Boolean::TRUE)
     }
 
@@ -559,9 +595,17 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         let num_nonzero_limbs = bits.len() / P::LIMB_WIDTH;
         for (i, limb) in self.limbs.iter().enumerate() {
             if i < num_nonzero_limbs {
-                Self::conditional_enforce_limb_equals_bits(limb, &bits[i * P::LIMB_WIDTH..(i + 1) * P::LIMB_WIDTH], condition)?;
+                Self::conditional_enforce_limb_equals_bits(
+                    limb,
+                    &bits[i * P::LIMB_WIDTH..(i + 1) * P::LIMB_WIDTH],
+                    condition,
+                )?;
             } else if i == num_nonzero_limbs {
-                Self::conditional_enforce_limb_equals_bits(limb, &bits[i * P::LIMB_WIDTH..], condition)?;
+                Self::conditional_enforce_limb_equals_bits(
+                    limb,
+                    &bits[i * P::LIMB_WIDTH..],
+                    condition,
+                )?;
             } else {
                 limb.conditional_enforce_equal(&<FpVar<ConstraintF>>::zero(), condition)?;
             }
@@ -593,18 +637,22 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
 
     /// Constrains `self` assumed to be in normal form to be equal to bit vector `bits`
     #[tracing::instrument(target = "r1cs", skip(bits))]
-    pub fn nat_from_bits(
-        bits: &[Boolean<ConstraintF>],
-    ) -> Result<Self, SynthesisError> {
+    pub fn nat_from_bits(bits: &[Boolean<ConstraintF>]) -> Result<Self, SynthesisError> {
         let mut limbs = vec![];
         let num_nonzero_limbs = bits.len() / P::LIMB_WIDTH;
         for i in 0..num_nonzero_limbs {
-            limbs.push(Self::limb_from_bits(&bits[i * P::LIMB_WIDTH..(i + 1) * P::LIMB_WIDTH])?);
+            limbs.push(Self::limb_from_bits(
+                &bits[i * P::LIMB_WIDTH..(i + 1) * P::LIMB_WIDTH],
+            )?);
         }
-        limbs.push(Self::limb_from_bits(&bits[num_nonzero_limbs * P::LIMB_WIDTH..])?);
+        limbs.push(Self::limb_from_bits(
+            &bits[num_nonzero_limbs * P::LIMB_WIDTH..],
+        )?);
         limbs.resize(P::N_LIMBS, FpVar::zero());
         let value = limbs_to_nat(
-            &limbs.iter().map(|f| f.value().unwrap_or_default())
+            &limbs
+                .iter()
+                .map(|f| f.value().unwrap_or_default())
                 .collect::<Vec<ConstraintF>>(),
             P::LIMB_WIDTH,
         );
@@ -615,7 +663,6 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
             _params: PhantomData,
         })
     }
-
 
     /// Constrains that `limb` equals LE bit representation `bits`.
     #[tracing::instrument(target = "r1cs", skip(bits))]
@@ -632,15 +679,10 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
         Ok(bit_sum)
     }
 
-    pub fn min(
-        &self,
-        other: &Self,
-    ) -> Result<Self, SynthesisError> {
+    pub fn min(&self, other: &Self) -> Result<Self, SynthesisError> {
         let cs = self.cs().or(other.cs());
-        let is_other_min = <Boolean<ConstraintF>>::new_witness(
-            cs.clone(),
-            || Ok(self.value > other.value),
-        )?;
+        let is_other_min =
+            <Boolean<ConstraintF>>::new_witness(cs.clone(), || Ok(self.value > other.value))?;
         let lesser = Self::conditionally_select(&is_other_min, other, self)?;
         let greater = Self::conditionally_select(&is_other_min.not(), self, other)?;
         let _diff = greater.sub(&lesser)?;
@@ -648,13 +690,20 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> 
     }
 }
 
-
-impl<ConstraintF: PrimeField, P: BigIntCircuitParams> CondSelectGadget<ConstraintF> for BigIntVar<ConstraintF, P> {
-    fn conditionally_select(cond: &Boolean<ConstraintF>, true_value: &Self, false_value: &Self) -> Result<Self, SynthesisError> {
-        let selected_limbs = true_value.limbs.iter().zip(&false_value.limbs)
-            .map(|(true_limb, false_limb)| {
-                cond.select(true_limb, false_limb)
-            }).collect::<Result<Vec<FpVar<ConstraintF>>, SynthesisError>>()?;
+impl<ConstraintF: PrimeField, P: BigIntCircuitParams> CondSelectGadget<ConstraintF>
+    for BigIntVar<ConstraintF, P>
+{
+    fn conditionally_select(
+        cond: &Boolean<ConstraintF>,
+        true_value: &Self,
+        false_value: &Self,
+    ) -> Result<Self, SynthesisError> {
+        let selected_limbs = true_value
+            .limbs
+            .iter()
+            .zip(&false_value.limbs)
+            .map(|(true_limb, false_limb)| cond.select(true_limb, false_limb))
+            .collect::<Result<Vec<FpVar<ConstraintF>>, SynthesisError>>()?;
         let cond_bool = cond.value().unwrap_or_default();
         let selected_nat = if cond_bool { true_value } else { false_value };
         Ok(Self {
@@ -666,27 +715,35 @@ impl<ConstraintF: PrimeField, P: BigIntCircuitParams> CondSelectGadget<Constrain
     }
 }
 
-impl<ConstraintF: PrimeField, P: BigIntCircuitParams> EqGadget<ConstraintF> for BigIntVar<ConstraintF, P> {
+impl<ConstraintF: PrimeField, P: BigIntCircuitParams> EqGadget<ConstraintF>
+    for BigIntVar<ConstraintF, P>
+{
     fn is_eq(&self, other: &Self) -> Result<Boolean<ConstraintF>, SynthesisError> {
         self.limbs.is_eq(&other.limbs)
     }
 
-    fn conditional_enforce_equal(&self, other: &Self, should_enforce: &Boolean<ConstraintF>) -> Result<(), SynthesisError> {
-        self.limbs.conditional_enforce_equal(&other.limbs, should_enforce)
+    fn conditional_enforce_equal(
+        &self,
+        other: &Self,
+        should_enforce: &Boolean<ConstraintF>,
+    ) -> Result<(), SynthesisError> {
+        self.limbs
+            .conditional_enforce_equal(&other.limbs, should_enforce)
     }
 }
 
-impl<ConstraintF: PrimeField, P: BigIntCircuitParams> ToBytesGadget<ConstraintF> for BigIntVar<ConstraintF, P> {
+impl<ConstraintF: PrimeField, P: BigIntCircuitParams> ToBytesGadget<ConstraintF>
+    for BigIntVar<ConstraintF, P>
+{
     fn to_bytes(&self) -> Result<Vec<UInt8<ConstraintF>>, SynthesisError> {
         let mut bits = self.enforce_fits_in_bits(P::LIMB_WIDTH * P::N_LIMBS)?;
         bits.resize((((bits.len() - 1) / 8) + 1) * 8, Boolean::FALSE);
-        Ok(bits.chunks(8)
+        Ok(bits
+            .chunks(8)
             .map(|byte| UInt8::from_bits_le(byte))
             .collect::<Vec<UInt8<ConstraintF>>>())
     }
 }
-
-
 
 // Helper methods
 pub fn log2(x: usize) -> u64 {
@@ -703,7 +760,7 @@ pub fn log2(x: usize) -> u64 {
 }
 
 #[tracing::instrument(target = "r1cs", skip(v, index_bits))]
-pub fn select_index<ConstraintF: PrimeField, T: CondSelectGadget<ConstraintF>> (
+pub fn select_index<ConstraintF: PrimeField, T: CondSelectGadget<ConstraintF>>(
     v: &[T],
     index_bits: &[Boolean<ConstraintF>],
 ) -> Result<T, SynthesisError> {
@@ -718,12 +775,11 @@ pub fn select_index<ConstraintF: PrimeField, T: CondSelectGadget<ConstraintF>> (
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ed_on_bls12_381::{Fq};
-    use ark_relations::r1cs::{ConstraintSystem, ConstraintLayer};
+    use ark_ed_on_bls12_381::Fq;
+    use ark_relations::r1cs::{ConstraintLayer, ConstraintSystem};
     use tracing_subscriber::layer::SubscriberExt;
 
     #[derive(Clone, PartialEq, Eq, Debug)]
@@ -734,7 +790,6 @@ mod tests {
         const N_LIMBS: usize = 4;
     }
 
-
     #[derive(Clone, PartialEq, Eq, Debug)]
     pub struct BigNat512TestParams;
 
@@ -743,16 +798,16 @@ mod tests {
         const N_LIMBS: usize = 16;
     }
 
-
     #[test]
     fn bignat_to_bytes_test() {
         let bignat = BigInt::from(5000);
         let cs = ConstraintSystem::<Fq>::new_ref();
-        let bignat_var = BigIntVar::<Fq, BigNat512TestParams>::new_witness(
-            cs.clone(),
-            || Ok(&bignat),
-        ).unwrap();
-        let bytes_val = bignat_var.to_bytes().unwrap().iter()
+        let bignat_var =
+            BigIntVar::<Fq, BigNat512TestParams>::new_witness(cs.clone(), || Ok(&bignat)).unwrap();
+        let bytes_val = bignat_var
+            .to_bytes()
+            .unwrap()
+            .iter()
             .map(|b| b.value().unwrap())
             .collect::<Vec<u8>>();
         assert_eq!(bytes_val.len(), 64);
@@ -762,7 +817,6 @@ mod tests {
         assert_eq!(bytes_val, bignat_bytes);
     }
 
-
     impl<ConstraintF: PrimeField, P: BigIntCircuitParams> BigIntVar<ConstraintF, P> {
         fn alloc_from_u64_limbs(
             cs: impl Into<Namespace<ConstraintF>>,
@@ -770,7 +824,9 @@ mod tests {
             word_size: BigInt,
             mode: AllocationMode,
         ) -> Result<BigIntVar<ConstraintF, P>, SynthesisError> {
-            let limbs = u64_limbs.iter().rev()
+            let limbs = u64_limbs
+                .iter()
+                .rev()
                 .map(|int64| ConstraintF::from_repr(ConstraintF::BigInt::from(*int64)).unwrap())
                 .collect::<Vec<ConstraintF>>();
             Self::alloc_from_limbs(cs, &limbs, word_size, mode)
@@ -783,11 +839,7 @@ mod tests {
             mode: AllocationMode,
         ) -> Result<BigIntVar<ConstraintF, P>, SynthesisError> {
             assert_eq!(limbs.len(), P::N_LIMBS);
-            let limb_vars = Vec::<FpVar<ConstraintF>>::new_variable(
-                cs,
-                || Ok(&limbs[..]),
-                mode,
-            )?;
+            let limb_vars = Vec::<FpVar<ConstraintF>>::new_variable(cs, || Ok(&limbs[..]), mode)?;
             Ok(BigIntVar {
                 limbs: limb_vars,
                 value: limbs_to_nat::<ConstraintF>(limbs, P::LIMB_WIDTH),
@@ -797,7 +849,13 @@ mod tests {
         }
     }
 
-    fn carry_over_equal_test(vec1: Vec<u64>, vec2: Vec<u64>, word_size_1: u64, word_size_2: u64, should_satisfy: bool) {
+    fn carry_over_equal_test(
+        vec1: Vec<u64>,
+        vec2: Vec<u64>,
+        word_size_1: u64,
+        word_size_2: u64,
+        should_satisfy: bool,
+    ) {
         let mut layer = ConstraintLayer::default();
         layer.mode = ark_relations::r1cs::TracingMode::OnlyConstraints;
         let subscriber = tracing_subscriber::Registry::default().with(layer);
@@ -809,13 +867,15 @@ mod tests {
                 &vec1,
                 BigInt::from(word_size_1),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
             let nat2var = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "nat2"),
                 &vec2,
                 BigInt::from(word_size_2),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
             nat1var.enforce_equal_when_carried(&nat2var).unwrap();
 
             if should_satisfy && !cs.is_satisfied().unwrap() {
@@ -830,79 +890,37 @@ mod tests {
 
     #[test]
     fn carry_over_equal_trivial_test() {
-        carry_over_equal_test(
-            vec![2,1,4,7],
-            vec![2,1,4,7],
-            7,
-            7,
-            true,
-        )
+        carry_over_equal_test(vec![2, 1, 4, 7], vec![2, 1, 4, 7], 7, 7, true)
     }
 
     #[test]
     fn carry_over_equal_1carry_test() {
-        carry_over_equal_test(
-            vec![1,1,0,9],
-            vec![1,1,1,1],
-            14,
-            7,
-            true,
-        )
+        carry_over_equal_test(vec![1, 1, 0, 9], vec![1, 1, 1, 1], 14, 7, true)
     }
 
     #[test]
     fn carry_over_equal_2carry_test() {
-        carry_over_equal_test(
-            vec![1,1,9,9],
-            vec![1,2,2,1],
-            14,
-            7,
-            true,
-        )
+        carry_over_equal_test(vec![1, 1, 9, 9], vec![1, 2, 2, 1], 14, 7, true)
     }
 
     #[test]
     fn carry_over_equal_both_carry_test() {
-        carry_over_equal_test(
-            vec![1,1,9,9],
-            vec![1,0,18,1],
-            14,
-            21,
-            true,
-        )
+        carry_over_equal_test(vec![1, 1, 9, 9], vec![1, 0, 18, 1], 14, 21, true)
     }
 
     #[test]
     fn carry_over_equal_large_word_test() {
-        carry_over_equal_test(
-            vec![1,1,9,66],
-            vec![1,3,1,2],
-            70,
-            7,
-            true,
-        )
+        carry_over_equal_test(vec![1, 1, 9, 66], vec![1, 3, 1, 2], 70, 7, true)
     }
 
     #[test]
     fn carry_over_equal_3carry_test() {
-        carry_over_equal_test(
-            vec![1,12,7,12],
-            vec![2,5,0,4],
-            14,
-            7,
-            true,
-        )
+        carry_over_equal_test(vec![1, 12, 7, 12], vec![2, 5, 0, 4], 14, 7, true)
     }
 
     #[test]
     fn carry_over_equal_3carry_overflow_test() {
-        carry_over_equal_test(
-            vec![12,12,12,12],
-            vec![13,5,5,4],
-            14,
-            14,
-            true,
-        )
+        carry_over_equal_test(vec![12, 12, 12, 12], vec![13, 5, 5, 4], 14, 14, true)
     }
 
     fn add_equal_test(
@@ -925,19 +943,22 @@ mod tests {
                 &vec1,
                 BigInt::from(word_size_1),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
             let nat2var = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "nat2"),
                 &vec2,
                 BigInt::from(word_size_2),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
             let nat3var = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "nat3"),
                 &vec3,
                 BigInt::from(word_size_3),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
 
             let sum = nat1var.add(&nat2var).unwrap();
             nat3var.enforce_equal_when_carried(&sum).unwrap();
@@ -955,9 +976,9 @@ mod tests {
     #[test]
     fn add_equal_trivial_test() {
         add_equal_test(
-            vec![1,1,1,1],
-            vec![1,1,1,1],
-            vec![2,2,2,2],
+            vec![1, 1, 1, 1],
+            vec![1, 1, 1, 1],
+            vec![2, 2, 2, 2],
             7,
             7,
             7,
@@ -968,16 +989,15 @@ mod tests {
     #[test]
     fn add_equal_carryover_test() {
         add_equal_test(
-            vec![1,1,1,6],
-            vec![1,1,1,6],
-            vec![2,2,3,4],
+            vec![1, 1, 1, 6],
+            vec![1, 1, 1, 6],
+            vec![2, 2, 3, 4],
             7,
             7,
             7,
             true,
         )
     }
-
 
     fn sub_equal_test(
         vec1: Vec<u64>,
@@ -999,19 +1019,22 @@ mod tests {
                 &vec1,
                 BigInt::from(word_size_1),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
             let nat2var = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "nat2"),
                 &vec2,
                 BigInt::from(word_size_2),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
             let nat3var = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "nat3"),
                 &vec3,
                 BigInt::from(word_size_3),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
 
             let diff = nat1var.sub(&nat2var).unwrap();
             nat3var.enforce_equal_when_carried(&diff).unwrap();
@@ -1030,9 +1053,9 @@ mod tests {
     #[test]
     fn sub_equal_trivial_test() {
         sub_equal_test(
-            vec![2,2,2,2],
-            vec![1,1,1,1],
-            vec![1,1,1,1],
+            vec![2, 2, 2, 2],
+            vec![1, 1, 1, 1],
+            vec![1, 1, 1, 1],
             7,
             7,
             7,
@@ -1043,9 +1066,9 @@ mod tests {
     #[test]
     fn sub_equal_carryover_test() {
         sub_equal_test(
-            vec![2,0,18,2],
-            vec![1,1,1,1],
-            vec![1,1,1,1],
+            vec![2, 0, 18, 2],
+            vec![1, 1, 1, 1],
+            vec![1, 1, 1, 1],
             21,
             7,
             7,
@@ -1075,25 +1098,29 @@ mod tests {
                 &vec1,
                 BigInt::from(word_size_1),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
             let nat2var = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "nat2"),
                 &vec2,
                 BigInt::from(word_size_2),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
             let nat3var = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "nat3"),
                 &vec3,
                 BigInt::from(word_size_3),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
             let modvar = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "mod"),
                 &modvec,
                 BigInt::from(mod_word_size),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
 
             let prod = nat1var.mult_mod(&nat2var, &modvar).unwrap();
             nat3var.enforce_equal_when_carried(&prod).unwrap();
@@ -1112,11 +1139,14 @@ mod tests {
     #[test]
     fn mult_mod_trivial_test() {
         mult_mod_test(
-            vec![0,0,1,1],
-            vec![0,0,1,1],
-            vec![0,1,2,1],
-            vec![0,7,0,0],
-            7, 7, 7, 7,
+            vec![0, 0, 1, 1],
+            vec![0, 0, 1, 1],
+            vec![0, 1, 2, 1],
+            vec![0, 7, 0, 0],
+            7,
+            7,
+            7,
+            7,
             true,
         )
     }
@@ -1124,11 +1154,14 @@ mod tests {
     #[test]
     fn mult_mod_prod_overflow_test() {
         mult_mod_test(
-            vec![1,1,1,1], // 585
-            vec![2,2,0,0], // 1152
-            vec![3,2,2,0], // 585 * 1152 = 673920 ; 673920 % 2801 = 1680
-            vec![5,3,6,1], // prime mod = 2801
-            7, 7, 7, 7,
+            vec![1, 1, 1, 1], // 585
+            vec![2, 2, 0, 0], // 1152
+            vec![3, 2, 2, 0], // 585 * 1152 = 673920 ; 673920 % 2801 = 1680
+            vec![5, 3, 6, 1], // prime mod = 2801
+            7,
+            7,
+            7,
+            7,
             true,
         )
     }
@@ -1136,16 +1169,17 @@ mod tests {
     #[test]
     fn mult_mod_large_quotient_test() {
         mult_mod_test(
-            vec![65,1,1,1], // 33353
-            vec![66,2,0,0], // 33920
-            vec![2,6,6,1], // (33353 * 33920) % 2801 = 1457
-            vec![5,3,6,1], // prime mod = 2801
-            70, 70, 7, 7,
+            vec![65, 1, 1, 1], // 33353
+            vec![66, 2, 0, 0], // 33920
+            vec![2, 6, 6, 1],  // (33353 * 33920) % 2801 = 1457
+            vec![5, 3, 6, 1],  // prime mod = 2801
+            70,
+            70,
+            7,
+            7,
             true,
         )
     }
-
-
 
     #[tracing::instrument(target = "r1cs", skip(vec1, vec2, vec3, modvec))]
     fn pow_mod_test(
@@ -1171,33 +1205,61 @@ mod tests {
                 &vec1,
                 BigInt::from(word_size_1),
                 AllocationMode::Witness,
-            ).unwrap();
-            println!("vec1: {}", limbs_to_nat(&nat1var.limbs.value().unwrap(), BigNatTestParams::LIMB_WIDTH));
+            )
+            .unwrap();
+            println!(
+                "vec1: {}",
+                limbs_to_nat(
+                    &nat1var.limbs.value().unwrap(),
+                    BigNatTestParams::LIMB_WIDTH
+                )
+            );
             let nat2var = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "nat2"),
                 &vec2,
                 BigInt::from(word_size_2),
                 AllocationMode::Witness,
-            ).unwrap();
-            println!("vec2: {}", limbs_to_nat(&nat2var.limbs.value().unwrap(), BigNatTestParams::LIMB_WIDTH));
+            )
+            .unwrap();
+            println!(
+                "vec2: {}",
+                limbs_to_nat(
+                    &nat2var.limbs.value().unwrap(),
+                    BigNatTestParams::LIMB_WIDTH
+                )
+            );
             let nat3var = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "nat3"),
                 &vec3,
                 BigInt::from(word_size_3),
                 AllocationMode::Witness,
-            ).unwrap();
+            )
+            .unwrap();
             let modvar = BigIntVar::<Fq, BigNatTestParams>::alloc_from_u64_limbs(
                 ark_relations::ns!(cs, "mod"),
                 &modvec,
                 BigInt::from(mod_word_size),
                 AllocationMode::Witness,
-            ).unwrap();
-            println!("modvar: {}", limbs_to_nat(&modvar.limbs.value().unwrap(), BigNatTestParams::LIMB_WIDTH));
+            )
+            .unwrap();
+            println!(
+                "modvar: {}",
+                limbs_to_nat(&modvar.limbs.value().unwrap(), BigNatTestParams::LIMB_WIDTH)
+            );
 
             let result = nat1var.pow_mod(&nat2var, &modvar, num_exp_bits).unwrap();
             println!("POW MOD DONE");
-            println!("result: {}", limbs_to_nat(&result.limbs.value().unwrap(), BigNatTestParams::LIMB_WIDTH));
-            println!("expected: {}", limbs_to_nat(&nat3var.limbs.value().unwrap(), BigNatTestParams::LIMB_WIDTH));
+            println!(
+                "result: {}",
+                limbs_to_nat(&result.limbs.value().unwrap(), BigNatTestParams::LIMB_WIDTH)
+            );
+            println!(
+                "expected: {}",
+                limbs_to_nat(
+                    &nat3var.limbs.value().unwrap(),
+                    BigNatTestParams::LIMB_WIDTH
+                )
+            );
             nat3var.enforce_equal_when_carried(&result).unwrap();
 
             println!("Number of constraints: {}", cs.num_constraints());
@@ -1214,11 +1276,15 @@ mod tests {
     #[test]
     fn pow_mod_trivial1_test() {
         pow_mod_test(
-            vec![0,0,0,3], // 3
-            vec![0,0,0,6], // 6
-            vec![1,3,3,1], // 3^6 = 729
-            vec![5,3,6,1], // prime mod = 2801
-            7, 7, 7, 7, 3,
+            vec![0, 0, 0, 3], // 3
+            vec![0, 0, 0, 6], // 6
+            vec![1, 3, 3, 1], // 3^6 = 729
+            vec![5, 3, 6, 1], // prime mod = 2801
+            7,
+            7,
+            7,
+            7,
+            3,
             true,
         )
     }
@@ -1226,11 +1292,15 @@ mod tests {
     #[test]
     fn pow_mod_trivial2_test() {
         pow_mod_test(
-            vec![0,0,0,3], // 3
-            vec![0,0,0,7], // 7
-            vec![4,2,1,3], // 3^7 = 2187
-            vec![5,3,6,1], // prime mod = 2801
-            7, 7, 7, 7, 4,
+            vec![0, 0, 0, 3], // 3
+            vec![0, 0, 0, 7], // 7
+            vec![4, 2, 1, 3], // 3^7 = 2187
+            vec![5, 3, 6, 1], // prime mod = 2801
+            7,
+            7,
+            7,
+            7,
+            4,
             true,
         )
     }
@@ -1238,11 +1308,15 @@ mod tests {
     #[test]
     fn pow_mod_zero_test() {
         pow_mod_test(
-            vec![1,1,1,1], // 585
-            vec![0,0,0,0],
-            vec![0,0,0,1],
-            vec![5,3,6,1], // prime mod = 2801
-            7, 7, 7, 7, 3,
+            vec![1, 1, 1, 1], // 585
+            vec![0, 0, 0, 0],
+            vec![0, 0, 0, 1],
+            vec![5, 3, 6, 1], // prime mod = 2801
+            7,
+            7,
+            7,
+            7,
+            3,
             true,
         )
     }
@@ -1250,29 +1324,32 @@ mod tests {
     #[test]
     fn pow_mod_small_overflow_test() {
         pow_mod_test(
-            vec![0,0,0,3], // 3
-            vec![0,0,1,0], // 8
-            vec![1,6,7,7], // 3^8 % 2801 = 959
-            vec![5,3,6,1], // prime mod = 2801
-            7, 7, 7, 7, 6,
+            vec![0, 0, 0, 3], // 3
+            vec![0, 0, 1, 0], // 8
+            vec![1, 6, 7, 7], // 3^8 % 2801 = 959
+            vec![5, 3, 6, 1], // prime mod = 2801
+            7,
+            7,
+            7,
+            7,
+            6,
             true,
         )
     }
-
 
     #[test]
     fn pow_mod_full_test() {
         pow_mod_test(
-            vec![1,1,1,3], // 587
-            vec![0,0,2,1], // 17
-            vec![0,5,7,0], // (587^17) % 2801 = 376
-            vec![5,3,6,1], // prime mod = 2801
-            7, 7, 7, 7, 6,
+            vec![1, 1, 1, 3], // 587
+            vec![0, 0, 2, 1], // 17
+            vec![0, 5, 7, 0], // (587^17) % 2801 = 376
+            vec![5, 3, 6, 1], // prime mod = 2801
+            7,
+            7,
+            7,
+            7,
+            6,
             true,
         )
     }
-
-
-
 }
-
