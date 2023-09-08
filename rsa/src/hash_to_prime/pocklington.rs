@@ -76,12 +76,12 @@ impl<P: PocklingtonCertParams, D: Digest> HashToPrime for PocklingtonHash<P, D> 
         let mut counter = 0;
         let mut inputs: Vec<u8> = input.iter().copied().collect();
         inputs.extend_from_slice(&0u32.to_le_bytes()); // Dummy to be removed on first iter
-        println!("ENTERING H2P LOOP");
+        // println!("ENTERING H2P LOOP");
         'nonce_loop: for nonce in 0..(1u32 << P::NONCE_SIZE) {
             counter = counter + 1;
-            if counter % 20 == 0 {
-                println!("LOOP COUNTER {}", counter);
-            }
+            // if counter % 20 == 0 {
+            //     println!("LOOP COUNTER {}", counter);
+            // }
             io::stdout().flush().unwrap();
             inputs.truncate(inputs.len() - 4);
             inputs.extend_from_slice(&nonce.to_be_bytes());

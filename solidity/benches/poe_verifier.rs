@@ -5,7 +5,7 @@ use primitive_types::U256;
 use rand::{distributions::Distribution, rngs::StdRng, SeedableRng};
 use sha3::Keccak256;
 
-use std::{ops::Deref, str::FromStr};
+use std::{convert::TryInto, ops::Deref, str::FromStr};
 
 use solidity_test_utils::{address::Address, contract::Contract, evm::Evm, to_be_bytes};
 
@@ -58,19 +58,19 @@ pub type TestWesolowski =
     PoE<TestPoEParams, TestRsaParams, PocklingtonHash<TestPocklingtonParams, Keccak256>>;
 
 const MOD_BITS: usize = 2048;
-const T: u32 = 160;
+const T: u64 = 160;
 
 fn main() {
     // cargo bench --bench poe_verifier --profile test
-    let mut rng = StdRng::seed_from_u64(1u64);
+    let mut rng = StdRng::seed_from_u64(2u64);
     let x = Hog::from_nat(BigInt::from_biguint(
         Sign::Plus,
         RandomBits::new(2048).sample(&mut rng),
     ));
-    let y = x.power(&BigInt::from(2).pow(T));
+    let y = x.power(&BigInt::from(2).pow(T.try_into().unwrap()));
 
     println!("Proving PoE...");
-    let proof = TestWesolowski::prove(&x, &y, T).unwrap();
+    let proof = TestWesolowski::prove(&x, &y, T.into()).unwrap();
     println!("Verifying PoE...");
     let is_valid = TestWesolowski::verify(&x, &y, T, &proof).unwrap();
     assert!(is_valid);

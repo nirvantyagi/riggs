@@ -1,38 +1,31 @@
 use once_cell::sync::Lazy;
 use primitive_types::U256;
-use rand::{rngs::StdRng, SeedableRng, Rng};
-use sha3::{Keccak256};
+use rand::{rngs::StdRng, Rng, SeedableRng};
+use sha3::Keccak256;
 
 use std::{ops::Deref, str::FromStr};
 
-use solidity_test_utils::{
-  address::Address, contract::Contract, evm::Evm, to_be_bytes,
-};
+use solidity_test_utils::{address::Address, contract::Contract, evm::Evm, to_be_bytes};
 
 use rsa::{
-  bigint::BigInt,
-  hash_to_prime::{
-    pocklington::{PocklingtonCertParams, PocklingtonHash},
-  },
-  hog::{RsaGroupParams, RsaHiddenOrderGroup},
-  poe::{PoEParams},
-};
-use timed_commitments::{
-  basic_tc::{BasicTC, Opening},
+    bigint::BigInt,
+    hash_to_prime::pocklington::{PocklingtonCertParams, PocklingtonHash},
+    hog::{RsaGroupParams, RsaHiddenOrderGroup},
+    poe::PoEParams,
 };
 use solidity::{
-  encode_fkps_comm, encode_fkps_opening, encode_fkps_pp,
-  get_bigint_library_src, get_filename_src, get_fkps_src, get_rsa_library_src,
+    encode_fkps_comm, encode_fkps_opening, encode_fkps_pp, get_bigint_library_src,
+    get_filename_src, get_fkps_src, get_rsa_library_src,
 };
-
+use timed_commitments::basic_tc::{BasicTC, Opening};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
 
 impl RsaGroupParams for TestRsaParams {
-  const G: Lazy<BigInt> = Lazy::new(|| BigInt::from(2));
-  const M: Lazy<BigInt> = Lazy::new(|| {
-    BigInt::from_str("2519590847565789349402718324004839857142928212620403202777713783604366202070\
+    const G: Lazy<BigInt> = Lazy::new(|| BigInt::from(2));
+    const M: Lazy<BigInt> = Lazy::new(|| {
+        BigInt::from_str("2519590847565789349402718324004839857142928212620403202777713783604366202070\
                           7595556264018525880784406918290641249515082189298559149176184502808489120072\
                           8449926873928072877767359714183472702618963750149718246911650776133798590957\
                           0009733045974880842840179742910064245869181719511874612151517265463228221686\
@@ -41,60 +34,58 @@ impl RsaGroupParams for TestRsaParams {
                           3443219011465754445417842402092461651572335077870774981712577246796292638635\
                           6373289912154831438167899885040445364023527381951378636564391212010397122822\
                           120720357").unwrap()
-  });
+    });
 }
 
 pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 
 const MOD_BITS: usize = 2048;
-const TIME_PARAM: u32 = 40;
-
+const TIME_PARAM: u64 = 40;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestPoEParams;
 
 impl PoEParams for TestPoEParams {
-  const HASH_TO_PRIME_ENTROPY: usize = 256;
+    const HASH_TO_PRIME_ENTROPY: usize = 256;
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestPocklingtonParams;
 impl PocklingtonCertParams for TestPocklingtonParams {
-  const NONCE_SIZE: usize = 16;
-  const MAX_STEPS: usize = 5;
-  const INCLUDE_SOLIDITY_WITNESSES: bool = true;
+    const NONCE_SIZE: usize = 16;
+    const MAX_STEPS: usize = 5;
+    const INCLUDE_SOLIDITY_WITNESSES: bool = true;
 }
 
 pub type TC = BasicTC<
-  TestPoEParams,
-  TestRsaParams,
-  Keccak256,
-  PocklingtonHash<TestPocklingtonParams, Keccak256>,
+    TestPoEParams,
+    TestRsaParams,
+    Keccak256,
+    PocklingtonHash<TestPocklingtonParams, Keccak256>,
 >;
 
-
 fn main() {
-  // cargo bench --bench fkps --profile test
-  let mut rng = StdRng::seed_from_u64(1u64);
+    // cargo bench --bench fkps --profile test
+    let mut rng = StdRng::seed_from_u64(1u64);
 
-  // Generate time parameters
-  let (fkps_pp, fkps_pp_proof) = TC::gen_time_params(TIME_PARAM).unwrap();
-  assert!(TC::ver_time_params(&fkps_pp, &fkps_pp_proof).unwrap());
+    // Generate time parameters
+    let (fkps_pp, fkps_pp_proof) = TC::gen_time_params(TIME_PARAM).unwrap();
+    assert!(TC::ver_time_params(&fkps_pp, &fkps_pp_proof).unwrap());
 
-  // Create commitment, opening
-  let mut m = [0u8; 32];
-  rng.fill(&mut m);
-  let (comm, opening) = TC::commit(&mut rng, &fkps_pp, &m).unwrap();
+    // Create commitment, opening
+    let mut m = [0u8; 32];
+    rng.fill(&mut m);
+    let (comm, opening) = TC::commit(&mut rng, &fkps_pp, &m).unwrap();
 
-  println!("Compiling contract...");
+    println!("Compiling contract...");
 
-  // Compile contract from template
-  let bigint_src = get_bigint_library_src();
-  let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
-  let poe_src = get_filename_src("PoEVerifier.sol", false);
-  let fkps_src = get_fkps_src(&fkps_pp.x.n, &fkps_pp.y.n, MOD_BITS, TIME_PARAM, true);
+    // Compile contract from template
+    let bigint_src = get_bigint_library_src();
+    let rsa_src = get_rsa_library_src(TestRsaParams::M.deref(), MOD_BITS, false);
+    let poe_src = get_filename_src("PoEVerifier.sol", false);
+    let fkps_src = get_fkps_src(&fkps_pp.x.n, &fkps_pp.y.n, MOD_BITS, TIME_PARAM, true);
 
-  let solc_config = r#"
+    let solc_config = r#"
             {
                 "language": "Solidity",
                 "sources": {
@@ -119,60 +110,63 @@ fn main() {
     .replace("<%poe_lib_src%>", &poe_src)
     .replace("<%src%>", &fkps_src);
 
-  let contract = Contract::compile_from_config(&solc_config, "FKPS").unwrap();
+    let contract = Contract::compile_from_config(&solc_config, "FKPS").unwrap();
 
-  // Setup EVM
-  let mut evm = Evm::new();
-  let deployer = Address::random(&mut rng);
-  evm.create_account(&deployer, 0);
+    // Setup EVM
+    let mut evm = Evm::new();
+    let deployer = Address::random(&mut rng);
+    evm.create_account(&deployer, 0);
 
-  // Deploy contract
-  let create_result = evm
-    .deploy(
-      contract.encode_create_contract_bytes(&[]).unwrap(),
-      &deployer,
-    )
-    .unwrap();
-  let contract_addr = create_result.addr.clone();
-  println!("Contract deploy gas cost: {}", create_result.gas);
+    // Deploy contract
+    let create_result = evm
+        .deploy(
+            contract.encode_create_contract_bytes(&[]).unwrap(),
+            &deployer,
+        )
+        .unwrap();
+    let contract_addr = create_result.addr.clone();
+    println!("Contract deploy gas cost: {}", create_result.gas);
 
-  let input = vec![
-    encode_fkps_comm(&comm),
-    encode_fkps_opening(&opening, &Some(m.to_vec())),
-    encode_fkps_pp(TestRsaParams::M.deref(), &fkps_pp),
-  ];
+    let input = vec![
+        encode_fkps_comm(&comm),
+        encode_fkps_opening(&opening, &Some(m.to_vec())),
+        encode_fkps_pp(TestRsaParams::M.deref(), &fkps_pp),
+    ];
 
-  let result = evm
-    .call(
-      contract
-        .encode_call_contract_bytes("verOpen", &input)
-        .unwrap(),
-      &contract_addr,
-      &deployer,
-    )
-    .unwrap();
+    let result = evm
+        .call(
+            contract
+                .encode_call_contract_bytes("verOpen", &input)
+                .unwrap(),
+            &contract_addr,
+            &deployer,
+        )
+        .unwrap();
 
-  assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-  println!("FKPS self-open verification gas cost: {:?}", result.gas);
+    assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
+    println!("FKPS self-open verification gas cost: {:?}", result.gas);
 
-  // Call force verify function on contract;
-  let fkps_force_opening = TC::force_open(&fkps_pp, &comm).unwrap();
-  let force_input = vec![
-    encode_fkps_comm(&comm),
-    encode_fkps_opening(&fkps_force_opening.1, &fkps_force_opening.0),
-    encode_fkps_pp(TestRsaParams::M.deref(), &fkps_pp),
-  ];
+    // Call force verify function on contract;
+    let fkps_force_opening = TC::force_open(&fkps_pp, &comm).unwrap();
+    let force_input = vec![
+        encode_fkps_comm(&comm),
+        encode_fkps_opening(&fkps_force_opening.1, &fkps_force_opening.0),
+        encode_fkps_pp(TestRsaParams::M.deref(), &fkps_pp),
+    ];
 
-  let force_result = evm
-      .call(
-        contract
-            .encode_call_contract_bytes("verForceOpen", &force_input)
-            .unwrap(),
-        &contract_addr,
-        &deployer,
-      )
-      .unwrap();
+    let force_result = evm
+        .call(
+            contract
+                .encode_call_contract_bytes("verForceOpen", &force_input)
+                .unwrap(),
+            &contract_addr,
+            &deployer,
+        )
+        .unwrap();
 
-  assert_eq!(&force_result.out, &to_be_bytes(&U256::from(1)));
-  println!("FKPS force-open verification gas cost: {:?}", force_result.gas);
+    assert_eq!(&force_result.out, &to_be_bytes(&U256::from(1)));
+    println!(
+        "FKPS force-open verification gas cost: {:?}",
+        force_result.gas
+    );
 }

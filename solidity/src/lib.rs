@@ -1,7 +1,7 @@
 // use ark_bls12_381::{Bls12_381, Fr as F};
 use ark_bn254::{Bn254, Fr as F, G1Projective as G};
-use ark_ed_on_bn254::{EdwardsAffine, constraints::EdwardsVar as GV, EdwardsProjective as E};
-use ark_ec::{PairingEngine, ProjectiveCurve, AffineCurve, bn};
+use ark_ec::{bn, AffineCurve, PairingEngine, ProjectiveCurve};
+use ark_ed_on_bn254::{constraints::EdwardsVar as GV, EdwardsAffine, EdwardsProjective as E};
 // use ark_ed_on_bls12_381::{constraints::EdwardsVar as GV, EdwardsProjective as G_Groth};
 //use ark_ed_on_bn254::{constraints::EdwardsVar as GV, EdwardsProjective as EG};
 
@@ -22,12 +22,14 @@ use rsa::{
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
     poe::Proof as PoEProof,
 };
-use solidity_test_utils::{parse_g2_to_solidity_string, parse_g1_to_solidity_string_pc, parse_g1_pc, encode_group_element_pc,
-    encode_field_element, encode_field_element_pc, encode_group_element, encode_g2_element, encode_int_from_bytes, parse_g1_to_solidity_string
+use solidity_test_utils::{
+    encode_field_element, encode_field_element_pc, encode_g2_element, encode_group_element,
+    encode_group_element_pc, encode_int_from_bytes, parse_g1_pc, parse_g1_to_solidity_string,
+    parse_g1_to_solidity_string_pc, parse_g2_to_solidity_string,
 };
 use timed_commitments::{basic_tc, lazy_tc};
 
-use ark_groth16::{VerifyingKey, Proof as G16Proof};
+use ark_groth16::{Proof as G16Proof, VerifyingKey};
 
 use once_cell::sync::Lazy;
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -54,15 +56,19 @@ pub fn mean(data: &[u64]) -> Option<f64> {
 pub fn std_deviation(data: &[u64]) -> Option<f64> {
     match (mean(data), data.len()) {
         (Some(data_mean), count) if count > 0 => {
-            let variance = data.iter().map(|value| {
-                let diff = data_mean - (*value as f64);
-                diff * diff
-            }).sum::<f64>() / count as f64;
+            let variance = data
+                .iter()
+                .map(|value| {
+                    let diff = data_mean - (*value as f64);
+                    diff * diff
+                })
+                .sum::<f64>()
+                / count as f64;
 
             Some(variance.sqrt())
             // Some(format!("{:04}", variance.sqrt()).parse::<f64>().unwrap())
-        },
-        _ => None
+        }
+        _ => None,
     }
 }
 
@@ -132,10 +138,7 @@ pub fn get_bulletproofs_verifier_contract_src_2<E: ProjectiveCurve>(
             if as_contract { "public" } else { "internal" },
         )
         .replace("<%pp_hash%>", &format!("0x{}", hex::encode(&pp_hash)))
-        .replace(
-            "<%ipa_pp_u%>",
-            &parse_g1_to_solidity_string_pc::<E>(&pp.u),
-        )
+        .replace("<%ipa_pp_u%>", &parse_g1_to_solidity_string_pc::<E>(&pp.u))
         .replace("<%ipa_pp_len%>", &n.to_string())
         .replace("<%ipa_log_len%>", &lg_n.to_string())
         .replace(
@@ -164,7 +167,6 @@ pub fn get_bulletproofs_verifier_contract_src_2<E: ProjectiveCurve>(
         });
     src
 }
-
 
 pub fn get_bulletproofs_verifier_contract_src(
     pp: &Params<G>,
@@ -342,7 +344,10 @@ pub fn get_rsa_library_src(m: &BigInt, m_len: usize, as_contract: bool) -> Strin
     src
 }
 
-pub fn get_pedersen_library_src2<E: ProjectiveCurve>(ped_pp: &PedersenParams<E>, as_contract: bool) -> String {
+pub fn get_pedersen_library_src2<E: ProjectiveCurve>(
+    ped_pp: &PedersenParams<E>,
+    as_contract: bool,
+) -> String {
     let contract_path = format!("{}/contracts/PedersenBaby.sol", env!("CARGO_MANIFEST_DIR"));
 
     let mut src_file = File::open(contract_path).unwrap();
@@ -703,9 +708,9 @@ pub fn read_groth16_src(vk: &VerifyingKey<Bn254>, as_contract: bool) -> String {
 
     //println!("vk alpha g1: {}", vk.alpha_g1.x.0.to_string());
 
-    // println!("(0x{}, 0x{})", &vk.alpha_g1.x.0.to_string().to_lowercase(), 
+    // println!("(0x{}, 0x{})", &vk.alpha_g1.x.0.to_string().to_lowercase(),
     //             &vk.alpha_g1.y.0.to_string().to_lowercase());
-    
+
     //println!("{}", &vk.beta_g2.to_string().as_str());
 
     let mut populate_gamma_abc_points = String::new();
@@ -713,9 +718,9 @@ pub fn read_groth16_src(vk: &VerifyingKey<Bn254>, as_contract: bool) -> String {
         populate_gamma_abc_points.push_str(&format!(
             "vk.gamma_abc[{}] = Pairing.G1Point({});\n",
             i.to_string(),
-            parse_g1_to_solidity_string::<Bn254>( &vk.gamma_abc_g1.get(i).unwrap()),
-            // &vk.gamma_abc_g1.get(i).unwrap().x.0.to_string(), 
-            // &vk.gamma_abc_g1.get(i).unwrap().y.0.to_string(), 
+            parse_g1_to_solidity_string::<Bn254>(&vk.gamma_abc_g1.get(i).unwrap()),
+            // &vk.gamma_abc_g1.get(i).unwrap().x.0.to_string(),
+            // &vk.gamma_abc_g1.get(i).unwrap().y.0.to_string(),
         ));
     }
 
@@ -731,29 +736,41 @@ pub fn read_groth16_src(vk: &VerifyingKey<Bn254>, as_contract: bool) -> String {
             if as_contract { "contract" } else { "library" },
         )
         .replace(
-            "<%visibility%>", 
+            "<%visibility%>",
             if as_contract { "public" } else { "internal" },
         )
-        .replace("<%vk_alpha%>", &format!("{}", parse_g1_to_solidity_string::<Bn254>( &vk.alpha_g1)))
-        .replace("<%vk_beta%>", &format!("{}",
-                    parse_g2_to_solidity_string::<Bn254>(&vk.beta_g2)))
-        .replace("<%vk_gamma%>", &format!("{}",
-                    parse_g2_to_solidity_string::<Bn254>(&vk.gamma_g2)))
-        .replace("<%vk_delta%>", &format!("{}", 
-                    parse_g2_to_solidity_string::<Bn254>(&vk.delta_g2)))
-        .replace("<%vk_gamma_abc_length%>", &format!("{}",
-                    &vk.gamma_abc_g1.len().to_string()))
-        .replace("<%input_length%>", &format!("{}",
-                    &(vk.gamma_abc_g1.len()-1).to_string()))
-        .replace("<%vk_gamma_abc_pts%>", &format!("{}",
-                    &populate_gamma_abc_points))
-        ;
+        .replace(
+            "<%vk_alpha%>",
+            &format!("{}", parse_g1_to_solidity_string::<Bn254>(&vk.alpha_g1)),
+        )
+        .replace(
+            "<%vk_beta%>",
+            &format!("{}", parse_g2_to_solidity_string::<Bn254>(&vk.beta_g2)),
+        )
+        .replace(
+            "<%vk_gamma%>",
+            &format!("{}", parse_g2_to_solidity_string::<Bn254>(&vk.gamma_g2)),
+        )
+        .replace(
+            "<%vk_delta%>",
+            &format!("{}", parse_g2_to_solidity_string::<Bn254>(&vk.delta_g2)),
+        )
+        .replace(
+            "<%vk_gamma_abc_length%>",
+            &format!("{}", &vk.gamma_abc_g1.len().to_string()),
+        )
+        .replace(
+            "<%input_length%>",
+            &format!("{}", &(vk.gamma_abc_g1.len() - 1).to_string()),
+        )
+        .replace(
+            "<%vk_gamma_abc_pts%>",
+            &format!("{}", &populate_gamma_abc_points),
+        );
     src
 }
 
-pub fn encode_groth16_inputs<E: PairingEngine>(
-    public_inputs: &Vec<E::Fr>,
-) -> Token {
+pub fn encode_groth16_inputs<E: PairingEngine>(public_inputs: &Vec<E::Fr>) -> Token {
     let mut tokens = Vec::new();
     // println!("G16 inputs: {}", public_inputs.get(0).unwrap());
     println!("len of public inputs: {}", public_inputs.len());
@@ -764,9 +781,7 @@ pub fn encode_groth16_inputs<E: PairingEngine>(
     Token::FixedArray(tokens)
 }
 
-pub fn encode_groth16_inputs_struct<E: PairingEngine>(
-    public_inputs: &Vec<E::Fr>,
-) -> Token {
+pub fn encode_groth16_inputs_struct<E: PairingEngine>(public_inputs: &Vec<E::Fr>) -> Token {
     let mut tokens = Vec::new();
     // println!("G16 inputs: {}", public_inputs.get(0).unwrap());
     println!("len of public inputs: {}", public_inputs.len());
@@ -774,7 +789,7 @@ pub fn encode_groth16_inputs_struct<E: PairingEngine>(
         // tokens.push(encode_field_element::<E>(public_inputs.get(i).unwrap()));
         tokens.push(encode_field_element::<E>(&public_inputs.get(i).unwrap()));
     }
-    
+
     let mut tokens2 = Vec::new();
     tokens2.push(Token::Tuple(tokens));
     Token::Tuple(tokens2)
@@ -797,15 +812,12 @@ pub fn encode_hex(bytes: &[u8]) -> String {
     s
 }
 
-pub fn encode_groth16_input<E: PairingEngine>(
-    public_inputs: &Vec<E::Fr>,
-) -> Token {
+pub fn encode_groth16_input<E: PairingEngine>(public_inputs: &Vec<E::Fr>) -> Token {
     // let mut tokens = Vec::new();
     encode_field_element::<E>(&public_inputs.get(0).unwrap())
     // Token::Tuple(tokens)
     // Token::Uint(U256::from_big_endian(decode_hex(public_inputs.get(0).unwrap()).unwrap()))
 }
-
 
 /*
 proof.A = Pairing.G1Point(12873740738727497448187997291915224677121726020054032516825496230827252793177, 21804419174137094775122804775419507726154084057848719988004616848382402162497);
@@ -849,16 +861,13 @@ proof.K = Pairing.G1Point(2134108797660991640940173
 //     Token::Tuple(tokens)
 // }
 
-pub fn encode_groth16_proof<E: PairingEngine>(
-    proof: &G16Proof<E>
-) -> Token {
+pub fn encode_groth16_proof<E: PairingEngine>(proof: &G16Proof<E>) -> Token {
     let mut tokens = Vec::new();
     tokens.push(encode_group_element::<E>(&proof.a.into_projective()));
     tokens.push(encode_g2_element::<E>(&proof.b));
     tokens.push(encode_group_element::<E>(&proof.c.into_projective()));
     Token::Tuple(tokens)
 }
-
 
 // pub fn encode_jubjub_g1<G: ProjectiveCurve>(x: &u8) -> String {
 //     let mut populate_m = String::new();
@@ -877,4 +886,3 @@ pub fn encode_groth16_proof<E: PairingEngine>(
 //     }
 //     populate_m
 // }
-

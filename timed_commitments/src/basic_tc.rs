@@ -60,7 +60,7 @@ impl<PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: HashToPrime>
         //TODO: Not sure why g is being generated like this, revert back
         let two = Hog::<RsaP>::generator();
         let g = two.power(&BigInt::from(2).pow(t as u32));
-        let y = g.power(&BigInt::from(2).pow(t as u32));
+        let y: RsaHiddenOrderGroup<RsaP> = g.power(&BigInt::from(2).pow(t as u32));
         let proof = PoE::<PoEP, RsaP, H2P>::prove(&g, &y, t)?;
 
         Ok((TimeParams { t, x: g, y }, proof))

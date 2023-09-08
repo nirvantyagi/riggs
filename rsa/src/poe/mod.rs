@@ -1,12 +1,11 @@
 //! Implements Wesolowski's Proof of Exponentiation
 use crate::{
-    bigint::{extended_euclidean_gcd, BigInt},
+    bigint::BigInt,
     hash_to_prime::HashToPrime,
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
     Error,
 };
-use num_traits::{One, Zero};
-use std::io::{self, Write};
+use num_traits::One;
 
 use num_integer::Integer;
 use std::{fmt::Debug, marker::PhantomData};
@@ -101,13 +100,11 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
 }
 
 // Needed to match solidity functionality
-fn pad_to_32_byte_offset(mut bytes: Vec<u8>) -> Vec<u8> {
+fn pad_to_32_byte_offset(bytes: Vec<u8>) -> Vec<u8> {
     let pad_len = 32 * ((bytes.len() - 1) / 32 + 1);
-    bytes.reverse();
-    bytes.resize(pad_len, 0);
-    debug_assert_eq!(bytes.len() % 32, 0);
-    bytes.reverse();
-    bytes
+    let mut output = vec![0; pad_len-bytes.len()]; 
+    output.extend( bytes);
+    output 
 }
 
 #[cfg(test)]
@@ -161,8 +158,8 @@ mod tests {
         let t = 40;
         let v = u.power(&BigInt::from(2).pow(t));
 
-        let proof = TestWesolowski::prove(&u, &v, t).unwrap();
-        let is_valid = TestWesolowski::verify(&u, &v, t, &proof).unwrap();
+        let proof = TestWesolowski::prove(&u, &v, t.into()).unwrap();
+        let is_valid = TestWesolowski::verify(&u, &v, t.into(), &proof).unwrap();
         assert!(is_valid);
 
         let is_valid = TestWesolowski::verify(&u, &v, 30, &proof).unwrap();

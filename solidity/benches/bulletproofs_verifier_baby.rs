@@ -1,20 +1,22 @@
-use ark_bn254::{Bn254};
+use ark_bn254::Bn254;
 use ark_ec::short_weierstrass_jacobian::GroupProjective;
 use ark_ed_on_bn254::{constraints::EdwardsVar as GV, EdwardsProjective as G};
 
 use primitive_types::U256;
 use rand::{rngs::StdRng, SeedableRng};
 
-use solidity_test_utils::{encode_group_element_pc,
-    address::Address, contract::Contract, encode_group_element, evm::Evm, to_be_bytes,
+use solidity_test_utils::{
+    address::Address, contract::Contract, encode_group_element, encode_group_element_pc, evm::Evm,
+    to_be_bytes,
 };
 
 use range_proofs::bulletproofs::{Bulletproofs, PedersenComm};
 use rsa::bigint::BigInt;
 use solidity::{
-  get_bulletproofs_verifier_contract_src_2, encode_bulletproof_2,
-    encode_bulletproof, get_pedersen_library_src2,
-    get_bn254_library_src, get_bulletproofs_verifier_contract_src, get_pedersen_library_src, get_filename_src};
+    encode_bulletproof, encode_bulletproof_2, get_bn254_library_src,
+    get_bulletproofs_verifier_contract_src, get_bulletproofs_verifier_contract_src_2,
+    get_filename_src, get_pedersen_library_src, get_pedersen_library_src2,
+};
 
 const NUM_BITS: u64 = 64;
 const LOG_NUM_BITS: u64 = 6;

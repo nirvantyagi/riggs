@@ -10,8 +10,9 @@ use solidity_test_utils::{
 use range_proofs::bulletproofs::{Bulletproofs, PedersenComm};
 use rsa::bigint::BigInt;
 use solidity::{
-    encode_bulletproof,
-    get_bn254_library_src, get_bulletproofs_verifier_contract_src, get_pedersen_library_src};
+    encode_bulletproof, get_bn254_library_src, get_bulletproofs_verifier_contract_src,
+    get_pedersen_library_src,
+};
 
 const NUM_BITS: u64 = 64;
 const LOG_NUM_BITS: u64 = 6;

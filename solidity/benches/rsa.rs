@@ -15,10 +15,7 @@ use rsa::{
     hog::{RsaGroupParams, RsaHiddenOrderGroup},
 };
 
-use solidity::{
-    encode_rsa_element, encode_rsa_pp, get_bigint_library_src,
-    get_rsa_library_src,
-};
+use solidity::{encode_rsa_element, encode_rsa_pp, get_bigint_library_src, get_rsa_library_src};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TestRsaParams;
