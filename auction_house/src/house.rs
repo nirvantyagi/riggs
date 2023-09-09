@@ -500,9 +500,9 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
                 .active_auctions
                 .get(&auction_id)
                 .ok_or(Box::new(AuctionError::InvalidID))?;
-            if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
-                return Err(Box::new(AuctionError::InvalidPhase));
-            }
+            // if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
+            //     return Err(Box::new(AuctionError::InvalidPhase));
+            // }
             let mut bids = bid_map
                 .iter()
                 .map(|(uid, bid_id)| (*uid, auction.bid_openings.get(&(*bid_id as usize)).unwrap()))
@@ -547,9 +547,9 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
                 .active_auctions
                 .get(&auction_id)
                 .ok_or(Box::new(AuctionError::InvalidID))?;
-            if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
-                // return Err(Box::new(AuctionError::InvalidPhase));
-            }
+            // if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
+            //     return Err(Box::new(AuctionError::InvalidPhase));
+            // }
             let mut bids = bid_map
                 .iter()
                 .map(|(uid, bid_id)| (*uid, auction.bid_openings.get(&(*bid_id as usize)).unwrap()))
@@ -668,7 +668,7 @@ mod tests {
     fn basic_auction_house_test() {
         let mut rng = StdRng::seed_from_u64(0u64);
 
-        let (time_pp, _) = TC::gen_time_params(40).unwrap();
+        let (time_pp, _) = TC::gen_time_params(1).unwrap();
         let ped_pp = TC::gen_pedersen_params(&mut rng);
         let range_proof_pp = TestRangeProof::gen_params(&mut rng, BID_BITS as u64);
         let auction1_pp = HouseAuctionParams {

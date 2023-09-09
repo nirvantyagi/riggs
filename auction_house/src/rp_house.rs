@@ -417,7 +417,7 @@ impl<G: ProjectiveCurve, H: Digest> AuctionHouse<G, H> {
                 .active_auctions
                 .get(&auction_id)
                 .ok_or(Box::new(AuctionError::InvalidID))?;
-            if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
+            if !auction.phase(&auction_pp.auction_pp, AuctionPhase::Complete) {
                 return Err(Box::new(AuctionError::InvalidPhase));
             }
             let mut bids = bid_map
@@ -439,7 +439,6 @@ impl<G: ProjectiveCurve, H: Digest> AuctionHouse<G, H> {
                 .collect::<Vec<_>>();
 
             for (uid, bid_id) in bid_map.iter() {
-                
                 let bid_comm = auction.bid_comms_i.get(&(*bid_id as usize)).unwrap();
                 self.accounts.get_mut(uid).unwrap().comm_active_bids -= bid_comm.g;
             }
@@ -465,8 +464,8 @@ impl<G: ProjectiveCurve, H: Digest> AuctionHouse<G, H> {
                 .active_auctions
                 .get(&auction_id)
                 .ok_or(Box::new(AuctionError::InvalidID))?;
-            if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
-                // return Err(Box::new(AuctionError::InvalidPhase));
+            if !auction.phase(&auction_pp.auction_pp, AuctionPhase::Complete) {
+                return Err(Box::new(AuctionError::InvalidPhase));
             }
             let mut bids = bid_map
                 .iter()

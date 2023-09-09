@@ -93,7 +93,7 @@ impl<P: PocklingtonCertParams, D: Digest> HashToPrime for PocklingtonHash<P, D> 
                 Some(certs) => {
                     if certs.len() <= P::MAX_STEPS {
                         let end = start.elapsed().as_millis();
-                        println!("H2P took {} millis", end);
+                        // println!("H2P took {} millis", end);
                         io::stdout().flush().unwrap();
                         return Ok((
                             p_candidate,

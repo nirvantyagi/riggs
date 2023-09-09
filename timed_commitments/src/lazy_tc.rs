@@ -246,7 +246,9 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
                 let ped_valid =
                     PedersenComm::<G>::ver_open(ped_pp, &comm.ped_comm, &m_computed, &ped_opening)?;
                 match m {
-                    Some(m) => Ok(tc_valid && ped_valid && m_computed == *m),
+                    Some(m) => {
+                        Ok(tc_valid && ped_valid && m_computed == *m)
+                    }
                     None => Ok(tc_valid && !ped_valid),
                 }
             }

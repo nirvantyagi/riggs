@@ -16,23 +16,21 @@ const BID_BITS: u32 = 32;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AccountSummary {
-pub balance: u32,
+    pub balance: u32,
 }
 
 //TODO: PedersenParams should be here instead of in per-auction params (currently duplicated)
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct HouseParams<> {
-}
+pub struct HouseParams {}
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct HouseAuctionParams<> {
-    pub auction_pp: AuctionParams<>,
+pub struct HouseAuctionParams {
+    pub auction_pp: AuctionParams,
 }
-
 
 pub struct AuctionHouse<H: Digest> {
     active_auctions: HashMap<u32, (Auction<H>, HashMap<u32, u32>)>, // auction_id -> (auction, (user_id -> bid_id))
-    accounts: HashMap<u32, AccountSummary<>>,                      // user_id -> account_info
+    accounts: HashMap<u32, AccountSummary>,                         // user_id -> account_info
     //TODO: Will eventually overflow, use hash or replace finished auction ids
     ctr_auction: u32,
     ctr_account: u32,
@@ -40,25 +38,22 @@ pub struct AuctionHouse<H: Digest> {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AccountPrivateState<H: Digest> {
-    pub public_summary: AccountSummary<>,
+    pub public_summary: AccountSummary,
     pub active_bids: HashMap<u32, (u32, u32, u32, [u8; 32])>, // auction_id -> (bid, opening, collateral, comm)
     // pub sum_active_bids: u32,
     // pub opening_active_bids: G::ScalarField,
     _auction: PhantomData<Auction<H>>,
 }
 
-pub struct BidProposal<> {
+pub struct BidProposal {
     pub comm_bid: [u8; 32],
     pub collateral: u32,
 }
 
-impl<H: Digest>  AccountPrivateState<H>
-{
+impl<H: Digest> AccountPrivateState<H> {
     pub fn new() -> Self {
         Self {
-            public_summary: AccountSummary {
-                balance: 0
-            },
+            public_summary: AccountSummary { balance: 0 },
             active_bids: HashMap::new(),
             _auction: PhantomData,
         }
@@ -67,11 +62,11 @@ impl<H: Digest>  AccountPrivateState<H>
     pub fn propose_bid<R: CryptoRng + Rng>(
         &self,
         rng: &mut R,
-        house_pp: &HouseParams<>,
-        auction_pp: &HouseAuctionParams<>,
+        house_pp: &HouseParams,
+        auction_pp: &HouseAuctionParams,
         bid: u32,
         collateral: u32,
-    ) -> Result<(BidProposal<>, u32), Error> {
+    ) -> Result<(BidProposal, u32), Error> {
         if collateral > self.public_summary.balance || bid > collateral {
             return Err(Box::new(AuctionError::InvalidBid));
         }
@@ -79,13 +74,19 @@ impl<H: Digest>  AccountPrivateState<H>
         let (comm_bid, opening_bid) =
             Auction::<H>::client_create_bid(rng, &auction_pp.auction_pp, bid)?;
 
-        Ok((BidProposal { comm_bid, collateral }, opening_bid))
+        Ok((
+            BidProposal {
+                comm_bid,
+                collateral,
+            },
+            opening_bid,
+        ))
     }
 
     pub fn confirm_bid(
         &mut self,
-        _house_pp: &HouseParams<>,
-        auction_pp: &HouseAuctionParams<>,
+        _house_pp: &HouseParams,
+        auction_pp: &HouseAuctionParams,
         auction_id: u32,
         bid: u32,
         proposal: &BidProposal,
@@ -96,17 +97,20 @@ impl<H: Digest>  AccountPrivateState<H>
         // Update active bids
         self.active_bids.insert(
             auction_id,
-            (bid, opening.clone(),
-             proposal.collateral,
-             proposal.comm_bid.clone()),
+            (
+                bid,
+                opening.clone(),
+                proposal.collateral,
+                proposal.comm_bid.clone(),
+            ),
         );
         Ok(())
     }
 
     pub fn confirm_bid_self_open(
         &mut self,
-        _house_pp: &HouseParams<>,
-        auction_pp: &HouseAuctionParams<>,
+        _house_pp: &HouseParams,
+        auction_pp: &HouseAuctionParams,
         auction_id: u32,
     ) -> Result<(), Error> {
         let (bid, _, collateral, _) = self
@@ -114,14 +118,14 @@ impl<H: Digest>  AccountPrivateState<H>
             .get(&auction_id)
             .ok_or(Box::new(AuctionError::InvalidID))?;
 
-        self.public_summary.balance += (collateral-bid);
+        self.public_summary.balance += (collateral - bid);
         Ok(())
     }
 
     pub fn confirm_auction_win(
         &mut self,
-        _house_pp: &HouseParams<>,
-        _auction_pp: &HouseAuctionParams<>,
+        _house_pp: &HouseParams,
+        _auction_pp: &HouseAuctionParams,
         auction_id: u32,
         price: u32,
     ) -> Result<(), Error> {
@@ -138,8 +142,8 @@ impl<H: Digest>  AccountPrivateState<H>
 
     pub fn confirm_auction_loss(
         &mut self,
-        _house_pp: &HouseParams<>,
-        _auction_pp: &HouseAuctionParams<>,
+        _house_pp: &HouseParams,
+        _auction_pp: &HouseAuctionParams,
         auction_id: u32,
     ) -> Result<(), Error> {
         {
@@ -153,7 +157,7 @@ impl<H: Digest>  AccountPrivateState<H>
         Ok(())
     }
 
-    pub fn confirm_deposit(&mut self, _house_pp: &HouseParams<>, amt: u32) -> Result<(), Error> {
+    pub fn confirm_deposit(&mut self, _house_pp: &HouseParams, amt: u32) -> Result<(), Error> {
         self.public_summary.balance += amt;
         Ok(())
     }
@@ -161,7 +165,7 @@ impl<H: Digest>  AccountPrivateState<H>
     pub fn propose_withdrawal<R: CryptoRng + Rng>(
         &self,
         rng: &mut R,
-        house_pp: &HouseParams<>,
+        house_pp: &HouseParams,
         amt: u32,
     ) -> Result<(), Error> {
         if amt > self.public_summary.balance {
@@ -170,18 +174,14 @@ impl<H: Digest>  AccountPrivateState<H>
         Ok(())
     }
 
-    pub fn confirm_withdrawal(
-        &mut self,
-        _house_pp: &HouseParams<>,
-        amt: u32,
-    ) -> Result<(), Error> {
+    pub fn confirm_withdrawal(&mut self, _house_pp: &HouseParams, amt: u32) -> Result<(), Error> {
         self.public_summary.balance -= amt;
         Ok(())
     }
 }
 
 impl<H: Digest> AuctionHouse<H> {
-    pub fn new(_house_pp: &HouseParams<>) -> Self {
+    pub fn new(_house_pp: &HouseParams) -> Self {
         Self {
             active_auctions: HashMap::new(),
             accounts: HashMap::new(),
@@ -190,11 +190,9 @@ impl<H: Digest> AuctionHouse<H> {
         }
     }
 
-    pub fn new_account(&mut self, _house_pp: &HouseParams<>) -> (u32, AccountSummary<>) {
+    pub fn new_account(&mut self, _house_pp: &HouseParams) -> (u32, AccountSummary) {
         let user_id = self.ctr_account;
-        let user_summary = AccountSummary {
-            balance: 0,
-        };
+        let user_summary = AccountSummary { balance: 0 };
         self.accounts.insert(user_id, user_summary.clone());
         self.ctr_account += 1;
         (user_id, user_summary)
@@ -202,7 +200,7 @@ impl<H: Digest> AuctionHouse<H> {
 
     pub fn account_deposit(
         &mut self,
-        _house_pp: &HouseParams<>,
+        _house_pp: &HouseParams,
         user_id: u32,
         amt: u32,
     ) -> Result<(), Error> {
@@ -216,7 +214,7 @@ impl<H: Digest> AuctionHouse<H> {
 
     pub fn account_withdrawal(
         &mut self,
-        house_pp: &HouseParams<>,
+        house_pp: &HouseParams,
         user_id: u32,
         amt: u32,
     ) -> Result<(), Error> {
@@ -232,11 +230,7 @@ impl<H: Digest> AuctionHouse<H> {
         Ok(())
     }
 
-    pub fn new_auction(
-        &mut self,
-        _house_pp: &HouseParams<>,
-        auction_pp: &HouseAuctionParams<>,
-    ) -> u32 {
+    pub fn new_auction(&mut self, _house_pp: &HouseParams, auction_pp: &HouseAuctionParams) -> u32 {
         let auction_id = self.ctr_auction;
         //TODO: Assert Pedersen parameters between auction and house are the same
         self.active_auctions.insert(
@@ -249,11 +243,11 @@ impl<H: Digest> AuctionHouse<H> {
 
     pub fn account_bid(
         &mut self,
-        house_pp: &HouseParams<>,
-        auction_pp: &HouseAuctionParams<>,
+        house_pp: &HouseParams,
+        auction_pp: &HouseAuctionParams,
         auction_id: u32,
         user_id: u32,
-        bid: &BidProposal<>,
+        bid: &BidProposal,
         collateral: u32,
     ) -> Result<(), Error> {
         let user_summary = self
@@ -284,8 +278,8 @@ impl<H: Digest> AuctionHouse<H> {
 
     pub fn account_self_open(
         &mut self,
-        _house_pp: &HouseParams<>,
-        auction_pp: &HouseAuctionParams<>,
+        _house_pp: &HouseParams,
+        auction_pp: &HouseAuctionParams,
         auction_id: u32,
         user_id: u32,
         bid: u32,
@@ -310,8 +304,8 @@ impl<H: Digest> AuctionHouse<H> {
     // Completes auction and returns (price, winners)
     pub fn complete_kplusone_price_auction(
         &mut self,
-        _house_pp: &HouseParams<>,
-        auction_pp: &HouseAuctionParams<>,
+        _house_pp: &HouseParams,
+        auction_pp: &HouseAuctionParams,
         auction_id: u32,
         k: usize,
     ) -> Result<(u32, Vec<u32>), Error> {
@@ -320,7 +314,7 @@ impl<H: Digest> AuctionHouse<H> {
                 .active_auctions
                 .get(&auction_id)
                 .ok_or(Box::new(AuctionError::InvalidID))?;
-            if auction.phase(&auction_pp.auction_pp) != AuctionPhase::Complete {
+            if !auction.phase(&auction_pp.auction_pp, AuctionPhase::Complete) {
                 return Err(Box::new(AuctionError::InvalidPhase));
             }
             let mut bids = bid_map
@@ -417,7 +411,14 @@ mod tests {
                     .unwrap();
                 println!("Auction 1 bid: uid: {}", uid);
                 auction_house
-                    .account_bid(&house_pp, &auction1_pp, auction1_id, uid as u32, &proposal, collateral)
+                    .account_bid(
+                        &house_pp,
+                        &auction1_pp,
+                        auction1_id,
+                        uid as u32,
+                        &proposal,
+                        collateral,
+                    )
                     .unwrap();
                 user.confirm_bid(
                     &house_pp,
@@ -434,14 +435,23 @@ mod tests {
 
         // User 9 cannot make a second bid
         let (dup_bid, dup_collateral) = (100, 100);
-        let (dup_proposal, _) = users.get(9).unwrap()
+        let (dup_proposal, _) = users
+            .get(9)
+            .unwrap()
             .propose_bid(&mut rng, &house_pp, &auction1_pp, dup_bid, dup_collateral)
             .unwrap();
 
         assert!(auction_house
-            .account_bid(&house_pp, &auction1_pp, auction1_id, 9 as u32, &dup_proposal, dup_collateral).is_err());
+            .account_bid(
+                &house_pp,
+                &auction1_pp,
+                auction1_id,
+                9 as u32,
+                &dup_proposal,
+                dup_collateral
+            )
+            .is_err());
         println!("Auction 1 bid: uid: 9 failed");
-
 
         // Valid withdrawal
         let withdraw_proof = users
@@ -485,7 +495,8 @@ mod tests {
                         opening,
                     )
                     .unwrap();
-                user.confirm_bid_self_open(&house_pp, &auction1_pp, auction1_id).unwrap();
+                user.confirm_bid_self_open(&house_pp, &auction1_pp, auction1_id)
+                    .unwrap();
             });
 
         // Complete auction 1

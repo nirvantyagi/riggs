@@ -1004,6 +1004,7 @@ fn main() {
             )
             .unwrap();
         // println!("Complete auction: gas: {}", result.gas);
+        complete_gas = complete_result.gas;
 
         start = Instant::now();
         let (price, winners) = auction_house

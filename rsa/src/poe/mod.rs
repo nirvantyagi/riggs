@@ -66,11 +66,11 @@ impl<P: PoEParams, RsaP: RsaGroupParams, H: HashToPrime> PoE<P, RsaP, H> {
         let (l, cert) = H::hash_to_prime(P::HASH_TO_PRIME_ENTROPY, &hash_input)?;
 
         // Compute quotient of exponent with challenge prime
-        //let q = BigInt::from(2).pow(t).div_floor(&l);
+        // let q = BigInt::from(2).pow(t).div_floor(&l);
 
-        let q = (BigInt::one() << t).div_floor(&l).mod_floor(order);
+        // let q = (BigInt::one() << t).div_floor(&l).mod_floor(order);
 
-        //let (_, q) = (BigInt::from(2).pow(t).div_floor(&l)).div_rem(&order);
+        let (_, q) = (BigInt::from(2).pow((t).try_into().unwrap()).div_floor(&l)).div_rem(&order);
 
         // Compute proof elements
         Ok(Proof {

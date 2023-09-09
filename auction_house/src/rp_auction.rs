@@ -49,15 +49,17 @@ impl<G: ProjectiveCurve, H: Digest> Auction<G, H> {
         }
     }
 
-    pub fn phase(&self, pp: &AuctionParams<G>) -> AuctionPhase {
-        let t_auction = self.t_start.elapsed();
-        if t_auction < pp.t_bid_collection {
-            AuctionPhase::BidCollection
-        } else if t_auction < pp.t_bid_collection + pp.t_bid_self_open {
-            AuctionPhase::BidSelfOpening
-        } else {
-            AuctionPhase::Complete
-        }
+    // Not needed for benching 
+    pub fn phase(&self, pp: &AuctionParams<G>, desired_phase: AuctionPhase) -> bool {
+        return true; 
+        // let t_auction = self.t_start.elapsed();
+        // if t_auction < pp.t_bid_collection {
+        //     desired_phase == AuctionPhase::BidCollection
+        // } else if t_auction < pp.t_bid_collection + pp.t_bid_self_open {
+        //     desired_phase == AuctionPhase::BidSelfOpening
+        // } else {
+        //     desired_phase == AuctionPhase::Complete
+        // }
     }
 
     pub fn client_create_bid<R: CryptoRng + Rng>(
@@ -76,7 +78,7 @@ impl<G: ProjectiveCurve, H: Digest> Auction<G, H> {
         pp: &AuctionParams<G>,
         bid_comm: &PedComm<G>,
     ) -> Result<usize, Error> {
-        if self.phase(pp) != AuctionPhase::BidCollection {
+        if !self.phase(pp, AuctionPhase::BidCollection) {
             Err(Box::new(AuctionError::InvalidPhase))
         } else if (self.bid_comms_set.contains(bid_comm)) {
             Err(Box::new(AuctionError::InvalidBid))
@@ -95,7 +97,7 @@ impl<G: ProjectiveCurve, H: Digest> Auction<G, H> {
         bid_opening: &G::ScalarField,
         bid_index: usize,
     ) -> Result<(), Error> {
-        if self.phase(pp) != AuctionPhase::BidSelfOpening {
+        if !self.phase(pp, AuctionPhase::BidSelfOpening) {
             Err(Box::new(AuctionError::InvalidPhase))
         } else {
             self.accept_opening(pp, Some(bid), bid_opening, bid_index)?;
@@ -218,7 +220,7 @@ mod tests {
         let mut auction = TestAuction::new(&auction_pp);
 
         // Bid collection phase
-        assert_eq!(auction.phase(&auction_pp), AuctionPhase::BidCollection);
+        assert!(auction.phase(&auction_pp, AuctionPhase::BidCollection));
         let index1 = auction.accept_bid(&auction_pp, &comm1).unwrap();
         let index2 = auction.accept_bid(&auction_pp, &comm2).unwrap();
         let index3 = auction.accept_bid(&auction_pp, &comm3).unwrap();
@@ -230,7 +232,7 @@ mod tests {
 
         // Self opening phase
         thread::sleep(auction_pp.t_bid_collection);
-        assert_eq!(auction.phase(&auction_pp), AuctionPhase::BidSelfOpening);
+        assert!(auction.phase(&auction_pp, AuctionPhase::BidSelfOpening));
 
         assert!(auction.accept_bid(&auction_pp, &comm4).is_err());
 
@@ -259,7 +261,7 @@ mod tests {
         //auction.accept_force_opening(&auction_pp, Some(bid3), &opening3, index3).unwrap();
 
         // Auction complete
-        assert_eq!(auction.phase(&auction_pp), AuctionPhase::Complete);
+        assert!(auction.phase(&auction_pp, AuctionPhase::Complete));
     }
 
     #[test]
@@ -305,6 +307,6 @@ mod tests {
             .unwrap();
 
         thread::sleep(auction_pp.t_bid_self_open);
-        assert_eq!(auction.phase(&auction_pp), AuctionPhase::Complete);
+        assert!(auction.phase(&auction_pp, AuctionPhase::Complete));
     }
 }

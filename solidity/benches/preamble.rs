@@ -11,7 +11,12 @@ use rand::{rngs::StdRng, SeedableRng};
 use sha3::Keccak256;
 
 use num_bigint::Sign;
-use std::{ops::Deref, str::FromStr, thread, time::Duration};
+use std::{
+    ops::Deref,
+    str::FromStr,
+    thread,
+    time::{Duration, Instant},
+};
 
 use auction_house::{
     auction::AuctionParams,
@@ -55,7 +60,7 @@ impl RsaGroupParams for TestRsaParams {
 pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 
 pub const MOD_BITS: usize = 2048;
-pub const TIME_PARAM: u64 = 2 << 32;
+pub const TIME_PARAM: u64 = 100; 
 pub const NUM_BID_BITS: u64 = 32;
 pub const LOG_NUM_BID_BITS: u64 = 5;
 
@@ -256,23 +261,12 @@ pub fn deploy_erc721(evm: &mut Evm, deployer: &Address) -> (Contract, Address) {
     (erc721_contract, erc721_contract_addr)
 }
 
+
 pub fn deploy_ah_coin(
     evm: &mut Evm,
     deployer: &Address,
-    ped_pp: &PedersenParams<G>,
-    bulletproofs_pp: &BulletproofsParams<G>,
-    bulletproofs_contract_addr: &Address,
 ) -> Contract {
     let auction_house_coin_src = get_filename_src("AuctionHouseCoin.sol", true);
-    let bn254_src = get_bn254_library_src();
-    let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
-    let bulletproofs_src = get_bulletproofs_verifier_contract_src(
-        &bulletproofs_pp,
-        &ped_pp,
-        NUM_BID_BITS,
-        LOG_NUM_BID_BITS,
-        false,
-    );
     let erc20_src = get_filename_src("IERC20.sol", false);
     let erc721_src = get_filename_src("IERC721.sol", false);
 
@@ -281,9 +275,6 @@ pub fn deploy_ah_coin(
               "language": "Solidity",
               "sources": {
                   "input.sol": { "content": "<%src%>" },
-                  "BN254.sol": { "content": "<%bn254_src%>" },
-                  "Pedersen.sol": { "content": "<%pedersen_lib_src%>" },
-                  "BulletproofsVerifier.sol": { "content": "<%bulletproofs_lib_src%>" },
                   "IERC20.sol": { "content": "<%erc20_src%>" },
                   "IERC721.sol": { "content": "<%erc721_src%>" }
               },
@@ -294,22 +285,10 @@ pub fn deploy_ah_coin(
                           "*": [
                               "evm.bytecode.object", "abi"
                           ],
-                      "": [ "*" ] } },
-                  "libraries": {
-                      "BulletproofsVerifier.sol": {
-                          "BulletproofsVerifier": "<%bulletproofs_lib_addr%>"
-                      }
-                  }
+                      "": [ "*" ] } }
               }
           }"#
     .replace("<%opt%>", &false.to_string()) // Needed to disable opt for a BigNumber assembly instruction
-    .replace("<%bn254_src%>", &bn254_src)
-    .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
-    .replace("<%bulletproofs_lib_src%>", &bulletproofs_src)
-    .replace(
-        "<%bulletproofs_lib_addr%>",
-        &bulletproofs_contract_addr.to_string(),
-    )
     .replace("<%erc20_src%>", &erc20_src)
     .replace("<%erc721_src%>", &erc721_src)
     .replace("<%src%>", &auction_house_coin_src);
@@ -326,63 +305,154 @@ pub fn deploy_ah_coin(
     contract
 }
 
+
+// pub fn deploy_ah_coin(
+//     evm: &mut Evm,
+//     deployer: &Address,
+//     ped_pp: &PedersenParams<G>,
+//     bulletproofs_pp: &BulletproofsParams<G>,
+//     bulletproofs_contract_addr: &Address,
+// ) -> Contract {
+//     let auction_house_coin_src = get_filename_src("AuctionHouseCoin.sol", true);
+//     let bn254_src = get_bn254_library_src();
+//     let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
+//     let bulletproofs_src = get_bulletproofs_verifier_contract_src(
+//         &bulletproofs_pp,
+//         &ped_pp,
+//         NUM_BID_BITS,
+//         LOG_NUM_BID_BITS,
+//         false,
+//     );
+//     let erc20_src = get_filename_src("IERC20.sol", false);
+//     let erc721_src = get_filename_src("IERC721.sol", false);
+
+//     let solc_config = r#"
+//           {
+//               "language": "Solidity",
+//               "sources": {
+//                   "input.sol": { "content": "<%src%>" },
+//                   "BN254.sol": { "content": "<%bn254_src%>" },
+//                   "Pedersen.sol": { "content": "<%pedersen_lib_src%>" },
+//                   "BulletproofsVerifier.sol": { "content": "<%bulletproofs_lib_src%>" },
+//                   "IERC20.sol": { "content": "<%erc20_src%>" },
+//                   "IERC721.sol": { "content": "<%erc721_src%>" }
+//               },
+//               "settings": {
+//                   "optimizer": { "enabled": <%opt%> },
+//                   "outputSelection": {
+//                       "*": {
+//                           "*": [
+//                               "evm.bytecode.object", "abi"
+//                           ],
+//                       "": [ "*" ] } },
+//                   "libraries": {
+//                       "BulletproofsVerifier.sol": {
+//                           "BulletproofsVerifier": "<%bulletproofs_lib_addr%>"
+//                       }
+//                   }
+//               }
+//           }"#
+//     .replace("<%opt%>", &false.to_string()) // Needed to disable opt for a BigNumber assembly instruction
+//     .replace("<%bn254_src%>", &bn254_src)
+//     .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
+//     .replace("<%bulletproofs_lib_src%>", &bulletproofs_src)
+//     .replace(
+//         "<%bulletproofs_lib_addr%>",
+//         &bulletproofs_contract_addr.to_string(),
+//     )
+//     .replace("<%erc20_src%>", &erc20_src)
+//     .replace("<%erc721_src%>", &erc721_src)
+//     .replace("<%src%>", &auction_house_coin_src);
+
+//     let contract = Contract::compile_from_config(&solc_config, "AuctionHouseCoin").unwrap();
+//     // let create_result = evm
+//     //   .deploy(
+//     //     contract.encode_create_contract_bytes(&[]).unwrap(),
+//     //     &deployer,
+//     //   )
+//     //   .unwrap();
+//     // let contract_addr = create_result.addr.clone();
+//     // println!("AH Coin contract deployed at address: {:?}", contract_addr);
+//     contract
+// }
+
 pub fn deploy_ahc_factory(
     evm: &mut Evm,
     deployer: &Address,
-    ped_pp: &PedersenParams<G>,
-    bulletproofs_pp: &BulletproofsParams<G>,
-    bulletproofs_contract_addr: &Address,
+    // ped_pp: &PedersenParams<G>,
+    // bulletproofs_pp: &BulletproofsParams<G>,
+    // bulletproofs_contract_addr: &Address,
 ) -> (Contract, Address) {
     let ahc_factory_src = get_filename_src("AuctionHouseCoinFactory.sol", true);
-    let bn254_src = get_bn254_library_src();
-    let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
-    let bulletproofs_src = get_bulletproofs_verifier_contract_src(
-        &bulletproofs_pp,
-        &ped_pp,
-        NUM_BID_BITS,
-        LOG_NUM_BID_BITS,
-        false,
-    );
+    // let bn254_src = get_bn254_library_src();
+    // let pedersen_lib_src = get_pedersen_library_src(&ped_pp, false);
+    // let bulletproofs_src = get_bulletproofs_verifier_contract_src(
+    //     &bulletproofs_pp,
+    //     &ped_pp,
+    //     NUM_BID_BITS,
+    //     LOG_NUM_BID_BITS,
+    //     false,
+    // );
     let erc20_src = get_filename_src("IERC20.sol", false);
     let erc721_src = get_filename_src("IERC721.sol", false);
     let ah_coin_src = get_filename_src("AuctionHouseCoin.sol", false);
 
-    let solc_config = r#"
-            {
-                "language": "Solidity",
-                "sources": {
-                    "input.sol": { "content": "<%src%>" },
-                    "BN254.sol": { "content": "<%bn254_src%>" },
-                    "Pedersen.sol": { "content": "<%pedersen_lib_src%>" },
-                    "BulletproofsVerifier.sol": { "content": "<%bulletproofs_lib_src%>" },
-                    "IERC20.sol": { "content": "<%erc20_src%>" },
-                    "IERC721.sol": { "content": "<%erc721_src%>" },
-                    "AuctionHouseCoin.sol": { "content": "<%ah_coin_src%>" }
+    // let solc_config = r#"
+    //         {
+    //             "language": "Solidity",
+    //             "sources": {
+    //                 "input.sol": { "content": "<%src%>" },
+    //                 "BN254.sol": { "content": "<%bn254_src%>" },
+    //                 "Pedersen.sol": { "content": "<%pedersen_lib_src%>" },
+    //                 "BulletproofsVerifier.sol": { "content": "<%bulletproofs_lib_src%>" },
+    //                 "IERC20.sol": { "content": "<%erc20_src%>" },
+    //                 "IERC721.sol": { "content": "<%erc721_src%>" },
+    //                 "AuctionHouseCoin.sol": { "content": "<%ah_coin_src%>" }
 
-                },
-                "settings": {
-                    "optimizer": { "enabled": <%opt%> },
-                    "outputSelection": {
-                        "*": {
-                            "*": [
-                                "evm.bytecode.object", "abi"
-                            ],
-                        "": [ "*" ] } },
-                    "libraries": {
-                        "BulletproofsVerifier.sol": {
-                            "BulletproofsVerifier": "<%bulletproofs_lib_addr%>"
-                        }
-                    }
-                }
-            }"#
+    //             },
+    //             "settings": {
+    //                 "optimizer": { "enabled": <%opt%> },
+    //                 "outputSelection": {
+    //                     "*": {
+    //                         "*": [
+    //                             "evm.bytecode.object", "abi"
+    //                         ],
+    //                     "": [ "*" ] } },
+    //                 "libraries": {
+    //                     "BulletproofsVerifier.sol": {
+    //                         "BulletproofsVerifier": "<%bulletproofs_lib_addr%>"
+    //                     }
+    //                 }
+    //             }
+    //         }"#
+    let solc_config = r#"
+    {
+        "language": "Solidity",
+        "sources": {
+            "input.sol": { "content": "<%src%>" },
+            "IERC20.sol": { "content": "<%erc20_src%>" },
+            "IERC721.sol": { "content": "<%erc721_src%>" },
+            "AuctionHouseCoin.sol": { "content": "<%ah_coin_src%>" }
+
+        },
+        "settings": {
+            "optimizer": { "enabled": <%opt%> },
+            "outputSelection": {
+                "*": {
+                    "*": [
+                        "evm.bytecode.object", "abi"
+                    ],
+                "": [ "*" ] } }
+        }
+    }"#
     .replace("<%opt%>", &false.to_string()) // Needed to disable opt for a BigNumber assembly instruction
-    .replace("<%bn254_src%>", &bn254_src)
-    .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
-    .replace("<%bulletproofs_lib_src%>", &bulletproofs_src)
-    .replace(
-        "<%bulletproofs_lib_addr%>",
-        &bulletproofs_contract_addr.to_string(),
-    )
+    // .replace("<%bn254_src%>", &bn254_src)
+    // .replace("<%pedersen_lib_src%>", &pedersen_lib_src)
+    // .replace("<%bulletproofs_lib_src%>", &bulletproofs_src)
+    // .replace(
+    //     "<%bulletproofs_lib_addr%>",
+    //     &bulletproofs_contract_addr.to_string(),
+    // )
     .replace("<%erc20_src%>", &erc20_src)
     .replace("<%erc721_src%>", &erc721_src)
     .replace("<%ah_coin_src%>", &ah_coin_src)
@@ -412,7 +482,7 @@ pub fn deploy_ah(
     bulletproofs_contract_addr: &Address,
     tc_contract_addr: &Address,
     ahc_factory_contract_addr: &Address,
-) -> (Contract, Address) {
+) -> Contract {
     // Compile auction house contract from template
     // println!("Compiling auction house contract...");
     let auction_house_src = get_filename_src("AuctionHouse.sol", true);
@@ -493,22 +563,197 @@ pub fn deploy_ah(
 
     let contract = Contract::compile_from_config(&solc_config, "AuctionHouse").unwrap();
 
-    // Deploy auction house contract
-    let contract_constructor_input = vec![
-        ahc_factory_contract_addr.as_token(),
-        // Token::Uint(U256::from(20)),
-        // Token::Uint(U256::from(10)),
-        // Token::Uint(U256::from(REWARD_SELF_OPEN)),
-        // Token::Uint(U256::from(REWARD_FORCE_OPEN)),
-    ];
-    let create_result = evm
-        .deploy(
-            contract
-                .encode_create_contract_bytes(&contract_constructor_input)
-                .unwrap(),
-            &deployer,
-        )
-        .unwrap();
-    let contract_addr = create_result.addr.clone();
-    (contract, contract_addr)
+    // // Deploy auction house contract
+    // let contract_constructor_input = vec![
+    //     ahc_factory_contract_addr.as_token(),
+    //     // Token::Uint(U256::from(20)),
+    //     // Token::Uint(U256::from(10)),
+    //     // Token::Uint(U256::from(REWARD_SELF_OPEN)),
+    //     // Token::Uint(U256::from(REWARD_FORCE_OPEN)),
+    // ];
+    // let create_result = evm
+    //     .deploy(
+    //         contract
+    //             .encode_create_contract_bytes(&contract_constructor_input)
+    //             .unwrap(),
+    //         &deployer,
+    //     )
+    //     .unwrap();
+    // let contract_addr = create_result.addr.clone();
+    contract
+}
+
+pub fn setup_bidders(
+    evm: &mut Evm,
+    n_bidders: usize,
+    auction_house: &mut AuctionHouse<
+        G,
+        TestPoEParams,
+        TestRsaParams,
+        Keccak256,
+        PocklingtonHash<TestPocklingtonParams, Keccak256>,
+    >,
+    house_pp: &HouseParams<G>,
+    ah_coin_contract: &Contract,
+    ah_coin_contract_addr: &Address,
+) -> Vec<(
+    AccountPrivateState<
+        G,
+        TestPoEParams,
+        TestRsaParams,
+        Keccak256,
+        PocklingtonHash<TestPocklingtonParams, Keccak256>,
+    >,
+    Address,
+)> {
+    let mut rng = StdRng::seed_from_u64(1u64);
+    let mut bidders = Vec::new();
+
+    let big_balance = (n_bidders as u32) * 100;
+    for i in 0..n_bidders {
+        let bidder_addr = Address::random(&mut rng);
+        evm.create_account(&bidder_addr, big_balance);
+
+        let (uid, _) = auction_house.new_account(&house_pp);
+        assert_eq!(uid, i as u32);
+        auction_house
+            .account_deposit(&house_pp, uid, big_balance)
+            .unwrap();
+
+        let _ = evm
+            .call_payable(
+                ah_coin_contract
+                    .encode_call_contract_bytes("exchangeAHCFromEther", &[])
+                    .unwrap(),
+                &ah_coin_contract_addr,
+                &bidder_addr,
+                U256::from(big_balance),
+            )
+            .unwrap();
+        // println!("Bidder {} exchanged ether for AHC: gas: {}", i, result.gas);
+
+        let _ = evm
+            .call(
+                ah_coin_contract
+                    .encode_call_contract_bytes(
+                        "approve",
+                        &[
+                            ah_coin_contract_addr.as_token(),
+                            Token::Uint(U256::from(big_balance)),
+                        ],
+                    )
+                    .unwrap(),
+                &ah_coin_contract_addr,
+                &bidder_addr,
+            )
+            .unwrap();
+        // println!(
+        //   "Bidder {} approved auction house to transfer AHC: gas: {}",
+        //   i, result.gas
+        // );
+
+        let _ = evm
+            .call(
+                ah_coin_contract
+                    .encode_call_contract_bytes("deposit", &[Token::Uint(U256::from(big_balance))])
+                    .unwrap(),
+                &ah_coin_contract_addr,
+                &bidder_addr,
+            )
+            .unwrap();
+        // println!(
+        //   "Bidder {} deposited AHC into auction house balance: gas: {}",
+        //   i, result.gas
+        // );
+
+        let mut bidder = Account::new();
+        bidder.confirm_deposit(house_pp, big_balance).unwrap();
+
+        bidders.push((bidder, bidder_addr));
+    }
+    bidders
+}
+
+pub fn collect_bids(
+    evm: &mut Evm,
+    bidders: &mut Vec<(
+        AccountPrivateState<
+            G,
+            TestPoEParams,
+            TestRsaParams,
+            Keccak256,
+            PocklingtonHash<TestPocklingtonParams, Keccak256>,
+        >,
+        Address,
+    )>,
+    house_pp: &HouseParams<G>,
+    auction_pp: &HouseAuctionParams<G, TestRsaParams>,
+    auction_house: &mut AuctionHouse<
+        G,
+        TestPoEParams,
+        TestRsaParams,
+        Keccak256,
+        PocklingtonHash<TestPocklingtonParams, Keccak256>,
+    >,
+    ah_contract: &Contract,
+    ah_contract_addr: &Address,
+) -> (u64, Vec<u64>, Vec<u64>) {
+    let mut place_bid_gas: u64 = 0;
+    let mut place_bid_client_vec: Vec<u64> = Vec::new();
+    let mut place_bid_server_vec: Vec<u64> = Vec::new();
+
+    let mut rng = StdRng::seed_from_u64(1u64);
+    for i in 0..bidders.len() {
+        let (bidder, bidder_addr) = bidders.get_mut(i).unwrap();
+        let mut start = Instant::now();
+        let (bid_proposal, opening) = bidder
+            .propose_bid(&mut rng, &house_pp, &auction_pp, (i as u32 + 1) * 20)
+            .unwrap();
+        let mut end = start.elapsed().as_nanos();
+        place_bid_client_vec.push(end as u64);
+
+        let result = evm
+            .call(
+                ah_contract
+                    .encode_call_contract_bytes(
+                        "bidAuction",
+                        &[
+                            Token::Uint(U256::from(0)),
+                            encode_tc_comm::<Bn254, _>(&bid_proposal.comm_bid),
+                            encode_bulletproof::<Bn254>(&bid_proposal.range_proof_bid),
+                            encode_bulletproof::<Bn254>(&bid_proposal.range_proof_balance),
+                        ],
+                    )
+                    .unwrap(),
+                &ah_contract_addr,
+                &bidder_addr,
+            )
+            .unwrap();
+
+        // println!("Bidder {} placed bid: gas: {}", i, result.gas);
+
+        if i == 0 {
+            place_bid_gas = result.gas;
+        }
+
+        bidder
+            .confirm_bid(
+                &house_pp,
+                &auction_pp,
+                0,
+                (i as u32 + 1) * 20,
+                &bid_proposal,
+                &opening,
+            )
+            .unwrap();
+
+        start = Instant::now();
+        let bidret = auction_house
+            .account_bid(&house_pp, &auction_pp, 0, i as u32, &bid_proposal)
+            .unwrap();
+        end = start.elapsed().as_nanos();
+        place_bid_server_vec.push(end as u64);
+    }
+
+    (place_bid_gas, place_bid_client_vec, place_bid_server_vec)
 }

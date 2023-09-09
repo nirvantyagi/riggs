@@ -37,6 +37,9 @@ use ark_ff::UniformRand;
 use csv::Writer;
 use std::{io::stdout, string::String, time::Instant};
 
+mod preamble;
+use preamble::{deploy_erc721, deploy_ah_coin, deploy_ahc_factory, collect_bids};
+
 fn main() {
     let mut start = Instant::now();
     let mut end = start.elapsed().as_nanos();
@@ -68,116 +71,19 @@ fn main() {
     let deployer = Address::random(&mut rng);
     evm.create_account(&deployer, 0);
 
-    // Compile ERC721 contract from template
-    let solc_config = r#"
-            {
-                "language": "Solidity",
-                "sources": {
-                    "input.sol": { "content": "<%src%>" },
-                    "IERC721.sol": { "content": "<%erc721_src%>" }
-                },
-                "settings": {
-                    "optimizer": { "enabled": <%opt%> },
-                    "outputSelection": {
-                        "*": {
-                            "*": [
-                                "evm.bytecode.object", "abi"
-                            ],
-                        "": [ "*" ] } }
-                }
-            }"#
-    .replace("<%opt%>", &true.to_string())
-    .replace("<%erc721_src%>", &get_filename_src("IERC721.sol", false))
-    .replace("<%src%>", &get_filename_src("TestERC721.sol", true));
+    let (erc721_contract, erc721_contract_addr) = deploy_erc721(&mut evm, &deployer);
 
-    let erc721_contract = Contract::compile_from_config(&solc_config, "TestERC721").unwrap();
-
-    // Compile (but don't deploy) Coin contract
-    let ah_coin_contract = {
-        let auction_house_coin_src = get_filename_src("AuctionHouseCoin.sol", true);
-        let erc20_src = get_filename_src("IERC20.sol", false);
-        let erc721_src = get_filename_src("IERC721.sol", false);
-
-        let solc_config = r#"
-            {
-                "language": "Solidity",
-                "sources": {
-                    "input.sol": { "content": "<%src%>" },
-                    "IERC20.sol": { "content": "<%erc20_src%>" },
-                    "IERC721.sol": { "content": "<%erc721_src%>" }
-                },
-                "settings": {
-                    "optimizer": { "enabled": <%opt%> },
-                    "outputSelection": {
-                        "*": {
-                            "*": [
-                                "evm.bytecode.object", "abi"
-                            ],
-                        "": [ "*" ] } },
-                    "libraries": {
-                    }
-                }
-            }"#
-        .replace("<%opt%>", &false.to_string())
-        .replace("<%erc20_src%>", &erc20_src)
-        .replace("<%erc721_src%>", &erc721_src)
-        .replace("<%src%>", &auction_house_coin_src);
-
-        let contract = Contract::compile_from_config(&solc_config, "AuctionHouseCoin").unwrap();
-        contract
-    };
+    // println!("Compiling (but not deploying) Auction House Coin contract...");
+    let ah_coin_contract = deploy_ah_coin(
+        &mut evm,
+        &deployer,
+    );
 
     // println!("Compiling Auction House Coin Factory contract...");
-    let (ahc_factory_contract, ahc_factory_contract_addr) = {
-        let ahc_factory_src = get_filename_src("AuctionHouseCoinFactory.sol", true);
-        let erc20_src = get_filename_src("IERC20.sol", false);
-        let erc721_src = get_filename_src("IERC721.sol", false);
-        let ah_coin_src = get_filename_src("AuctionHouseCoin.sol", false);
-
-        let solc_config = r#"
-            {
-                "language": "Solidity",
-                "sources": {
-                    "input.sol": { "content": "<%src%>" },
-                    "AuctionHouseCoin.sol": { "content": "<%ah_coin_src%>" },
-                    "IERC20.sol": { "content": "<%erc20_src%>" },
-                    "IERC721.sol": { "content": "<%erc721_src%>" }
-
-                },
-                "settings": {
-                    "optimizer": { "enabled": <%opt%> },
-                    "outputSelection": {
-                        "*": {
-                            "*": [
-                                "evm.bytecode.object", "abi"
-                            ],
-                        "": [ "*" ] } },
-                    "libraries": {
-                    }
-                }
-            }"#
-        .replace("<%opt%>", &false.to_string()) // Needed to disable opt for a BigNumber assembly instruction
-        .replace("<%erc20_src%>", &erc20_src)
-        .replace("<%erc721_src%>", &erc721_src)
-        .replace("<%ah_coin_src%>", &ah_coin_src)
-        .replace("<%src%>", &ahc_factory_src);
-
-        let contract =
-            Contract::compile_from_config(&solc_config, "AuctionHouseCoinFactory").unwrap();
-
-        let create_result = evm
-            .deploy(
-                contract.encode_create_contract_bytes(&[]).unwrap(),
-                &deployer,
-            )
-            .unwrap();
-        let contract_addr = create_result.addr.clone();
-        // println!(
-        //   "AHC Factory contract deployed at address: {:?}",
-        //   contract_addr
-        // );
-        (contract, contract_addr)
-    };
+    let (ahc_factory_contract, ahc_factory_contract_addr) = deploy_ahc_factory(
+        &mut evm,
+        &deployer,
+    );
 
     // Compile auction house contract from template
     let auction_house_src = get_filename_src("BaselineAuctionHouse.sol", true);
@@ -215,41 +121,21 @@ fn main() {
     .replace("<%ah_coin_src%>", &ah_coin_src)
     .replace("<%src%>", &auction_house_src);
 
-    let contract = Contract::compile_from_config(&solc_config, "AuctionHouse").unwrap();
+    let ah_contract = Contract::compile_from_config(&solc_config, "AuctionHouse").unwrap();
 
-    // Deploy ERC-721 contract
-    let create_result = evm
-        .deploy(
-            erc721_contract
-                .encode_create_contract_bytes(&[
-                    Token::String("TestERC721".to_string()),
-                    Token::String("NFT".to_string()),
-                ])
-                .unwrap(),
-            &deployer,
-        )
-        .unwrap();
-    let erc721_contract_addr = create_result.addr.clone();
-    // println!(
-    //   "ERC-721 contract deployed at address: {:?}",
-    //   erc721_contract_addr
-    // );
-    // println!("ERC-721 contract deploy gas cost: {}", create_result.gas);
-
-    // Deploy auction house contract
     let contract_constructor_input = vec![ahc_factory_contract_addr.as_token()];
-    let create_result = evm
+    let deploy_ah_result = evm 
         .deploy(
-            contract
+            ah_contract
                 .encode_create_contract_bytes(&contract_constructor_input)
                 .unwrap(),
             &deployer,
         )
         .unwrap();
-    let contract_addr = create_result.addr.clone();
+    let ah_contract_addr = deploy_ah_result.addr.clone();
     // Benchmark: Create House
     csv_writer
-        .write_record(&["create_house", "0", "0", &create_result.gas.to_string()])
+        .write_record(&["create_house", "0", "0", &deploy_ah_result.gas.to_string()])
         .unwrap();
     csv_writer.flush().unwrap();
 
@@ -258,10 +144,10 @@ fn main() {
 
     let result_coin_address = evm
         .call(
-            contract
+           ah_contract 
                 .encode_call_contract_bytes("get_AHCoin_address", &[])
                 .unwrap(),
-            &contract_addr,
+            &ah_contract_addr,
             &owner,
         )
         .unwrap();
@@ -291,7 +177,7 @@ fn main() {
             erc721_contract
                 .encode_call_contract_bytes(
                     "approve",
-                    &[contract_addr.as_token(), Token::Uint(U256::from(1))],
+                    &[ah_contract_addr.as_token(), Token::Uint(U256::from(1))],
                 )
                 .unwrap(),
             &erc721_contract_addr,
@@ -309,6 +195,7 @@ fn main() {
 
     let big_balance = (n_bidders as u32) * 100;
 
+    // Create bidders and their accounts in the AH contract
     let mut bidders = {
         let mut bidders = Vec::new();
         for i in 0..n_bidders {
@@ -373,7 +260,7 @@ fn main() {
     evm.set_block_number(1);
     let result = evm
         .call(
-            contract
+            ah_contract
                 .encode_call_contract_bytes(
                     "newAuction",
                     &[
@@ -384,7 +271,7 @@ fn main() {
                     ],
                 )
                 .unwrap(),
-            &contract_addr,
+            &ah_contract_addr,
             &owner,
         )
         .unwrap();
@@ -424,7 +311,7 @@ fn main() {
 
             let result = evm
                 .call(
-                    contract
+                    ah_contract
                         .encode_call_contract_bytes(
                             "bidAuction",
                             &[
@@ -434,7 +321,7 @@ fn main() {
                             ],
                         )
                         .unwrap(),
-                    &contract_addr,
+                    &ah_contract_addr,
                     &bidder_addr,
                 )
                 .unwrap();
@@ -459,6 +346,7 @@ fn main() {
             end = start.elapsed().as_nanos();
             place_bid_server = place_bid_server + (end as u64);
         }
+
         // Benchmark: Submit Bid
         csv_writer
             .write_record(&[
@@ -472,10 +360,10 @@ fn main() {
 
         let result = evm
             .call(
-                contract
+                ah_contract
                     .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
                     .unwrap(),
-                &contract_addr,
+                &ah_contract_addr,
                 &deployer,
             )
             .unwrap();
@@ -489,7 +377,7 @@ fn main() {
     let mut self_open_count = 0;
 
     evm.set_block_number(25);
-    thread::sleep(auction_pp.auction_pp.t_bid_collection);
+    // thread::sleep(auction_pp.auction_pp.t_bid_collection);
     {
         for i in 0..(n_bidders - 1) {
             let (bidder, bidder_addr) = bidders.get_mut(i).unwrap();
@@ -498,7 +386,7 @@ fn main() {
             let opening = baseline_openings.get(i).unwrap();
             let result = evm
                 .call(
-                    contract
+                    ah_contract
                         .encode_call_contract_bytes(
                             "selfOpenAuction",
                             &[
@@ -508,7 +396,7 @@ fn main() {
                             ],
                         )
                         .unwrap(),
-                    &contract_addr,
+                    &ah_contract_addr,
                     &bidder_addr,
                 )
                 .unwrap();
@@ -529,10 +417,10 @@ fn main() {
         }
         let result = evm
             .call(
-                contract
+                ah_contract
                     .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
                     .unwrap(),
-                &contract_addr,
+                &ah_contract_addr,
                 &deployer,
             )
             .unwrap();
@@ -552,7 +440,7 @@ fn main() {
 
     // // Force opening
     evm.set_block_number(35);
-    thread::sleep(auction_pp.auction_pp.t_bid_self_open);
+    // thread::sleep(auction_pp.auction_pp.t_bid_self_open);
 
     // Benchmark: Force Opening Bid
     csv_writer
@@ -567,10 +455,10 @@ fn main() {
     {
         let result = evm
             .call(
-                contract
+                ah_contract
                     .encode_call_contract_bytes("getAuctionPhase", &[Token::Uint(U256::from(0))])
                     .unwrap(),
-                &contract_addr,
+                &ah_contract_addr,
                 &deployer,
             )
             .unwrap();
@@ -578,10 +466,10 @@ fn main() {
 
         let complete_result = evm
             .call(
-                contract
+                ah_contract
                     .encode_call_contract_bytes("completeAuction", &[Token::Uint(U256::from(0))])
                     .unwrap(),
-                &contract_addr,
+                &ah_contract_addr,
                 &deployer,
             )
             .unwrap();
@@ -619,10 +507,10 @@ fn main() {
             start = Instant::now();
             let reclaim_result = evm
                 .call(
-                    contract
+                    ah_contract
                         .encode_call_contract_bytes("reclaim", &[Token::Uint(U256::from(0))])
                         .unwrap(),
-                    &contract_addr,
+                    &ah_contract_addr,
                     &bidder_addr,
                 )
                 .unwrap();
