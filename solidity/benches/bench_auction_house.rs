@@ -23,15 +23,15 @@ use std::{io::stdout, time::Instant};
 
 use solidity::{mean, std_deviation};
 
-mod preamble;
-use preamble::{collect_bids, setup_bidders};
-use preamble::{
+mod utilities;
+use utilities::{collect_bids, setup_bidders};
+use utilities::{
     deploy_ah, deploy_ah_coin, deploy_ahc_factory, deploy_bulletproofs, deploy_erc721, deploy_tc,
 };
-use preamble::{
+use utilities::{
     Account, Hog, TestAuctionHouse, TestPoEParams, TestPocklingtonParams, TestRsaParams, TC,
 };
-use preamble::{
+use utilities::{
     LOG_NUM_BID_BITS, MOD_BITS, NUM_BID_BITS, REWARD_FORCE_OPEN, REWARD_SELF_OPEN, TIME_PARAM,
 };
 
@@ -107,10 +107,7 @@ fn main() {
     let (erc721_contract, erc721_contract_addr) = deploy_erc721(&mut evm, &deployer);
 
     // println!("Compiling (but not deploying) Auction House Coin contract...");
-    let ah_coin_contract = deploy_ah_coin(
-        &mut evm,
-        &deployer,
-    );
+    let ah_coin_contract = deploy_ah_coin(&mut evm, &deployer);
 
     // println!("Compiling Auction House Coin Factory contract...");
     let (ahc_factory_contract, ahc_factory_contract_addr) = deploy_ahc_factory(

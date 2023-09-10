@@ -37,8 +37,8 @@ use ark_ff::UniformRand;
 use csv::Writer;
 use std::{io::stdout, string::String, time::Instant};
 
-mod preamble;
-use preamble::{deploy_erc721, deploy_ah_coin, deploy_ahc_factory, collect_bids};
+mod utilities;
+use utilities::{collect_bids, deploy_ah_coin, deploy_ahc_factory, deploy_erc721};
 
 fn main() {
     let mut start = Instant::now();
@@ -74,16 +74,10 @@ fn main() {
     let (erc721_contract, erc721_contract_addr) = deploy_erc721(&mut evm, &deployer);
 
     // println!("Compiling (but not deploying) Auction House Coin contract...");
-    let ah_coin_contract = deploy_ah_coin(
-        &mut evm,
-        &deployer,
-    );
+    let ah_coin_contract = deploy_ah_coin(&mut evm, &deployer);
 
     // println!("Compiling Auction House Coin Factory contract...");
-    let (ahc_factory_contract, ahc_factory_contract_addr) = deploy_ahc_factory(
-        &mut evm,
-        &deployer,
-    );
+    let (ahc_factory_contract, ahc_factory_contract_addr) = deploy_ahc_factory(&mut evm, &deployer);
 
     // Compile auction house contract from template
     let auction_house_src = get_filename_src("BaselineAuctionHouse.sol", true);
@@ -124,7 +118,7 @@ fn main() {
     let ah_contract = Contract::compile_from_config(&solc_config, "AuctionHouse").unwrap();
 
     let contract_constructor_input = vec![ahc_factory_contract_addr.as_token()];
-    let deploy_ah_result = evm 
+    let deploy_ah_result = evm
         .deploy(
             ah_contract
                 .encode_create_contract_bytes(&contract_constructor_input)
@@ -144,7 +138,7 @@ fn main() {
 
     let result_coin_address = evm
         .call(
-           ah_contract 
+            ah_contract
                 .encode_call_contract_bytes("get_AHCoin_address", &[])
                 .unwrap(),
             &ah_contract_addr,

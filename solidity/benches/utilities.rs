@@ -60,7 +60,7 @@ impl RsaGroupParams for TestRsaParams {
 pub type Hog = RsaHiddenOrderGroup<TestRsaParams>;
 
 pub const MOD_BITS: usize = 2048;
-pub const TIME_PARAM: u64 = 100; 
+pub const TIME_PARAM: u64 = 100;
 pub const NUM_BID_BITS: u64 = 32;
 pub const LOG_NUM_BID_BITS: u64 = 5;
 
@@ -261,11 +261,7 @@ pub fn deploy_erc721(evm: &mut Evm, deployer: &Address) -> (Contract, Address) {
     (erc721_contract, erc721_contract_addr)
 }
 
-
-pub fn deploy_ah_coin(
-    evm: &mut Evm,
-    deployer: &Address,
-) -> Contract {
+pub fn deploy_ah_coin(evm: &mut Evm, deployer: &Address) -> Contract {
     let auction_house_coin_src = get_filename_src("AuctionHouseCoin.sol", true);
     let erc20_src = get_filename_src("IERC20.sol", false);
     let erc721_src = get_filename_src("IERC721.sol", false);
@@ -304,7 +300,6 @@ pub fn deploy_ah_coin(
     // println!("AH Coin contract deployed at address: {:?}", contract_addr);
     contract
 }
-
 
 // pub fn deploy_ah_coin(
 //     evm: &mut Evm,
