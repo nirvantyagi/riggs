@@ -11,23 +11,19 @@ Nirvan Tyagi, Arasu Arun, Cody Freitag, Riad Wahby, Joseph Bonneau, David Mazier
 ## Overview
 
 This repository is organized as a Rust workspace with a number of modular packages.
-The following packages make up the core of the implementation for the VeRSA verifiable registries:
+The following packages make up the core of the implementation:
 * [`rsa`](rsa): Implementation of RSA primitives and constraints.
-  * [`bignat`](rsa/src/bignat): Wrapper around [`rug`](https://docs.rs/rug/latest/rug/) crate for integer arithmetic using GMP and constraints ported from [`bellman-bignat`](https://github.com/alex-ozdemir/bellman-bignat) (implementing optimizations from [`xJsnark`](https://github.com/akosba/xjsnark)).
+  * [`bignat`](rsa/src/bignat): Wrapper around [`rug`](https://docs.rs/rug/latest/rug/) crate for integer arithmetic using GMP and constraints ported from [`bellman-bignat`](https://github.com/alex-ozdemir/bellman-bignat).
   * [`hog`](rsa/src/hog): Implementation and constraints for RSA groups of hidden order.
   * [`hash_to_prime`](rsa/src/hash_to_prime): Implementation for hash-to-integer and hash-to-prime.
-* [`timed_commitments`](timed_commitments): Implementation of the non-malleable timed-commitment scheme introduced in the paper.
-* [`range_proofs`](range_proofs): Implementation of range proofs using Bulletproofs.
+* [`timed_commitments`](timed_commitments): Implementation of three timed-commitment schemes: FKPS, the non-malleable TC scheme introduced in the paper, and a SNARK-based TC scheme.
+* [`range_proofs`](range_proofs): Library for creating and verifying range proofs using the Bulletproofs protocol.
 
-We provide a number of tests and benchmarks which we expand on below.
-Benchmarks are co-located in a separate package while tests are interspersed across the above packages.
-* [`benches`](benches): Microbenchmarks for the main auction house protocols (Figure 4 in the paper) and the various tools involved.
-  * `bench_baseline`, `bench_rp_auction_house`, `bench_tc_auction_house`
-
+We provide a number benchmarks in the `riggs/benches` folder (expanded on below).
 
 ## Installation/Build
 
-The packages and benchmarks are easy to compile from source. The following sequence of commands may be helpful especially if on a fresh machine. 
+The packages and benchmarks are easy to compile from source on an Ubuntu machine. (We've faced compilation issues with the solidity packages on OSX). The following sequence of commands may be helpful especially if on a fresh machine. 
 
 Install basic prerequisites and dependencies:
 ```
@@ -36,6 +32,7 @@ apt install git cmake libboost-all-dev build-essential
 sudo add-apt-repository ppa:ethereum/ethereum
 apt-get install solc
 ```
+
 Install rust using any method ([Rust offical installation site](https://www.rust-lang.org/tools/install)):
 ```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -60,7 +57,17 @@ To run a benchmark:
 cargo bench --bench name_of_benchmark -- [--optional-arg arg1 arg2...]
 ```
 
-We provide the following benchmarks:
-* [`bench_baseline`](benches/bench_baseline.rs)
-* [`bench_rp_auction_house`](benches/bench_rp_auction_house.rs)
-* [`bench_tc_auction_house`](benches/bench_tc_auction_house.rs)
+The tools we benchmark are: 
+* `bulletproofs_verifier`
+* `pedersen` commitment verification 
+* `rsa` 
+* `poe_verifier` (Wesolowski verification)
+* `fkps` timed commitment  
+* `tc` (introduced in paper)
+
+We provide benches the auction house protocols described in the paper (Fig 4):
+* [`auction_house_baseline`](benches/auction_house_baseline.rs)
+* [`auction_house_rp`](benches/auction_house_rp.rs)
+* [`auction_house_tc`](benches/auction_house_tc.rs)
+
+A full benchmark for the Auction House with the SNARK-based TC will be added next. 

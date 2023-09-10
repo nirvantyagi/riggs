@@ -111,8 +111,3 @@ name = "auction_house_tc"
 path = "benches/auction_house_tc.rs"
 harness = false
 
-[[bench]]
-name = "tc_snark"
-path = "benches/tc_snark.rs"
-harness = false
-
