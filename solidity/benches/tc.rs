@@ -292,7 +292,7 @@ fn main() {
             )
             .unwrap();
 
-        println!("{:?}", force_result);
+        // println!("{:?}", force_result);
         assert_eq!(&force_result.out, &to_be_bytes(&U256::from(1)));
         println!(
             "TC force-open (with tamper {}) verification gas cost: {:?}",

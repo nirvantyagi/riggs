@@ -139,5 +139,5 @@ fn main() {
         )
         .unwrap();
     assert_eq!(&result.out, &to_be_bytes(&U256::from(1)));
-    println!("{:?}", result);
+    println!("PoEVerifier Gas cost: {}", result.gas);
 }

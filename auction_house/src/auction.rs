@@ -63,8 +63,6 @@ impl<G: ProjectiveCurve, PoEP: PoEParams, RsaP: RsaGroupParams, H: Digest, H2P: 
         }
     }
 
-    /* Do not need to test auction phases in benchmarks are the functions do not involve real delay.
-     */
     pub fn phase(
         &self,
         pp: &AuctionParams<G, RsaP>,

@@ -97,33 +97,18 @@ path = "benches/tc.rs"
 harness = false
 
 [[bench]]
-name = "auction_house"
-path = "benches/auction_house.rs"
+name = "auction_house_baseline"
+path = "benches/auction_house_baseline.rs"
 harness = false
 
 [[bench]]
-name = "baseline_auction_house"
-path = "benches/baseline_auction_house.rs"
+name = "auction_house_rp"
+path = "benches/auction_house_rp.rs"
 harness = false
 
 [[bench]]
-name = "rp_auction_house"
-path = "benches/rp_auction_house.rs"
-harness = false
-
-[[bench]]
-name = "bench_baseline"
-path = "benches/bench_baseline.rs"
-harness = false
-
-[[bench]]
-name = "bench_auction_house"
-path = "benches/bench_auction_house.rs"
-harness = false
-
-[[bench]]
-name = "bench_rp"
-path = "benches/bench_rp.rs"
+name = "auction_house_tc"
+path = "benches/auction_house_tc.rs"
 harness = false
 
 [[bench]]
@@ -131,12 +116,3 @@ name = "tc_snark"
 path = "benches/tc_snark.rs"
 harness = false
 
-[[bench]]
-name = "pedersen_baby"
-path = "benches/pedersen_baby.rs"
-harness = false
-
-[[bench]]
-name = "bulletproofs_verifier_baby"
-path = "benches/bulletproofs_verifier_baby.rs"
-harness = false

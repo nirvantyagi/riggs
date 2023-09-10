@@ -41,6 +41,8 @@ impl<H: Digest> Auction<H> {
         }
     }
 
+
+    // Do not test for phase in benches as real-time delays aren't involved. 
     pub fn phase(&self, pp: &AuctionParams, desired_phase: AuctionPhase) -> bool {
         return true;
         // let t_auction = self.t_start.elapsed();

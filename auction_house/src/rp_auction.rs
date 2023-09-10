@@ -49,7 +49,7 @@ impl<G: ProjectiveCurve, H: Digest> Auction<G, H> {
         }
     }
 
-    // Not needed for benching 
+    // Do not test for phase in benches as real-time delays aren't involved. 
     pub fn phase(&self, pp: &AuctionParams<G>, desired_phase: AuctionPhase) -> bool {
         return true; 
         // let t_auction = self.t_start.elapsed();
