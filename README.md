@@ -1,6 +1,6 @@
 # Riggs: 
 
-_Rust implementation of the Riggs family of decentralized sealed-bit auctions_ 
+_Rust implementation of the Riggs family of decentralized sealed-bid auctions_ 
 
 **ACM CCS 2023:**
 Nirvan Tyagi, Arasu Arun, Cody Freitag, Riad Wahby, Joseph Bonneau, David Mazieres. _Riggs: Decentralized Sealed-Bid Auctions_. ACM CCS 2023.
