@@ -57,17 +57,18 @@ To run a benchmark:
 cargo bench --bench name_of_benchmark -- [--optional-arg arg1 arg2...]
 ```
 
-The tools we benchmark are: 
-* `bulletproofs_verifier`
-* `pedersen` commitment verification 
-* `rsa` 
-* `poe_verifier` (Wesolowski verification)
-* `fkps` timed commitment  
-* `tc` (introduced in paper)
+We benchmark the costs of the following operations. Each benchmark corresponds to a contract in `solidity/contracts/`.
+* `bulletproofs_verifier`: verifying a bulletproof range proof
+* `pedersen` commitment: verifying the opening of a Pedersen commitment 
+* `rsa`: gas cost of verifying `X^e = Y` (where `X, e, Y` are all inputs) in an RSA2048 group of unknown order 
+* `poe_verifier`: verifying a Wesolowski VDF proof in an RSA2048 group of unknown order 
+* `fkps` timed commitment: opening of an FKPS timed-commitment 
+* `tc` (introduced in paper): verifying the opening of the novel timed-commitments supporting range proofs introduced in the paper.
 
-We provide benches the auction house protocols described in the paper (Fig 4):
-* [`auction_house_baseline`](benches/auction_house_baseline.rs)
-* [`auction_house_rp`](benches/auction_house_rp.rs)
-* [`auction_house_tc`](benches/auction_house_tc.rs)
+We provide benches for the auction house protocols described in the paper. 
+Each benchmark corresponds to a column in Figure 4 and provides the computation time (in microseconds) and gas cost displayed in each row.
+* [`auction_house_baseline`](benches/auction_house_baseline.rs) (with [contract](solidity/contracts/BaselineAuctionHouse.sol)): baseline auction house using per-auction collaterals 
+* [`auction_house_rp`](benches/auction_house_rp.rs) (with [contract](solidity/contracts/AuctionHouseRP.sol)): auction house using range proofs but no timed commitments 
+* [`auction_house_tc`](benches/auction_house_tc.rs) (with [contract](solidity/contracts/AuctionHouse.sol)): auction house using the novel timed-commitment scheme supporting range proofs 
 
 A full benchmark for the Auction House with the SNARK-based TC will be added next. 
